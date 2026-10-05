@@ -1,0 +1,18 @@
+{
+  "explorer.compactFolders": false,
+  "python.terminal.activateEnvironment": false,
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.ruff_cache": true,
+    "**/.pytest_cache": true,
+    "**/.venv": true,
+    "**/node_modules": true,
+    "web/.react-router": true,
+    "web/dist": true
+  },
+  "git.ignoreLimitWarning": true,
+  "json.schemaDownload.trustedDomains": {
+    "https://unpkg.com/": true
+  }
+}

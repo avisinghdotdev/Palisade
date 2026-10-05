@@ -1,0 +1,20 @@
+# Windows folder cruft
+Thumbs.db
+desktop.ini
+
+# Environment
+.env
+
+# Local notes and drafts
+scratchpad/
+
+# Python
+__pycache__/
+.venv/
+.ruff_cache/
+.pytest_cache/
+
+# Node
+node_modules/
+web/.react-router/
+web/dist/

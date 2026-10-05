@@ -1,0 +1,53 @@
+{
+  "name": "palisade-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.27.1",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "react-router dev",
+    "build": "pnpm run typecheck && react-router build",
+    "typecheck": "react-router typegen && tsc --noEmit",
+    "lint": "eslint . --max-warnings 0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "knip": "knip",
+    "api:generate": "openapi-ts"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.104.0",
+    "isbot": "^5.2.2",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-router": "^8.4.0"
+  },
+  "devDependencies": {
+    "@eslint-react/eslint-plugin": "^5.20.8",
+    "@eslint/js": "^10.0.1",
+    "@hey-api/openapi-ts": "0.99.0",
+    "@react-router/dev": "^8.4.0",
+    "@react-router/node": "^8.4.0",
+    "@tanstack/eslint-plugin-query": "^5.104.0",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitest/eslint-plugin": "^1.6.27",
+    "eslint": "^10.11.0",
+    "eslint-plugin-jsx-a11y-x": "^0.2.0",
+    "eslint-plugin-perfectionist": "^5.12.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.7",
+    "globals": "^17.12.0",
+    "jsdom": "^30.1.1",
+    "knip": "^6.38.0",
+    "prettier": "^3.9.9",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.70.1",
+    "vite": "^8.3.1",
+    "vitest": "^5.0.2"
+  }
+}

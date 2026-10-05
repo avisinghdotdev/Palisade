@@ -1,0 +1,97 @@
+[project]
+name = "palisade"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    # Workspace members are installed into this environment so tests and type checks see them.
+    "palisade-api",
+    # 1.40.1+ (pyright 1.1.414) always applies the `**/.*` default exclude, even next to an explicit
+    # `exclude`. Lift the pin once basedpyright exposes `useDefaultExcludes`.
+    "basedpyright==1.40.0",
+    "bump-my-version>=1.5.1",
+    # FastAPI's TestClient is built on httpx2.
+    "httpx2>=2.13.1",
+    "pre-commit>=4.6.2",
+    "pydantic>=2.13.4",
+    "pytest>=9.1.1",
+    "ruff>=0.16.3",
+]
+
+[tool.uv.workspace]
+members = ["api"]
+
+[tool.uv.sources]
+palisade-api = { workspace = true }
+
+# One release version, bumped with `uv run bump-my-version bump <part>`; the copies below are
+# rewritten in the same run and the `version-sync` pre-commit hook fails when they drift.
+[tool.bumpversion]
+current_version = "0.1.0"
+
+[[tool.bumpversion.files]]
+filename = "pyproject.toml"
+regex = true
+search = '^version = "{current_version}"'
+replace = 'version = "{new_version}"'
+
+[[tool.bumpversion.files]]
+filename = "api/pyproject.toml"
+regex = true
+search = '^version = "{current_version}"'
+replace = 'version = "{new_version}"'
+
+[[tool.bumpversion.files]]
+filename = "web/package.json"
+search = '"version": "{current_version}"'
+replace = '"version": "{new_version}"'
+
+[tool.pytest.ini_options]
+testpaths = ["api/tests"]
+
+[tool.basedpyright]
+# "recommended" is stricter than "strict": it also reports Any, unused call results, and stale ignores.
+typeCheckingMode = "recommended"
+include = ["api"]
+# Path.write_text() and next() return values nobody needs; flagging them adds only noise.
+reportUnusedCallResult = false
+
+[tool.ruff]
+# Workspace member sources count as first-party for import sorting.
+src = [".", "api/src"]
+
+[tool.ruff.lint]
+# Extends ruff's default rules; target-version derives from requires-python.
+extend-select = [
+    "FAST",  # FastAPI-specific rules
+    "ASYNC", # blocking calls inside async code
+    "S",     # security checks (only partly enabled by default)
+    "B",     # bugbear (only partly enabled by default; adds B904 raise-from)
+    "D",     # docstring style, limited to the google convention below
+    "DTZ",   # naive-datetime bans
+    "PTH",   # pathlib over os.path
+    "T20",   # no print in app code
+    "TID",   # absolute-import enforcement
+    "I",     # full isort family
+    "C4",
+    "SIM",
+    "PERF",
+    "PIE",
+    "RSE",
+    "PT",    # pytest style
+]
+ignore = [
+    "D1", # docstrings are optional; D only checks the ones that exist
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["S101", "S106"]
+"**/__init__.py" = ["F401"]

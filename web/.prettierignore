@@ -1,0 +1,5 @@
+.react-router
+dist
+pnpm-lock.yaml
+openapi.json
+src/api/client

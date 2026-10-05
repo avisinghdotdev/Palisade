@@ -1,0 +1,33 @@
+services:
+  web:
+    image: palisade-web-dev-server
+    build:
+      target: dev-server
+    develop:
+      watch:
+        - path: web/src
+          target: /app/src
+          action: sync
+        - path: web/vite.config.ts
+          target: /app/vite.config.ts
+          action: sync+restart
+        - path: web/react-router.config.ts
+          target: /app/react-router.config.ts
+          action: sync+restart
+        - path: web/package.json
+          action: rebuild
+        - path: web/pnpm-lock.yaml
+          action: rebuild
+  api:
+    image: palisade-api-dev-server
+    build:
+      target: dev-server
+    develop:
+      watch:
+        - path: api/src
+          target: /app/api/src
+          action: sync
+        - path: api/pyproject.toml
+          action: rebuild
+        - path: uv.lock
+          action: rebuild

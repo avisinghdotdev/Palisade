@@ -1,0 +1,91 @@
+# Generated code is regenerated, never fixed in place.
+exclude: ^web/src/api/client/
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: end-of-file-fixer
+      # bump-my-version rewrites pyproject.toml with CRLF on Windows; this restores LF at commit.
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: trailing-whitespace
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.9
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.12.19
+    hooks:
+      - id: uv-lock
+  - repo: https://github.com/editorconfig-checker/editorconfig-checker.python
+    rev: "3.11.1"
+    hooks:
+      - id: editorconfig-checker
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.15.1
+    hooks:
+      - id: hadolint-docker
+        # The upstream entry names an untagged image; pin it to the same release as `rev`.
+        entry: ghcr.io/hadolint/hadolint:v2.15.1 hadolint
+  - repo: local
+    hooks:
+      - id: basedpyright
+        name: basedpyright
+        entry: uv run basedpyright
+        language: system
+        types: [python]
+        pass_filenames: false
+      - id: just-fmt
+        name: just fmt
+        entry: just --unstable --fmt
+        language: system
+        files: ^justfile$
+        pass_filenames: false
+      - id: version-sync
+        name: version sync
+        # A dry run fails when any configured file lacks the current version.
+        entry: uv run --frozen bump-my-version bump --dry-run --allow-dirty patch
+        language: system
+        files: ^(pyproject\.toml|api/pyproject\.toml|web/package\.json)$
+        pass_filenames: false
+      - id: openapi-export
+        name: openapi export
+        entry: uv run --frozen python -m palisade_api.openapi web/openapi.json
+        language: system
+        files: ^(api/|web/openapi\.json$)
+        pass_filenames: false
+      - id: api-client
+        name: api client
+        entry: pnpm --dir web run api:generate
+        language: system
+        files: ^(api/|web/openapi\.json$|web/openapi-ts\.config\.ts$)
+        pass_filenames: false
+      - id: web-typecheck
+        name: web typecheck
+        entry: pnpm --dir web run typecheck
+        language: system
+        files: ^web/
+        pass_filenames: false
+      - id: web-lint
+        name: web lint
+        entry: pnpm --dir web run lint
+        language: system
+        files: ^web/
+        pass_filenames: false
+      - id: web-format
+        name: web format
+        entry: pnpm --dir web run format
+        language: system
+        files: ^web/
+        pass_filenames: false
+      - id: web-knip
+        name: web knip
+        entry: pnpm --dir web run knip
+        language: system
+        files: ^web/
+        pass_filenames: false
