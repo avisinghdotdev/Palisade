@@ -2,7 +2,6 @@
 .venv
 .docs
 .vscode
-scratchpad
 web
 **/__pycache__
 **/.pytest_cache
