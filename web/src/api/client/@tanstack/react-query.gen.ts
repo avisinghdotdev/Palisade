@@ -3,8 +3,8 @@
 import { type DefaultError, queryOptions } from '@tanstack/react-query';
 
 import { client } from '../client.gen';
-import { health, type Options } from '../sdk.gen';
-import type { HealthData, HealthResponse } from '../types.gen';
+import { health, type Options, paypalHealth } from '../sdk.gen';
+import type { HealthData, HealthResponse, PaypalHealthData, PaypalHealthResponse } from '../types.gen';
 
 export type QueryKey<TOptions extends Options> = [
     Pick<TOptions, 'baseUrl' | 'body' | 'headers' | 'path' | 'query'> & {
@@ -38,6 +38,24 @@ const createQueryKey = <TOptions extends Options>(id: string, options?: TOptions
     }
     return [params];
 };
+
+export const paypalHealthQueryKey = (options?: Options<PaypalHealthData>) => createQueryKey('paypalHealth', options);
+
+/**
+ * Paypal Health
+ */
+export const paypalHealthOptions = (options?: Options<PaypalHealthData>) => queryOptions<PaypalHealthResponse, DefaultError, PaypalHealthResponse, ReturnType<typeof paypalHealthQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await paypalHealth({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: paypalHealthQueryKey(options)
+});
 
 export const healthQueryKey = (options?: Options<HealthData>) => createQueryKey('health', options);
 

@@ -5,6 +5,27 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/paypal/health": {
+      "get": {
+        "tags": [
+          "paypal"
+        ],
+        "summary": "Paypal Health",
+        "operationId": "paypal_health",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayPalHealth"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "summary": "Health",
@@ -44,6 +65,39 @@
           "version"
         ],
         "title": "Health"
+      },
+      "PayPalHealth": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "ok",
+            "title": "Status"
+          },
+          "app_id": {
+            "type": "string",
+            "title": "App Id"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Scopes"
+          },
+          "token_expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Token Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "app_id",
+          "scopes",
+          "token_expires_at"
+        ],
+        "title": "PayPalHealth"
       }
     }
   }
