@@ -18,6 +18,44 @@ export type Health = {
     version: string;
 };
 
+/**
+ * PayPalHealth
+ */
+export type PayPalHealth = {
+    /**
+     * Status
+     */
+    status: 'ok';
+    /**
+     * App Id
+     */
+    app_id: string;
+    /**
+     * Scopes
+     */
+    scopes: Array<string>;
+    /**
+     * Token Expires At
+     */
+    token_expires_at: string;
+};
+
+export type PaypalHealthData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/paypal/health';
+};
+
+export type PaypalHealthResponses = {
+    /**
+     * Successful Response
+     */
+    200: PayPalHealth;
+};
+
+export type PaypalHealthResponse = PaypalHealthResponses[keyof PaypalHealthResponses];
+
 export type HealthData = {
     body?: never;
     path?: never;
