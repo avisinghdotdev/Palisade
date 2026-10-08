@@ -1,7 +1,7 @@
 [project]
 name = "palisade"
 version = "0.1.0"
-requires-python = ">=3.14"
+requires-python = ">=3.13"
 dependencies = []
 
 [dependency-groups]
@@ -94,4 +94,6 @@ ban-relative-imports = "all"
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**" = ["S101", "S106"]
+# Spikes are throwaway scripts that report through stdout.
+"spikes/*" = ["T201"]
 "**/__init__.py" = ["F401"]

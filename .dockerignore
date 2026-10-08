@@ -2,6 +2,7 @@
 .venv
 .docs
 .vscode
+spikes
 web
 **/__pycache__
 **/.pytest_cache
