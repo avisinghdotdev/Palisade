@@ -46,6 +46,11 @@ repos:
         language: system
         files: ^justfile$
         pass_filenames: false
+      - id: bicep
+        name: bicep
+        entry: uv run --frozen python infra/check.py
+        language: system
+        files: ^infra/.*\.bicep(param)?$
       - id: version-sync
         name: version sync
         # A dry run fails when any configured file lacks the current version.

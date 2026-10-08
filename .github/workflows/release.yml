@@ -1,0 +1,78 @@
+# Release: build both images, push them to the shared registry, deploy the prod stack, check health.
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  AZURE_CLIENT_ID: 36c07b48-c668-4752-ac8b-0bdd1b856a61
+  AZURE_TENANT_ID: 89906370-4617-4be4-a465-3b5425b8b8cf
+  AZURE_SUBSCRIPTION_ID: 100ad7a4-aeed-422e-87aa-e3adc5706c7d
+  REGISTRY: cravisingh.azurecr.io
+
+jobs:
+  build:
+    name: Build images
+    runs-on: ubuntu-26.04
+    outputs:
+      revision-suffix: ${{ steps.version.outputs.revision-suffix }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: version
+        name: Revision suffix from the release version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml | head -n 1)
+          echo "revision-suffix=v${version//./-}-${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+      - uses: azure/login@v3
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+      - run: az acr login --name cravisingh
+      - uses: docker/setup-buildx-action@v4
+      - name: Build and push
+        run: |
+          docker buildx build --platform linux/amd64 --sbom=true --provenance=mode=max --push \
+            --tag "$REGISTRY/palisade/web:$GITHUB_SHA" web
+          docker buildx build --platform linux/amd64 --sbom=true --provenance=mode=max --push \
+            --tag "$REGISTRY/palisade/api:$GITHUB_SHA" --file api/Dockerfile .
+
+  deploy:
+    name: Deploy prod
+    needs: build
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/login@v3
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+      - name: Deploy prod stack
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          REVISION_SUFFIX: ${{ needs.build.outputs.revision-suffix }}
+        # Excluded principals may delete managed resources despite the deny settings: the pipeline
+        # identity and the owner.
+        run: |
+          az stack sub create --name palisade-prod --location centralindia \
+            --parameters infra/env/main.prod.bicepparam \
+            --action-on-unmanage deleteResources \
+            --deny-settings-mode denyDelete --deny-settings-apply-to-child-scopes \
+            --deny-settings-excluded-principals cc37a2c5-39c9-44c8-8eab-d48cda185d0f a4db2292-7f75-4aac-8b2c-74d57c9c181f \
+            --yes --output none
+      - name: Health check
+        run: |
+          fqdn=$(az stack sub show --name palisade-prod --query outputs.webFqdn.value --output tsv)
+          body=$(curl --fail --silent --show-error --retry 6 --retry-all-errors --retry-delay 10 "https://$fqdn/api/health")
+          echo "$body"
+          grep --quiet '"status":"ok"' <<< "$body"
