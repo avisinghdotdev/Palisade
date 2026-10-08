@@ -62,13 +62,13 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
           REVISION_SUFFIX: ${{ needs.build.outputs.revision-suffix }}
         # Excluded principals may delete managed resources despite the deny settings: the pipeline
-        # identity and the owner.
+        # identity and the owner. The CLI takes them as one space-separated string.
         run: |
           az stack sub create --name palisade-prod --location centralindia \
             --parameters infra/env/main.prod.bicepparam \
             --action-on-unmanage deleteResources \
             --deny-settings-mode denyDelete --deny-settings-apply-to-child-scopes \
-            --deny-settings-excluded-principals cc37a2c5-39c9-44c8-8eab-d48cda185d0f a4db2292-7f75-4aac-8b2c-74d57c9c181f \
+            --deny-settings-excluded-principals "cc37a2c5-39c9-44c8-8eab-d48cda185d0f a4db2292-7f75-4aac-8b2c-74d57c9c181f" \
             --yes --output none
       - name: Health check
         run: |
