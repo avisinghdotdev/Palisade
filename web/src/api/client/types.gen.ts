@@ -5,6 +5,16 @@ export type ClientOptions = {
 };
 
 /**
+ * HTTPValidationError
+ */
+export type HttpValidationError = {
+    /**
+     * Detail
+     */
+    detail?: Array<ValidationError>;
+};
+
+/**
  * Health
  */
 export type Health = {
@@ -17,6 +27,8 @@ export type Health = {
      */
     version: string;
 };
+
+export type JsonValue = unknown;
 
 /**
  * PayPalHealth
@@ -40,6 +52,81 @@ export type PayPalHealth = {
     token_expires_at: string;
 };
 
+/**
+ * ReceivedEvent
+ */
+export type ReceivedEvent = {
+    event: WebhookEvent;
+    /**
+     * Received At
+     */
+    received_at: string;
+};
+
+/**
+ * ValidationError
+ */
+export type ValidationError = {
+    /**
+     * Location
+     */
+    loc: Array<string | number>;
+    /**
+     * Message
+     */
+    msg: string;
+    /**
+     * Error Type
+     */
+    type: string;
+    /**
+     * Input
+     */
+    input?: unknown;
+    /**
+     * Context
+     */
+    ctx?: {
+        [key: string]: unknown;
+    };
+};
+
+/**
+ * WebhookEvent
+ */
+export type WebhookEvent = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Event Type
+     */
+    event_type: string;
+    /**
+     * Create Time
+     */
+    create_time: string;
+    /**
+     * Resource Type
+     */
+    resource_type: string;
+    /**
+     * Resource Version
+     */
+    resource_version?: string | null;
+    /**
+     * Summary
+     */
+    summary: string;
+    /**
+     * Resource
+     */
+    resource: {
+        [key: string]: JsonValue;
+    };
+};
+
 export type PaypalHealthData = {
     body?: never;
     path?: never;
@@ -55,6 +142,71 @@ export type PaypalHealthResponses = {
 };
 
 export type PaypalHealthResponse = PaypalHealthResponses[keyof PaypalHealthResponses];
+
+export type PaypalWebhookData = {
+    body?: never;
+    headers: {
+        /**
+         * Paypal-Transmission-Id
+         */
+        'paypal-transmission-id': string;
+        /**
+         * Paypal-Transmission-Time
+         */
+        'paypal-transmission-time': string;
+        /**
+         * Paypal-Transmission-Sig
+         */
+        'paypal-transmission-sig': string;
+        /**
+         * Paypal-Cert-Url
+         */
+        'paypal-cert-url': string;
+        /**
+         * Paypal-Auth-Algo
+         */
+        'paypal-auth-algo': string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/webhooks/paypal';
+};
+
+export type PaypalWebhookErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PaypalWebhookError = PaypalWebhookErrors[keyof PaypalWebhookErrors];
+
+export type PaypalWebhookResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type PaypalWebhookResponse = PaypalWebhookResponses[keyof PaypalWebhookResponses];
+
+export type WebhookEventsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/webhooks/events';
+};
+
+export type WebhookEventsResponses = {
+    /**
+     * Response Webhook Events
+     *
+     * Successful Response
+     */
+    200: Array<ReceivedEvent>;
+};
+
+export type WebhookEventsResponse = WebhookEventsResponses[keyof WebhookEventsResponses];
 
 export type HealthData = {
     body?: never;

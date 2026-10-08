@@ -13,3 +13,4 @@ class Settings(BaseSettings):
 
     paypal_client_id: str
     paypal_client_secret: SecretStr
+    paypal_webhook_id: str
