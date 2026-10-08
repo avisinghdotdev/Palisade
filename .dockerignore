@@ -3,6 +3,8 @@
 .docs
 .vscode
 spikes
+infra
+.github
 web
 **/__pycache__
 **/.pytest_cache
