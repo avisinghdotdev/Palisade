@@ -1,6 +1,6 @@
 [project]
 name = "palisade"
-version = "0.1.0"
+version = "0.2.0"
 requires-python = ">=3.13"
 dependencies = []
 
@@ -29,7 +29,7 @@ palisade-api = { workspace = true }
 # One release version, bumped with `uv run bump-my-version bump <part>`; the copies below are
 # rewritten in the same run and the `version-sync` pre-commit hook fails when they drift.
 [tool.bumpversion]
-current_version = "0.1.0"
+current_version = "0.2.0"
 
 [[tool.bumpversion.files]]
 filename = "pyproject.toml"
@@ -54,7 +54,7 @@ testpaths = ["api/tests"]
 [tool.basedpyright]
 # "recommended" is stricter than "strict": it also reports Any, unused call results, and stale ignores.
 typeCheckingMode = "recommended"
-include = ["api"]
+include = ["api", "infra"]
 # Path.write_text() and next() return values nobody needs; flagging them adds only noise.
 reportUnusedCallResult = false
 
@@ -97,3 +97,5 @@ ban-relative-imports = "all"
 # Spikes are throwaway scripts that report through stdout.
 "spikes/*" = ["T201"]
 "**/__init__.py" = ["F401"]
+# The Bicep check runs the az CLI resolved from PATH.
+"infra/check.py" = ["S603"]
