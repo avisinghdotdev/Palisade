@@ -70,9 +70,8 @@ jobs:
             --deny-settings-mode denyDelete --deny-settings-apply-to-child-scopes \
             --deny-settings-excluded-principals "cc37a2c5-39c9-44c8-8eab-d48cda185d0f a4db2292-7f75-4aac-8b2c-74d57c9c181f" \
             --yes --output none
-      - name: Health check
+      - name: Health check through Cloudflare
         run: |
-          fqdn=$(az stack sub show --name palisade-prod --query outputs.webFqdn.value --output tsv)
-          body=$(curl --fail --silent --show-error --retry 6 --retry-all-errors --retry-delay 10 "https://$fqdn/api/health")
+          body=$(curl --fail --silent --show-error --retry 6 --retry-all-errors --retry-delay 10 https://palisade.avisingh.dev/api/health)
           echo "$body"
           grep --quiet '"status":"ok"' <<< "$body"
