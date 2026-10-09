@@ -53,6 +53,7 @@ var apiSecrets = [
   { env: 'PAYPAL_CLIENT_SECRET', secret: 'paypal-client-secret' }
   { env: 'PAYPAL_BUYER_CLIENT_ID', secret: 'paypal-buyer-client-id' }
   { env: 'PAYPAL_BUYER_CLIENT_SECRET', secret: 'paypal-buyer-client-secret' }
+  { env: 'PAYPAL_WEBHOOK_ID', secret: 'paypal-webhook-id' }
   { env: 'ANTHROPIC_API_KEY', secret: 'anthropic-api-key' }
 ]
 
