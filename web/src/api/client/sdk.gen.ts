@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { HealthData, HealthResponses, PaypalHealthData, PaypalHealthResponses } from './types.gen';
+import type { HealthData, HealthResponses, PaypalHealthData, PaypalHealthResponses, PaypalWebhookData, PaypalWebhookErrors, PaypalWebhookResponses, WebhookEventsData, WebhookEventsResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -22,6 +22,21 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
  * Paypal Health
  */
 export const paypalHealth = <ThrowOnError extends boolean = false>(options?: Options<PaypalHealthData, ThrowOnError>): RequestResult<PaypalHealthResponses, unknown, ThrowOnError> => (options?.client ?? client).get<PaypalHealthResponses, unknown, ThrowOnError>({ url: '/api/paypal/health', ...options });
+
+/**
+ * Receive Paypal Webhook
+ *
+ * Accept a delivery once PayPal confirms its signature; a repeat delivery is a no-op.
+ *
+ * A 2xx stops PayPal's retries, a 400 answers a signature PayPal rejects, and an error reaching
+ * PayPal surfaces as a 500 so PayPal delivers the event again later.
+ */
+export const paypalWebhook = <ThrowOnError extends boolean = false>(options: Options<PaypalWebhookData, ThrowOnError>): RequestResult<PaypalWebhookResponses, PaypalWebhookErrors, ThrowOnError> => (options.client ?? client).post<PaypalWebhookResponses, PaypalWebhookErrors, ThrowOnError>({ url: '/api/webhooks/paypal', ...options });
+
+/**
+ * Webhook Events
+ */
+export const webhookEvents = <ThrowOnError extends boolean = false>(options?: Options<WebhookEventsData, ThrowOnError>): RequestResult<WebhookEventsResponses, unknown, ThrowOnError> => (options?.client ?? client).get<WebhookEventsResponses, unknown, ThrowOnError>({ url: '/api/webhooks/events', ...options });
 
 /**
  * Health

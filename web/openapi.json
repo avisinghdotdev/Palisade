@@ -26,6 +26,103 @@
         }
       }
     },
+    "/api/webhooks/paypal": {
+      "post": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Receive Paypal Webhook",
+        "description": "Accept a delivery once PayPal confirms its signature; a repeat delivery is a no-op.\n\nA 2xx stops PayPal's retries, a 400 answers a signature PayPal rejects, and an error reaching\nPayPal surfaces as a 500 so PayPal delivers the event again later.",
+        "operationId": "paypal_webhook",
+        "parameters": [
+          {
+            "name": "paypal-transmission-id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Paypal-Transmission-Id"
+            }
+          },
+          {
+            "name": "paypal-transmission-time",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Paypal-Transmission-Time"
+            }
+          },
+          {
+            "name": "paypal-transmission-sig",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Paypal-Transmission-Sig"
+            }
+          },
+          {
+            "name": "paypal-cert-url",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Paypal-Cert-Url"
+            }
+          },
+          {
+            "name": "paypal-auth-algo",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Paypal-Auth-Algo"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/webhooks/events": {
+      "get": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Webhook Events",
+        "operationId": "webhook_events",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ReceivedEvent"
+                  },
+                  "type": "array",
+                  "title": "Response Webhook Events"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "summary": "Health",
@@ -47,6 +144,19 @@
   },
   "components": {
     "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
       "Health": {
         "properties": {
           "status": {
@@ -66,6 +176,7 @@
         ],
         "title": "Health"
       },
+      "JsonValue": {},
       "PayPalHealth": {
         "properties": {
           "status": {
@@ -98,6 +209,117 @@
           "token_expires_at"
         ],
         "title": "PayPalHealth"
+      },
+      "ReceivedEvent": {
+        "properties": {
+          "event": {
+            "$ref": "#/components/schemas/WebhookEvent"
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Received At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "event",
+          "received_at"
+        ],
+        "title": "ReceivedEvent"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "WebhookEvent": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "event_type": {
+            "type": "string",
+            "title": "Event Type"
+          },
+          "create_time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Create Time"
+          },
+          "resource_type": {
+            "type": "string",
+            "title": "Resource Type"
+          },
+          "resource_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Version"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "resource": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Resource"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "event_type",
+          "create_time",
+          "resource_type",
+          "summary",
+          "resource"
+        ],
+        "title": "WebhookEvent"
       }
     }
   }
