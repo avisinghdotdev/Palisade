@@ -1,10 +1,16 @@
-"""Verified webhook events, kept in memory until the database slice persists them."""
+"""Verified webhook events in PostgreSQL."""
 
-from collections import OrderedDict
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import final
 
 from pydantic import BaseModel, JsonValue
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from palisade_api.webhooks.models import WebhookEventRecord
+
+EVENTS_LISTED = 100
 
 
 class WebhookEvent(BaseModel):
@@ -24,22 +30,38 @@ class ReceivedEvent(BaseModel):
 
 @final
 class WebhookStore:
-    """Events by id, newest first, capped so memory stays bounded."""
+    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
+        self._sessions = sessions
 
-    def __init__(self, capacity: int = 1000) -> None:
-        self._capacity = capacity
-        self._events: OrderedDict[str, ReceivedEvent] = OrderedDict()
-
-    def add(self, event: WebhookEvent) -> bool:
-        """Store the event; False when one with the same id is already here."""
-        if event.id in self._events:
-            return False
-        self._events[event.id] = ReceivedEvent(
-            event=event, received_at=datetime.now(UTC)
+    async def add(self, event: WebhookEvent) -> bool:
+        """Store the event; False when one with the same id is already stored."""
+        statement = (
+            insert(WebhookEventRecord)
+            .values(
+                id=event.id,
+                event_type=event.event_type,
+                payload=event.model_dump(mode="json"),
+            )
+            .on_conflict_do_nothing(index_elements=[WebhookEventRecord.id])
+            .returning(WebhookEventRecord.id)
         )
-        while len(self._events) > self._capacity:
-            self._events.popitem(last=False)
-        return True
+        async with self._sessions.begin() as session:
+            inserted = (await session.execute(statement)).scalar_one_or_none()
+        return inserted is not None
 
-    def events(self) -> list[ReceivedEvent]:
-        return list(reversed(self._events.values()))
+    async def events(self) -> list[ReceivedEvent]:
+        """The most recent events, newest first."""
+        statement = (
+            select(WebhookEventRecord)
+            .order_by(WebhookEventRecord.received_at.desc())
+            .limit(EVENTS_LISTED)
+        )
+        async with self._sessions() as session:
+            records = (await session.scalars(statement)).all()
+        return [
+            ReceivedEvent(
+                event=WebhookEvent.model_validate(record.payload),
+                received_at=record.received_at,
+            )
+            for record in records
+        ]
