@@ -1,6 +1,6 @@
 [project]
 name = "palisade"
-version = "0.2.2"
+version = "0.3.0"
 requires-python = ">=3.14"
 dependencies = []
 
@@ -29,7 +29,7 @@ palisade-api = { workspace = true }
 # One release version, bumped with `uv run bump-my-version bump <part>`; the copies below are
 # rewritten in the same run and the `version-sync` pre-commit hook fails when they drift.
 [tool.bumpversion]
-current_version = "0.2.2"
+current_version = "0.3.0"
 # The release worktree is staged when the bump runs, and the version-sync hook runs on dirty trees.
 allow_dirty = true
 

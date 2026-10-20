@@ -7,6 +7,7 @@ import httpx2
 from fastapi import FastAPI
 from pydantic import BaseModel
 
+from palisade_api.logging import RequestLogMiddleware, configure_logging
 from palisade_api.paypal import router as paypal
 from palisade_api.paypal.auth import SANDBOX_BASE_URL, PayPalAuth
 from palisade_api.paypal.client import PayPalClient
@@ -26,6 +27,7 @@ class State(TypedDict):
 async def lifespan(_app: FastAPI) -> AsyncGenerator[State]:
     # pydantic-settings fills the fields from the environment; pyright only sees the synthesized constructor.
     settings = Settings()  # pyright: ignore[reportCallIssue]
+    configure_logging(settings.log_level, settings.log_format)
     async with httpx2.AsyncClient(
         base_url=SANDBOX_BASE_URL, timeout=httpx2.Timeout(10.0)
     ) as http:
@@ -44,6 +46,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[State]:
 
 
 app = FastAPI(title="Palisade API", version=version("palisade-api"), lifespan=lifespan)
+app.add_middleware(RequestLogMiddleware)
 app.include_router(paypal.router)
 app.include_router(webhooks.router)
 
