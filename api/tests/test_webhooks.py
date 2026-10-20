@@ -1,11 +1,12 @@
 import json
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from typing import Literal, final
+from uuid import uuid4
 
 import httpx2
 import pytest
-from fastapi.testclient import TestClient
 from pydantic import BaseModel, TypeAdapter
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from palisade_api.main import app
 from palisade_api.paypal.auth import SANDBOX_BASE_URL, PayPalAuth
@@ -14,17 +15,9 @@ from palisade_api.webhooks.router import webhook_store, webhook_verifier
 from palisade_api.webhooks.store import ReceivedEvent, WebhookStore
 from palisade_api.webhooks.verification import WebhookVerifier
 
+pytestmark = pytest.mark.anyio
+
 WEBHOOK_ID = "9HH12345AB678901C"
-EVENT = {
-    "id": "WH-1",
-    "event_type": "PAYMENT.CAPTURE.COMPLETED",
-    "create_time": "2026-10-09T10:00:00.000Z",
-    "resource_type": "capture",
-    "resource_version": "2.0",
-    "summary": "Payment completed for $ 95.0 USD",
-    "resource": {"id": "5GS7344552642101Y", "amount": {"value": "95.00"}},
-}
-RAW_EVENT = json.dumps(EVENT, separators=(",", ":")).encode()
 SIGNATURE_HEADERS = {
     "paypal-transmission-id": "a2d7b9c0-1",
     "paypal-transmission-time": "2026-10-09T10:00:01Z",
@@ -66,8 +59,27 @@ class PayPalStub:
         )
 
 
+def delivery(event_id: str) -> bytes:
+    """A capture event as PayPal sends it; each test uses its own id, since the database is shared."""
+    event = {
+        "id": event_id,
+        "event_type": "PAYMENT.CAPTURE.COMPLETED",
+        "create_time": "2026-10-09T10:00:00.000Z",
+        "resource_type": "capture",
+        "resource_version": "2.0",
+        "summary": "Payment completed for $ 95.0 USD",
+        "resource": {"id": "5GS7344552642101Y", "amount": {"value": "95.00"}},
+    }
+    return json.dumps(event, separators=(",", ":")).encode()
+
+
 @pytest.fixture
-def paypal() -> Iterator[PayPalStub]:
+def event_id() -> str:
+    return f"WH-TEST-{uuid4().hex}"
+
+
+@pytest.fixture
+def paypal(sessions: async_sessionmaker[AsyncSession]) -> Iterator[PayPalStub]:
     stub = PayPalStub()
     http = httpx2.AsyncClient(
         transport=httpx2.MockTransport(stub.handle), base_url=SANDBOX_BASE_URL
@@ -75,63 +87,81 @@ def paypal() -> Iterator[PayPalStub]:
     verifier = WebhookVerifier(
         PayPalClient(http, PayPalAuth(http, "client-id", "client-secret")), WEBHOOK_ID
     )
-    store = WebhookStore()
+    store = WebhookStore(sessions)
     app.dependency_overrides[webhook_verifier] = lambda: verifier
     app.dependency_overrides[webhook_store] = lambda: store
     yield stub
     app.dependency_overrides.clear()
 
 
-def listed_events(client: TestClient) -> list[ReceivedEvent]:
-    return RECEIVED_EVENTS.validate_json(client.get("/api/webhooks/events").content)
+@pytest.fixture
+async def client() -> AsyncIterator[httpx2.AsyncClient]:
+    async with httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(app=app), base_url="http://palisade.test"
+    ) as http:
+        yield http
 
 
-def test_verified_delivery_is_stored_and_listed(paypal: PayPalStub) -> None:
-    client = TestClient(app)
+async def listed_ids(client: httpx2.AsyncClient) -> list[str]:
+    response = await client.get("/api/webhooks/events")
+    return [item.event.id for item in RECEIVED_EVENTS.validate_json(response.content)]
 
-    response = client.post(
-        "/api/webhooks/paypal", content=RAW_EVENT, headers=SIGNATURE_HEADERS
+
+async def test_verified_delivery_is_stored_and_listed(
+    paypal: PayPalStub, client: httpx2.AsyncClient, event_id: str
+) -> None:
+    raw_event = delivery(event_id)
+
+    response = await client.post(
+        "/api/webhooks/paypal", content=raw_event, headers=SIGNATURE_HEADERS
     )
 
     assert response.status_code == 204
     postback = Postback.model_validate_json(paypal.postbacks[0])
     assert postback.webhook_id == WEBHOOK_ID
     assert postback.transmission_id == SIGNATURE_HEADERS["paypal-transmission-id"]
-    assert RAW_EVENT in paypal.postbacks[0]
-    events = listed_events(client)
-    assert [item.event.id for item in events] == ["WH-1"]
-    assert events[0].event.resource["amount"] == {"value": "95.00"}
+    assert raw_event in paypal.postbacks[0]
+    listed = RECEIVED_EVENTS.validate_json(
+        (await client.get("/api/webhooks/events")).content
+    )
+    [stored] = [item for item in listed if item.event.id == event_id]
+    assert stored.event.resource["amount"] == {"value": "95.00"}
 
 
-def test_rejected_signature_is_a_400_and_nothing_is_stored(paypal: PayPalStub) -> None:
+async def test_rejected_signature_is_a_400_and_nothing_is_stored(
+    paypal: PayPalStub, client: httpx2.AsyncClient, event_id: str
+) -> None:
     paypal.verification_status = "FAILURE"
-    client = TestClient(app)
 
-    response = client.post(
-        "/api/webhooks/paypal", content=RAW_EVENT, headers=SIGNATURE_HEADERS
+    response = await client.post(
+        "/api/webhooks/paypal", content=delivery(event_id), headers=SIGNATURE_HEADERS
     )
 
     assert response.status_code == 400
-    assert listed_events(client) == []
+    assert event_id not in await listed_ids(client)
 
 
-def test_repeat_delivery_is_stored_once(paypal: PayPalStub) -> None:
-    client = TestClient(app)
+async def test_repeat_delivery_is_stored_once(
+    paypal: PayPalStub, client: httpx2.AsyncClient, event_id: str
+) -> None:
+    raw_event = delivery(event_id)
 
-    first = client.post(
-        "/api/webhooks/paypal", content=RAW_EVENT, headers=SIGNATURE_HEADERS
+    first = await client.post(
+        "/api/webhooks/paypal", content=raw_event, headers=SIGNATURE_HEADERS
     )
-    second = client.post(
-        "/api/webhooks/paypal", content=RAW_EVENT, headers=SIGNATURE_HEADERS
+    second = await client.post(
+        "/api/webhooks/paypal", content=raw_event, headers=SIGNATURE_HEADERS
     )
 
     assert (first.status_code, second.status_code) == (204, 204)
     assert len(paypal.postbacks) == 2
-    assert len(listed_events(client)) == 1
+    assert (await listed_ids(client)).count(event_id) == 1
 
 
-def test_delivery_without_signature_headers_is_a_422(paypal: PayPalStub) -> None:
-    response = TestClient(app).post("/api/webhooks/paypal", content=RAW_EVENT)
+async def test_delivery_without_signature_headers_is_a_422(
+    paypal: PayPalStub, client: httpx2.AsyncClient, event_id: str
+) -> None:
+    response = await client.post("/api/webhooks/paypal", content=delivery(event_id))
 
     assert response.status_code == 422
     assert paypal.postbacks == []

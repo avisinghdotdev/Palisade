@@ -1,6 +1,6 @@
 [project]
 name = "palisade"
-version = "0.3.0"
+version = "0.4.0"
 requires-python = ">=3.14"
 dependencies = []
 
@@ -13,6 +13,8 @@ dev = [
     # release carries it.
     "basedpyright==1.40.0",
     "bump-my-version>=1.6.3",
+    # psycopg's bundled OpenSSL finds no system trust store on Windows; tests point it at this one.
+    "certifi>=2026.10.19",
     # FastAPI's TestClient is built on httpx2.
     "httpx2>=2.15.1",
     "pre-commit>=4.7.0",
@@ -29,7 +31,7 @@ palisade-api = { workspace = true }
 # One release version, bumped with `uv run bump-my-version bump <part>`; the copies below are
 # rewritten in the same run and the `version-sync` pre-commit hook fails when they drift.
 [tool.bumpversion]
-current_version = "0.3.0"
+current_version = "0.4.0"
 # The release worktree is staged when the bump runs, and the version-sync hook runs on dirty trees.
 allow_dirty = true
 
@@ -52,6 +54,10 @@ replace = '"version": "{new_version}"'
 
 [tool.pytest.ini_options]
 testpaths = ["api/tests"]
+
+# `uv run alembic revision -m "..."` writes new migrations into the package's migrations folder.
+[tool.alembic]
+script_location = "palisade_api:migrations"
 
 [tool.basedpyright]
 # "recommended" is stricter than "strict": it also reports Any, unused call results, and stale ignores.
