@@ -91,10 +91,21 @@ module containerAppsEnvironment 'br/public:avm/res/app/managed-environment:0.16.
     zoneRedundant: false
     publicNetworkAccess: 'Enabled'
     workloadProfiles: [{ name: 'Consumption', workloadProfileType: 'Consumption' }]
-    appLogsConfiguration: {
-      destination: 'log-analytics'
-      logAnalyticsWorkspaceResourceId: logAnalytics.outputs.resourceId
-    }
+    // The log-analytics destination posts with the workspace shared key, which a workspace with
+    // local authentication off rejects silently. The Azure Monitor route lands the same logs in
+    // the resource-specific tables ContainerAppConsoleLogs and ContainerAppSystemLogs.
+    appLogsConfiguration: { destination: 'azure-monitor' }
+    diagnosticSettings: [
+      {
+        name: 'log-analytics'
+        workspaceResourceId: logAnalytics.outputs.resourceId
+        logAnalyticsDestinationType: 'Dedicated'
+        logCategoriesAndGroups: [
+          { category: 'ContainerAppConsoleLogs' }
+          { category: 'ContainerAppSystemLogs' }
+        ]
+      }
+    ]
     managedIdentities: { userAssignedResourceIds: [webIdentityResourceId] }
     certificate: hasOriginCertificate
       ? {
