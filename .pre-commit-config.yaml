@@ -1,5 +1,5 @@
-# Generated code is regenerated, never fixed in place.
-exclude: ^web/src/api/client/
+# Generated files are regenerated, never fixed in place; the pnpm 12 lockfile is two YAML documents.
+exclude: ^(web/src/api/client/|web/pnpm-lock\.yaml$)
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
@@ -11,15 +11,17 @@ repos:
       # bump-my-version rewrites pyproject.toml with CRLF on Windows; this restores LF at commit.
       - id: mixed-line-ending
         args: [--fix=lf]
+      # Two trailing spaces are a Markdown line break; .editorconfig keeps them for the same reason.
       - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.9
+    rev: v0.17.1
     hooks:
       - id: ruff-check
         args: [--fix]
       - id: ruff-format
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.12.19
+    rev: 0.13.1
     hooks:
       - id: uv-lock
   - repo: https://github.com/editorconfig-checker/editorconfig-checker.python
@@ -54,7 +56,7 @@ repos:
       - id: version-sync
         name: version sync
         # A dry run fails when any configured file lacks the current version.
-        entry: uv run --frozen bump-my-version bump --dry-run --allow-dirty patch
+        entry: uv run --frozen bump-my-version bump --dry-run patch
         language: system
         files: ^(pyproject\.toml|api/pyproject\.toml|web/package\.json)$
         pass_filenames: false

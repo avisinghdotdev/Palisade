@@ -1,7 +1,7 @@
 [project]
 name = "palisade"
-version = "0.2.0"
-requires-python = ">=3.13"
+version = "0.2.1"
+requires-python = ">=3.14"
 dependencies = []
 
 [dependency-groups]
@@ -9,15 +9,15 @@ dev = [
     # Workspace members are installed into this environment so tests and type checks see them.
     "palisade-api",
     # 1.40.1+ (pyright 1.1.414) always applies the `**/.*` default exclude, even next to an explicit
-    # `exclude`. Lift the pin once basedpyright exposes `useDefaultExcludes`.
+    # `exclude`. Pyright merged `useDefaultExcludes` on 2026-10-12; lift the pin once a basedpyright
+    # release carries it.
     "basedpyright==1.40.0",
-    "bump-my-version>=1.5.1",
+    "bump-my-version>=1.6.3",
     # FastAPI's TestClient is built on httpx2.
-    "httpx2>=2.13.1",
-    "pre-commit>=4.6.2",
-    "pydantic>=2.13.4",
+    "httpx2>=2.15.1",
+    "pre-commit>=4.7.0",
     "pytest>=9.1.1",
-    "ruff>=0.16.3",
+    "ruff>=0.17.1",
 ]
 
 [tool.uv.workspace]
@@ -29,7 +29,9 @@ palisade-api = { workspace = true }
 # One release version, bumped with `uv run bump-my-version bump <part>`; the copies below are
 # rewritten in the same run and the `version-sync` pre-commit hook fails when they drift.
 [tool.bumpversion]
-current_version = "0.2.0"
+current_version = "0.2.1"
+# The release worktree is staged when the bump runs, and the version-sync hook runs on dirty trees.
+allow_dirty = true
 
 [[tool.bumpversion.files]]
 filename = "pyproject.toml"

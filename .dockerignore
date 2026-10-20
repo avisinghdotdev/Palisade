@@ -1,6 +1,6 @@
 .git
 .venv
-.docs
+docs
 .vscode
 spikes
 infra
@@ -8,4 +8,6 @@ infra
 web
 **/__pycache__
 **/.pytest_cache
+.ruff_cache
+.cloudflare
 .env*
