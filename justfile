@@ -1,4 +1,4 @@
-set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]
+set windows-shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-Command"]
 
 # List available recipes
 default:
@@ -9,6 +9,25 @@ init: _ensure-uv _ensure-pnpm
     uv sync
     uv run pre-commit install --install-hooks
     pnpm --dir web install
+
+# Empty Docker Desktop: every container, image, volume (named too), custom network, build cache and extra builder
+[windows]
+docker-wipe:
+    @$c = docker ps -aq; if ($c) { docker rm -f -v $c }; \
+    docker buildx rm --all-inactive -f; \
+    docker buildx prune -af; \
+    docker system prune -af --volumes; \
+    docker volume prune -af; \
+    docker system df
+
+[unix]
+docker-wipe:
+    @c=$(docker ps -aq); if [ -n "$c" ]; then docker rm -f -v $c; fi; \
+    docker buildx rm --all-inactive -f; \
+    docker buildx prune -af; \
+    docker system prune -af --volumes; \
+    docker volume prune -af; \
+    docker system df
 
 # Install uv via the official installer when it is not on PATH
 [windows]

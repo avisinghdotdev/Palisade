@@ -8,6 +8,7 @@
     "**/.pytest_cache": true,
     "**/.venv": true,
     "**/node_modules": true,
+    ".cloudflare": true,
     "web/.react-router": true,
     "web/dist": true
   },
