@@ -15,3 +15,6 @@ services:
       dockerfile: api/Dockerfile
       target: serve
     env_file: .env
+    environment:
+      LOG_LEVEL: INFO
+      LOG_FORMAT: console

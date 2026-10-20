@@ -56,6 +56,11 @@ var apiSecrets = [
   { env: 'PAYPAL_WEBHOOK_ID', secret: 'paypal-webhook-id' }
   { env: 'ANTHROPIC_API_KEY', secret: 'anthropic-api-key' }
 ]
+var apiSecretEnvironment = [for item in apiSecrets: { name: item.env, secretRef: item.secret }]
+var apiEnvironment = [
+  { name: 'LOG_LEVEL', value: 'INFO' }
+  { name: 'LOG_FORMAT', value: 'json' }
+]
 
 resource keyVault 'Microsoft.KeyVault/vaults@2026-02-01' existing = {
   scope: resourceGroup(resourceGroupName)
@@ -147,7 +152,7 @@ module apiApp 'br/public:avm/res/app/container-app:0.23.0' = {
         name: 'api'
         image: '${registryLoginServer}/${workload}/api:${imageTag}'
         resources: { cpu: json('0.25'), memory: '0.5Gi' }
-        env: [for item in apiSecrets: { name: item.env, secretRef: item.secret }]
+        env: concat(apiEnvironment, apiSecretEnvironment)
       }
     ]
   }
