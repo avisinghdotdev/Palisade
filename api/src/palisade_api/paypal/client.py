@@ -3,6 +3,7 @@
 from typing import final
 
 import httpx2
+import structlog
 
 from palisade_api.paypal.auth import PayPalAuth
 
@@ -16,7 +17,7 @@ class PayPalClient:
     async def post_json(self, path: str, body: bytes) -> httpx2.Response:
         """POST a JSON document given as bytes, so the caller controls its exact wire form."""
         token = await self._auth.token()
-        return await self._http.post(
+        response = await self._http.post(
             path,
             content=body,
             headers={
@@ -24,3 +25,8 @@ class PayPalClient:
                 "Content-Type": "application/json",
             },
         )
+        # PayPal support asks for this id; bound here, it lands on the request's wide event.
+        debug_id = response.headers.get("paypal-debug-id")
+        if debug_id is not None:
+            structlog.contextvars.bind_contextvars(paypal_debug_id=debug_id)
+        return response
