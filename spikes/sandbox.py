@@ -53,6 +53,32 @@ class PayPal:
             sys.exit(f"expected {expect}")
         return payload
 
+    async def probe(
+        self,
+        method: str,
+        path: str,
+        body: dict[str, Any] | None = None,
+        *,
+        headers: dict[str, str] | None = None,
+    ) -> tuple[int, Any, str]:
+        """Like `call`, but reports the answer instead of exiting: for calls whose failure is the finding."""
+        response = await self._http.request(
+            method,
+            path,
+            json=body,
+            headers={
+                **self._headers,
+                **(headers or {}),
+                "PayPal-Request-Id": str(uuid.uuid4()),
+            },
+        )
+        payload = response.json() if response.content else None
+        return (
+            response.status_code,
+            payload,
+            response.headers.get("paypal-debug-id", ""),
+        )
+
 
 async def connect(http: httpx2.AsyncClient, app: str = "seller") -> PayPal:
     """Token for the seller app (`PAYPAL_*`) or the demo buyer's app (`PAYPAL_BUYER_*`)."""
