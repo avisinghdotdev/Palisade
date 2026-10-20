@@ -55,11 +55,14 @@ var apiSecrets = [
   { env: 'PAYPAL_BUYER_CLIENT_SECRET', secret: 'paypal-buyer-client-secret' }
   { env: 'PAYPAL_WEBHOOK_ID', secret: 'paypal-webhook-id' }
   { env: 'ANTHROPIC_API_KEY', secret: 'anthropic-api-key' }
+  { env: 'DATABASE_URL', secret: 'database-url' }
 ]
 var apiSecretEnvironment = [for item in apiSecrets: { name: item.env, secretRef: item.secret }]
 var apiEnvironment = [
   { name: 'LOG_LEVEL', value: 'INFO' }
   { name: 'LOG_FORMAT', value: 'json' }
+  // Startup applies pending migrations under an advisory lock, so a second replica waits.
+  { name: 'RUN_MIGRATIONS', value: 'true' }
 ]
 
 resource keyVault 'Microsoft.KeyVault/vaults@2026-02-01' existing = {

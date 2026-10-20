@@ -53,12 +53,12 @@ async def receive_paypal_webhook(
             status.HTTP_400_BAD_REQUEST, "PayPal rejected the delivery's signature"
         )
     event = WebhookEvent.model_validate_json(raw_event)
-    outcome = "stored" if store.add(event) else "already stored"
+    outcome = "stored" if await store.add(event) else "already stored"
     logger.info("paypal webhook %s %s %s", event.event_type, event.id, outcome)
 
 
 @router.get("/events", operation_id="webhook_events")
-def webhook_events(
+async def webhook_events(
     store: Annotated[WebhookStore, Depends(webhook_store)],
 ) -> list[ReceivedEvent]:
-    return store.events()
+    return await store.events()
