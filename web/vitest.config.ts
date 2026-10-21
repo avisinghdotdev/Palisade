@@ -2,6 +2,7 @@ import { defineConfig } from "vitest/config";
 
 // Separate from vite.config.ts because the React Router plugin fails under Vitest.
 export default defineConfig({
+  resolve: { tsconfigPaths: true },
   test: {
     environment: "jsdom",
     // Testing Library's auto-cleanup needs a global afterEach; tests still import explicitly.

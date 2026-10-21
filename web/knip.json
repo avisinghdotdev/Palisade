@@ -1,4 +1,4 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "ignore": ["src/api/client/**"]
+  "ignore": ["src/api/client/**", "src/components/ui/**"]
 }

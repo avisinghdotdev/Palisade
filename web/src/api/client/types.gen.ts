@@ -31,6 +31,22 @@ export type Health = {
 export type JsonValue = unknown;
 
 /**
+ * Money
+ *
+ * An amount in PayPal's shape, so an order line can carry it unchanged.
+ */
+export type Money = {
+    /**
+     * Value
+     */
+    value: string;
+    /**
+     * Currency Code
+     */
+    currency_code: 'USD';
+};
+
+/**
  * PayPalHealth
  */
 export type PayPalHealth = {
@@ -50,6 +66,62 @@ export type PayPalHealth = {
      * Token Expires At
      */
     token_expires_at: string;
+};
+
+/**
+ * PhotoCredit
+ *
+ * Who took the product photo and where it lives on Unsplash.
+ */
+export type PhotoCredit = {
+    /**
+     * By
+     */
+    by: string;
+    /**
+     * By Url
+     */
+    by_url: string;
+    /**
+     * Url
+     */
+    url: string;
+};
+
+/**
+ * Product
+ */
+export type Product = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Brand
+     */
+    brand: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Category
+     */
+    category: string;
+    /**
+     * Description
+     */
+    description: string;
+    price: Money;
+    /**
+     * Sizes
+     */
+    sizes: Array<string>;
+    /**
+     * Image Path
+     */
+    image_path: string;
+    photo: PhotoCredit;
 };
 
 /**
@@ -251,6 +323,54 @@ export type ReplayWebhookEventResponses = {
 };
 
 export type ReplayWebhookEventResponse = ReplayWebhookEventResponses[keyof ReplayWebhookEventResponses];
+
+export type ProductsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/shop/products';
+};
+
+export type ProductsResponses = {
+    /**
+     * Response Products
+     *
+     * Successful Response
+     */
+    200: Array<Product>;
+};
+
+export type ProductsResponse = ProductsResponses[keyof ProductsResponses];
+
+export type ProductData = {
+    body?: never;
+    path: {
+        /**
+         * Product Id
+         */
+        product_id: string;
+    };
+    query?: never;
+    url: '/api/shop/products/{product_id}';
+};
+
+export type ProductErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ProductError = ProductErrors[keyof ProductErrors];
+
+export type ProductResponses = {
+    /**
+     * Successful Response
+     */
+    200: Product;
+};
+
+export type ProductResponse = ProductResponses[keyof ProductResponses];
 
 export type HealthData = {
     body?: never;
