@@ -53,6 +53,16 @@ export type PayPalHealth = {
 };
 
 /**
+ * QueuedJob
+ */
+export type QueuedJob = {
+    /**
+     * Job Id
+     */
+    job_id: number;
+};
+
+/**
  * ReceivedEvent
  */
 export type ReceivedEvent = {
@@ -61,6 +71,10 @@ export type ReceivedEvent = {
      * Received At
      */
     received_at: string;
+    /**
+     * Processed At
+     */
+    processed_at: string | null;
 };
 
 /**
@@ -207,6 +221,36 @@ export type WebhookEventsResponses = {
 };
 
 export type WebhookEventsResponse = WebhookEventsResponses[keyof WebhookEventsResponses];
+
+export type ReplayWebhookEventData = {
+    body?: never;
+    path: {
+        /**
+         * Event Id
+         */
+        event_id: string;
+    };
+    query?: never;
+    url: '/api/webhooks/events/{event_id}/replay';
+};
+
+export type ReplayWebhookEventErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReplayWebhookEventError = ReplayWebhookEventErrors[keyof ReplayWebhookEventErrors];
+
+export type ReplayWebhookEventResponses = {
+    /**
+     * Successful Response
+     */
+    202: QueuedJob;
+};
+
+export type ReplayWebhookEventResponse = ReplayWebhookEventResponses[keyof ReplayWebhookEventResponses];
 
 export type HealthData = {
     body?: never;
