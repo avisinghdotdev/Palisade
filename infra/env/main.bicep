@@ -63,6 +63,8 @@ var apiEnvironment = [
   { name: 'LOG_FORMAT', value: 'json' }
   // Startup applies pending migrations under an advisory lock, so a second replica waits.
   { name: 'RUN_MIGRATIONS', value: 'true' }
+  // Every replica runs the job worker; the queue hands each job to one of them.
+  { name: 'RUN_WORKER', value: 'true' }
 ]
 
 resource keyVault 'Microsoft.KeyVault/vaults@2026-02-01' existing = {

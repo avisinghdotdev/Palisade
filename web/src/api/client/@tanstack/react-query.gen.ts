@@ -3,8 +3,8 @@
 import { type DefaultError, queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 
 import { client } from '../client.gen';
-import { health, type Options, paypalHealth, paypalWebhook, webhookEvents } from '../sdk.gen';
-import type { HealthData, HealthResponse, PaypalHealthData, PaypalHealthResponse, PaypalWebhookData, PaypalWebhookError, PaypalWebhookResponse, WebhookEventsData, WebhookEventsResponse } from '../types.gen';
+import { health, type Options, paypalHealth, paypalWebhook, replayWebhookEvent, webhookEvents } from '../sdk.gen';
+import type { HealthData, HealthResponse, PaypalHealthData, PaypalHealthResponse, PaypalWebhookData, PaypalWebhookError, PaypalWebhookResponse, ReplayWebhookEventData, ReplayWebhookEventError, ReplayWebhookEventResponse, WebhookEventsData, WebhookEventsResponse } from '../types.gen';
 
 export type QueryKey<TOptions extends Options> = [
     Pick<TOptions, 'baseUrl' | 'body' | 'headers' | 'path' | 'query'> & {
@@ -62,8 +62,9 @@ export const paypalHealthOptions = (options?: Options<PaypalHealthData>) => quer
  *
  * Accept a delivery once PayPal confirms its signature; a repeat delivery is a no-op.
  *
- * A 2xx stops PayPal's retries, a 400 answers a signature PayPal rejects, and an error reaching
- * PayPal surfaces as a 500 so PayPal delivers the event again later.
+ * The event is stored and its processing queued in one transaction before the 2xx that stops
+ * PayPal's retries. A 400 answers a signature PayPal rejects, and an error reaching PayPal or the
+ * database surfaces as a 500 so PayPal delivers the event again later.
  */
 export const paypalWebhookMutation = (options?: Partial<Options<PaypalWebhookData>>): UseMutationOptions<PaypalWebhookResponse, PaypalWebhookError, Options<PaypalWebhookData>> => {
     const mutationOptions: UseMutationOptions<PaypalWebhookResponse, PaypalWebhookError, Options<PaypalWebhookData>> = {
@@ -96,6 +97,25 @@ export const webhookEventsOptions = (options?: Options<WebhookEventsData>) => qu
     },
     queryKey: webhookEventsQueryKey(options)
 });
+
+/**
+ * Replay Webhook Event
+ *
+ * Queue a stored event for processing again, as if it had just arrived.
+ */
+export const replayWebhookEventMutation = (options?: Partial<Options<ReplayWebhookEventData>>): UseMutationOptions<ReplayWebhookEventResponse, ReplayWebhookEventError, Options<ReplayWebhookEventData>> => {
+    const mutationOptions: UseMutationOptions<ReplayWebhookEventResponse, ReplayWebhookEventError, Options<ReplayWebhookEventData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await replayWebhookEvent({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
 
 export const healthQueryKey = (options?: Options<HealthData>) => createQueryKey('health', options);
 

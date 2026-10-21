@@ -1,6 +1,6 @@
 import asyncio
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from importlib.metadata import version
 from typing import Literal, TypedDict
 
@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from palisade_api.database import create_engine
+from palisade_api.jobs import run_worker
 from palisade_api.logging import RequestLogMiddleware, configure_logging
 from palisade_api.migrate import upgrade_to_head
 from palisade_api.paypal import router as paypal
@@ -18,6 +19,7 @@ from palisade_api.paypal.client import PayPalClient
 from palisade_api.settings import Settings
 from palisade_api.webhooks import router as webhooks
 from palisade_api.webhooks.store import WebhookStore
+from palisade_api.webhooks.tasks import enqueue_processing
 from palisade_api.webhooks.verification import WebhookVerifier
 
 
@@ -35,11 +37,20 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[State]:
     if settings.run_migrations:
         # Alembic's environment drives a sync engine, so it runs off the event loop.
         await asyncio.to_thread(upgrade_to_head)
-    engine = create_engine(settings.database_url.get_secret_value())
+    database_url = settings.database_url.get_secret_value()
+    engine = create_engine(database_url)
+    store = WebhookStore(async_sessionmaker(engine), enqueue_processing)
     try:
-        async with httpx2.AsyncClient(
-            base_url=SANDBOX_BASE_URL, timeout=httpx2.Timeout(10.0)
-        ) as http:
+        async with AsyncExitStack() as stack:
+            http = await stack.enter_async_context(
+                httpx2.AsyncClient(
+                    base_url=SANDBOX_BASE_URL, timeout=httpx2.Timeout(10.0)
+                )
+            )
+            if settings.run_worker:
+                await stack.enter_async_context(
+                    run_worker(database_url, {"webhook_store": store})
+                )
             auth = PayPalAuth(
                 http,
                 settings.paypal_client_id,
@@ -50,7 +61,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[State]:
                 webhook_verifier=WebhookVerifier(
                     PayPalClient(http, auth), settings.paypal_webhook_id
                 ),
-                webhook_store=WebhookStore(async_sessionmaker(engine)),
+                webhook_store=store,
             )
     finally:
         await engine.dispose()
