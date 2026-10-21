@@ -10,6 +10,7 @@
     "erasableSyntaxOnly": true,
     "jsx": "react-jsx",
     "rootDirs": [".", "./.react-router/types"],
+    "paths": { "@/*": ["./src/*"] },
     "types": ["vite/client"],
     "noEmit": true,
     "skipLibCheck": true,

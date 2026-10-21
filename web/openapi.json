@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Palisade API",
-    "version": "0.5.0"
+    "version": "0.6.0"
   },
   "paths": {
     "/api/paypal/health": {
@@ -166,6 +166,73 @@
         }
       }
     },
+    "/api/shop/products": {
+      "get": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Products",
+        "operationId": "products",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Product"
+                  },
+                  "type": "array",
+                  "title": "Response Products"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shop/products/{product_id}": {
+      "get": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Get Product",
+        "operationId": "product",
+        "parameters": [
+          {
+            "name": "product_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Product Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Product"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "summary": "Health",
@@ -220,6 +287,26 @@
         "title": "Health"
       },
       "JsonValue": {},
+      "Money": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "currency_code": {
+            "type": "string",
+            "const": "USD",
+            "title": "Currency Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "currency_code"
+        ],
+        "title": "Money",
+        "description": "An amount in PayPal's shape, so an order line can carry it unchanged."
+      },
       "PayPalHealth": {
         "properties": {
           "status": {
@@ -252,6 +339,84 @@
           "token_expires_at"
         ],
         "title": "PayPalHealth"
+      },
+      "PhotoCredit": {
+        "properties": {
+          "by": {
+            "type": "string",
+            "title": "By"
+          },
+          "by_url": {
+            "type": "string",
+            "title": "By Url"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "by",
+          "by_url",
+          "url"
+        ],
+        "title": "PhotoCredit",
+        "description": "Who took the product photo and where it lives on Unsplash."
+      },
+      "Product": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "brand": {
+            "type": "string",
+            "title": "Brand"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "price": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "sizes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sizes"
+          },
+          "image_path": {
+            "type": "string",
+            "title": "Image Path"
+          },
+          "photo": {
+            "$ref": "#/components/schemas/PhotoCredit"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "brand",
+          "name",
+          "category",
+          "description",
+          "price",
+          "sizes",
+          "image_path",
+          "photo"
+        ],
+        "title": "Product"
       },
       "QueuedJob": {
         "properties": {

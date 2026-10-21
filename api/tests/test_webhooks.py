@@ -121,14 +121,6 @@ async def queue() -> AsyncIterator[InMemoryConnector]:
             yield connector
 
 
-@pytest.fixture
-async def client() -> AsyncIterator[httpx2.AsyncClient]:
-    async with httpx2.AsyncClient(
-        transport=httpx2.ASGITransport(app=app), base_url="http://palisade.test"
-    ) as http:
-        yield http
-
-
 async def run_queued_jobs(store: WebhookStore) -> None:
     await jobs.run_worker_async(
         wait=False,
