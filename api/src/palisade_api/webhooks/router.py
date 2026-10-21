@@ -2,8 +2,14 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from pydantic import BaseModel
 
-from palisade_api.webhooks.store import ReceivedEvent, WebhookEvent, WebhookStore
+from palisade_api.webhooks.store import (
+    ReceivedEvent,
+    UnknownEvent,
+    WebhookEvent,
+    WebhookStore,
+)
 from palisade_api.webhooks.verification import Transmission, WebhookVerifier
 
 logger = logging.getLogger(__name__)
@@ -22,6 +28,10 @@ def webhook_store(request: Request) -> WebhookStore:
     return store
 
 
+class QueuedJob(BaseModel):
+    job_id: int
+
+
 @router.post(
     "/paypal", status_code=status.HTTP_204_NO_CONTENT, operation_id="paypal_webhook"
 )
@@ -37,8 +47,9 @@ async def receive_paypal_webhook(
 ) -> None:
     """Accept a delivery once PayPal confirms its signature; a repeat delivery is a no-op.
 
-    A 2xx stops PayPal's retries, a 400 answers a signature PayPal rejects, and an error reaching
-    PayPal surfaces as a 500 so PayPal delivers the event again later.
+    The event is stored and its processing queued in one transaction before the 2xx that stops
+    PayPal's retries. A 400 answers a signature PayPal rejects, and an error reaching PayPal or the
+    database surfaces as a 500 so PayPal delivers the event again later.
     """
     raw_event = await request.body()
     transmission = Transmission(
@@ -53,7 +64,8 @@ async def receive_paypal_webhook(
             status.HTTP_400_BAD_REQUEST, "PayPal rejected the delivery's signature"
         )
     event = WebhookEvent.model_validate_json(raw_event)
-    outcome = "stored" if await store.add(event) else "already stored"
+    job_id = await store.add(event)
+    outcome = "already stored" if job_id is None else f"queued as job {job_id}"
     logger.info("paypal webhook %s %s %s", event.event_type, event.id, outcome)
 
 
@@ -62,3 +74,19 @@ async def webhook_events(
     store: Annotated[WebhookStore, Depends(webhook_store)],
 ) -> list[ReceivedEvent]:
     return await store.events()
+
+
+@router.post(
+    "/events/{event_id}/replay",
+    status_code=status.HTTP_202_ACCEPTED,
+    operation_id="replay_webhook_event",
+)
+async def replay_webhook_event(
+    event_id: str, store: Annotated[WebhookStore, Depends(webhook_store)]
+) -> QueuedJob:
+    """Queue a stored event for processing again, as if it had just arrived."""
+    try:
+        job_id = await store.replay(event_id)
+    except UnknownEvent as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
+    return QueuedJob(job_id=job_id)

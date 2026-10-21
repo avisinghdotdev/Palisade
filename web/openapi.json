@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Palisade API",
-    "version": "0.4.0"
+    "version": "0.5.0"
   },
   "paths": {
     "/api/paypal/health": {
@@ -32,7 +32,7 @@
           "webhooks"
         ],
         "summary": "Receive Paypal Webhook",
-        "description": "Accept a delivery once PayPal confirms its signature; a repeat delivery is a no-op.\n\nA 2xx stops PayPal's retries, a 400 answers a signature PayPal rejects, and an error reaching\nPayPal surfaces as a 500 so PayPal delivers the event again later.",
+        "description": "Accept a delivery once PayPal confirms its signature; a repeat delivery is a no-op.\n\nThe event is stored and its processing queued in one transaction before the 2xx that stops\nPayPal's retries. A 400 answers a signature PayPal rejects, and an error reaching PayPal or the\ndatabase surfaces as a 500 so PayPal delivers the event again later.",
         "operationId": "paypal_webhook",
         "parameters": [
           {
@@ -116,6 +116,49 @@
                   },
                   "type": "array",
                   "title": "Response Webhook Events"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/webhooks/events/{event_id}/replay": {
+      "post": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Replay Webhook Event",
+        "description": "Queue a stored event for processing again, as if it had just arrived.",
+        "operationId": "replay_webhook_event",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Event Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueuedJob"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -210,6 +253,19 @@
         ],
         "title": "PayPalHealth"
       },
+      "QueuedJob": {
+        "properties": {
+          "job_id": {
+            "type": "integer",
+            "title": "Job Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id"
+        ],
+        "title": "QueuedJob"
+      },
       "ReceivedEvent": {
         "properties": {
           "event": {
@@ -219,12 +275,25 @@
             "type": "string",
             "format": "date-time",
             "title": "Received At"
+          },
+          "processed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Processed At"
           }
         },
         "type": "object",
         "required": [
           "event",
-          "received_at"
+          "received_at",
+          "processed_at"
         ],
         "title": "ReceivedEvent"
       },

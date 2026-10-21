@@ -26,3 +26,6 @@ class Settings(DatabaseSettings):
     log_format: LogFormat
     # Startup applies pending migrations only where this is true, so one process owns the schema.
     run_migrations: bool
+    # The job worker runs inside this process only where this is true, so a laptop never takes
+    # the deployed app's jobs.
+    run_worker: bool

@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { HealthData, HealthResponses, PaypalHealthData, PaypalHealthResponses, PaypalWebhookData, PaypalWebhookErrors, PaypalWebhookResponses, WebhookEventsData, WebhookEventsResponses } from './types.gen';
+import type { HealthData, HealthResponses, PaypalHealthData, PaypalHealthResponses, PaypalWebhookData, PaypalWebhookErrors, PaypalWebhookResponses, ReplayWebhookEventData, ReplayWebhookEventErrors, ReplayWebhookEventResponses, WebhookEventsData, WebhookEventsResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -28,8 +28,9 @@ export const paypalHealth = <ThrowOnError extends boolean = false>(options?: Opt
  *
  * Accept a delivery once PayPal confirms its signature; a repeat delivery is a no-op.
  *
- * A 2xx stops PayPal's retries, a 400 answers a signature PayPal rejects, and an error reaching
- * PayPal surfaces as a 500 so PayPal delivers the event again later.
+ * The event is stored and its processing queued in one transaction before the 2xx that stops
+ * PayPal's retries. A 400 answers a signature PayPal rejects, and an error reaching PayPal or the
+ * database surfaces as a 500 so PayPal delivers the event again later.
  */
 export const paypalWebhook = <ThrowOnError extends boolean = false>(options: Options<PaypalWebhookData, ThrowOnError>): RequestResult<PaypalWebhookResponses, PaypalWebhookErrors, ThrowOnError> => (options.client ?? client).post<PaypalWebhookResponses, PaypalWebhookErrors, ThrowOnError>({ url: '/api/webhooks/paypal', ...options });
 
@@ -37,6 +38,13 @@ export const paypalWebhook = <ThrowOnError extends boolean = false>(options: Opt
  * Webhook Events
  */
 export const webhookEvents = <ThrowOnError extends boolean = false>(options?: Options<WebhookEventsData, ThrowOnError>): RequestResult<WebhookEventsResponses, unknown, ThrowOnError> => (options?.client ?? client).get<WebhookEventsResponses, unknown, ThrowOnError>({ url: '/api/webhooks/events', ...options });
+
+/**
+ * Replay Webhook Event
+ *
+ * Queue a stored event for processing again, as if it had just arrived.
+ */
+export const replayWebhookEvent = <ThrowOnError extends boolean = false>(options: Options<ReplayWebhookEventData, ThrowOnError>): RequestResult<ReplayWebhookEventResponses, ReplayWebhookEventErrors, ThrowOnError> => (options.client ?? client).post<ReplayWebhookEventResponses, ReplayWebhookEventErrors, ThrowOnError>({ url: '/api/webhooks/events/{event_id}/replay', ...options });
 
 /**
  * Health
