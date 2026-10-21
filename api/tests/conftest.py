@@ -3,10 +3,12 @@ import os
 from collections.abc import AsyncIterator
 
 import certifi
+import httpx2
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from palisade_api.database import create_engine
+from palisade_api.main import app
 from palisade_api.settings import DatabaseSettings
 
 # psycopg's bundled OpenSSL finds no system trust store on Windows; `sslrootcert=system` then
@@ -37,3 +39,12 @@ async def sessions() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
         )
         await transaction.rollback()
     await engine.dispose()
+
+
+@pytest.fixture
+async def client() -> AsyncIterator[httpx2.AsyncClient]:
+    """Requests straight into the app, no socket."""
+    async with httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(app=app), base_url="http://palisade.test"
+    ) as http:
+        yield http

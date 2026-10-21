@@ -1,0 +1,127 @@
+import { useQuery } from "@tanstack/react-query";
+
+import { productsOptions } from "@/api/client/@tanstack/react-query.gen";
+import { HackathonLink } from "@/components/hackathon-link";
+import { ShopHeader } from "@/components/shop-header";
+import { Button } from "@/components/ui/button";
+
+import type { Route } from "./+types/credits";
+
+export const links: Route.LinksFunction = () => [
+  { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
+];
+
+export const meta: Route.MetaFunction = () => [
+  { title: "About the shoes and photos · Ridgeline Running" },
+];
+
+export default function Credits() {
+  const products = useQuery(productsOptions());
+
+  return (
+    <div className="theme-shop flex min-h-dvh flex-col bg-background text-foreground">
+      <ShopHeader to="/shop" />
+      <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8 sm:px-6">
+        <h1 className="text-2xl font-semibold tracking-tight">
+          About the shoes and photos
+        </h1>
+        <div className="mt-4 space-y-3 text-sm leading-relaxed">
+          <p>
+            Ridgeline Running is a demo store built for the <HackathonLink /> to
+            show Palisade, a trust and dispute layer for purchases that AI
+            agents make with PayPal. Not for sale. Every payment runs in the
+            PayPal sandbox with test money.
+          </p>
+          <p>
+            The shoes are real models from Nike, Adidas, Hoka, Brooks, New
+            Balance, and Asics, named so the catalog is recognizable. Those
+            names and the logos in the photos belong to their makers, who have
+            no part in this project and do not endorse it.
+          </p>
+          <p>
+            Each photo is an Unsplash picture of the shoe, used under the{" "}
+            <a
+              className="underline underline-offset-2"
+              href="https://unsplash.com/license"
+              rel="noreferrer"
+              target="_blank"
+            >
+              Unsplash License
+              <span className="sr-only"> (opens in a new tab)</span>
+            </a>
+            , which allows free use without permission. The photographers are
+            credited below.
+          </p>
+        </div>
+        <h2 className="mt-8 text-lg font-semibold">Photo credits</h2>
+        {products.isPending && (
+          <p className="mt-2 text-sm text-muted-foreground">Loading…</p>
+        )}
+        {products.isError && (
+          <p className="mt-2 flex items-center gap-3 text-sm">
+            The credits did not load.
+            <Button
+              onClick={() => {
+                void products.refetch();
+              }}
+              size="sm"
+              variant="outline"
+            >
+              Try again
+            </Button>
+          </p>
+        )}
+        {products.data && (
+          <table className="mt-3 w-full text-sm">
+            <thead className="text-left text-muted-foreground">
+              <tr className="border-b">
+                <th className="py-2 pr-4 font-medium" scope="col">
+                  Shoe
+                </th>
+                <th className="py-2 pr-4 font-medium" scope="col">
+                  Photo
+                </th>
+                <th className="py-2 font-medium" scope="col">
+                  Photographer
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {products.data.map((product) => (
+                <tr className="border-b" key={product.id}>
+                  <th className="py-2 pr-4 text-left font-normal" scope="row">
+                    {product.brand} {product.name}
+                  </th>
+                  <td className="py-2 pr-4">
+                    <a
+                      className="underline underline-offset-2"
+                      href={product.photo.url}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      On Unsplash
+                      <span className="sr-only">
+                        : {product.brand} {product.name} (opens in a new tab)
+                      </span>
+                    </a>
+                  </td>
+                  <td className="py-2">
+                    <a
+                      className="underline underline-offset-2"
+                      href={product.photo.by_url}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      {product.photo.by}
+                      <span className="sr-only"> (opens in a new tab)</span>
+                    </a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </main>
+    </div>
+  );
+}

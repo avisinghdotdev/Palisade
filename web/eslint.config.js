@@ -11,7 +11,14 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default defineConfig(
-  globalIgnores([".react-router", "dist", "src/api/client"]),
+  // src/components/ui holds shadcn/ui components as the CLI writes them; like the generated
+  // API client, they are replaced, never edited.
+  globalIgnores([
+    ".react-router",
+    "dist",
+    "src/api/client",
+    "src/components/ui",
+  ]),
   {
     files: ["**/*.{ts,tsx}"],
     extends: [

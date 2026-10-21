@@ -3,8 +3,8 @@
 import { type DefaultError, queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 
 import { client } from '../client.gen';
-import { health, type Options, paypalHealth, paypalWebhook, replayWebhookEvent, webhookEvents } from '../sdk.gen';
-import type { HealthData, HealthResponse, PaypalHealthData, PaypalHealthResponse, PaypalWebhookData, PaypalWebhookError, PaypalWebhookResponse, ReplayWebhookEventData, ReplayWebhookEventError, ReplayWebhookEventResponse, WebhookEventsData, WebhookEventsResponse } from '../types.gen';
+import { health, type Options, paypalHealth, paypalWebhook, product, products, replayWebhookEvent, webhookEvents } from '../sdk.gen';
+import type { HealthData, HealthResponse, PaypalHealthData, PaypalHealthResponse, PaypalWebhookData, PaypalWebhookError, PaypalWebhookResponse, ProductData, ProductError, ProductResponse, ProductsData, ProductsResponse, ReplayWebhookEventData, ReplayWebhookEventError, ReplayWebhookEventResponse, WebhookEventsData, WebhookEventsResponse } from '../types.gen';
 
 export type QueryKey<TOptions extends Options> = [
     Pick<TOptions, 'baseUrl' | 'body' | 'headers' | 'path' | 'query'> & {
@@ -116,6 +116,42 @@ export const replayWebhookEventMutation = (options?: Partial<Options<ReplayWebho
     };
     return mutationOptions;
 };
+
+export const productsQueryKey = (options?: Options<ProductsData>) => createQueryKey('products', options);
+
+/**
+ * Products
+ */
+export const productsOptions = (options?: Options<ProductsData>) => queryOptions<ProductsResponse, DefaultError, ProductsResponse, ReturnType<typeof productsQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await products({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: productsQueryKey(options)
+});
+
+export const productQueryKey = (options: Options<ProductData>) => createQueryKey('product', options);
+
+/**
+ * Get Product
+ */
+export const productOptions = (options: Options<ProductData>) => queryOptions<ProductResponse, ProductError, ProductResponse, ReturnType<typeof productQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await product({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: productQueryKey(options)
+});
 
 export const healthQueryKey = (options?: Options<HealthData>) => createQueryKey('health', options);
 

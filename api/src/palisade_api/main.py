@@ -17,6 +17,8 @@ from palisade_api.paypal import router as paypal
 from palisade_api.paypal.auth import SANDBOX_BASE_URL, PayPalAuth
 from palisade_api.paypal.client import PayPalClient
 from palisade_api.settings import Settings
+from palisade_api.shop import router as shop
+from palisade_api.shop.catalog import Catalog
 from palisade_api.webhooks import router as webhooks
 from palisade_api.webhooks.store import WebhookStore
 from palisade_api.webhooks.tasks import enqueue_processing
@@ -27,6 +29,7 @@ class State(TypedDict):
     paypal_auth: PayPalAuth
     webhook_verifier: WebhookVerifier
     webhook_store: WebhookStore
+    catalog: Catalog
 
 
 @asynccontextmanager
@@ -39,7 +42,8 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[State]:
         await asyncio.to_thread(upgrade_to_head)
     database_url = settings.database_url.get_secret_value()
     engine = create_engine(database_url)
-    store = WebhookStore(async_sessionmaker(engine), enqueue_processing)
+    sessions = async_sessionmaker(engine)
+    store = WebhookStore(sessions, enqueue_processing)
     try:
         async with AsyncExitStack() as stack:
             http = await stack.enter_async_context(
@@ -62,6 +66,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[State]:
                     PayPalClient(http, auth), settings.paypal_webhook_id
                 ),
                 webhook_store=store,
+                catalog=Catalog(sessions),
             )
     finally:
         await engine.dispose()
@@ -71,6 +76,7 @@ app = FastAPI(title="Palisade API", version=version("palisade-api"), lifespan=li
 app.add_middleware(RequestLogMiddleware)
 app.include_router(paypal.router)
 app.include_router(webhooks.router)
+app.include_router(shop.router)
 
 
 class Health(BaseModel):
