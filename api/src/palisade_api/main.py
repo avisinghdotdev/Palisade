@@ -13,12 +13,20 @@ from palisade_api.database import create_engine
 from palisade_api.jobs import run_worker
 from palisade_api.logging import RequestLogMiddleware, configure_logging
 from palisade_api.migrate import upgrade_to_head
+from palisade_api.orders import router as orders_router
+from palisade_api.orders import webhooks as order_webhooks
+from palisade_api.orders.checkout import Checkout
+from palisade_api.orders.store import Orders
 from palisade_api.paypal import router as paypal
 from palisade_api.paypal.auth import SANDBOX_BASE_URL, PayPalAuth
 from palisade_api.paypal.client import PayPalClient
 from palisade_api.settings import Settings
 from palisade_api.shop import router as shop
+from palisade_api.shop.cart import Carts
 from palisade_api.shop.catalog import Catalog
+from palisade_api.wallets import router as wallets_router
+from palisade_api.wallets import webhooks as wallet_webhooks
+from palisade_api.wallets.service import Wallets
 from palisade_api.webhooks import router as webhooks
 from palisade_api.webhooks.store import WebhookStore
 from palisade_api.webhooks.tasks import enqueue_processing
@@ -30,6 +38,10 @@ class State(TypedDict):
     webhook_verifier: WebhookVerifier
     webhook_store: WebhookStore
     catalog: Catalog
+    carts: Carts
+    wallets: Wallets
+    checkout: Checkout
+    orders: Orders
 
 
 @asynccontextmanager
@@ -51,22 +63,41 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[State]:
                     base_url=SANDBOX_BASE_URL, timeout=httpx2.Timeout(10.0)
                 )
             )
-            if settings.run_worker:
-                await stack.enter_async_context(
-                    run_worker(database_url, {"webhook_store": store})
-                )
             auth = PayPalAuth(
                 http,
                 settings.paypal_client_id,
                 settings.paypal_client_secret.get_secret_value(),
             )
+            paypal_client = PayPalClient(http, auth)
+            wallets = Wallets(
+                sessions,
+                paypal_client,
+                settings.public_origin,
+                settings.demo_buyer_email,
+            )
+            orders = Orders(sessions)
+            if settings.run_worker:
+                handlers = {
+                    **order_webhooks.handlers(sessions),
+                    **wallet_webhooks.handlers(wallets),
+                }
+                await stack.enter_async_context(
+                    run_worker(
+                        database_url,
+                        {"webhook_store": store, "webhook_handlers": handlers},
+                    )
+                )
             yield State(
                 paypal_auth=auth,
                 webhook_verifier=WebhookVerifier(
-                    PayPalClient(http, auth), settings.paypal_webhook_id
+                    paypal_client, settings.paypal_webhook_id
                 ),
                 webhook_store=store,
                 catalog=Catalog(sessions),
+                carts=Carts(sessions),
+                wallets=wallets,
+                checkout=Checkout(sessions, paypal_client, orders),
+                orders=orders,
             )
     finally:
         await engine.dispose()
@@ -77,6 +108,8 @@ app.add_middleware(RequestLogMiddleware)
 app.include_router(paypal.router)
 app.include_router(webhooks.router)
 app.include_router(shop.router)
+app.include_router(wallets_router.router)
+app.include_router(orders_router.router)
 
 
 class Health(BaseModel):

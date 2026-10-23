@@ -18,6 +18,7 @@ services:
     environment:
       LOG_LEVEL: INFO
       LOG_FORMAT: console
+      PUBLIC_ORIGIN: http://127.0.0.1:8080
       # The database is shared with the deployed app, which owns migrations and the job worker.
       RUN_MIGRATIONS: "false"
       RUN_WORKER: "false"

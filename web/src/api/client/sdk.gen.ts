@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { HealthData, HealthResponses, PaypalHealthData, PaypalHealthResponses, PaypalWebhookData, PaypalWebhookErrors, PaypalWebhookResponses, ProductData, ProductErrors, ProductResponses, ProductsData, ProductsResponses, ReplayWebhookEventData, ReplayWebhookEventErrors, ReplayWebhookEventResponses, WebhookEventsData, WebhookEventsResponses } from './types.gen';
+import type { CartData, CartErrors, CartResponses, CheckoutData, CheckoutErrors, CheckoutResponses, ConfirmWalletLinkData, ConfirmWalletLinkErrors, ConfirmWalletLinkResponses, CreateCartData, CreateCartErrors, CreateCartResponses, DemoWalletData, DemoWalletResponses, HealthData, HealthResponses, OrderData, OrderErrors, OrderResponses, OrdersData, OrdersResponses, PaypalHealthData, PaypalHealthResponses, PaypalWebhookData, PaypalWebhookErrors, PaypalWebhookResponses, ProductData, ProductErrors, ProductResponses, ProductsData, ProductsResponses, ReplayWebhookEventData, ReplayWebhookEventErrors, ReplayWebhookEventResponses, SetCartLineData, SetCartLineErrors, SetCartLineResponses, SetCartWalletData, SetCartWalletErrors, SetCartWalletResponses, StartWalletLinkData, StartWalletLinkResponses, WalletData, WalletErrors, WalletResponses, WebhookEventsData, WebhookEventsResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -55,6 +55,99 @@ export const products = <ThrowOnError extends boolean = false>(options?: Options
  * Get Product
  */
 export const product = <ThrowOnError extends boolean = false>(options: Options<ProductData, ThrowOnError>): RequestResult<ProductResponses, ProductErrors, ThrowOnError> => (options.client ?? client).get<ProductResponses, ProductErrors, ThrowOnError>({ url: '/api/shop/products/{product_id}', ...options });
+
+/**
+ * Create Cart
+ *
+ * An empty cart that the given wallet will pay for.
+ */
+export const createCart = <ThrowOnError extends boolean = false>(options: Options<CreateCartData, ThrowOnError>): RequestResult<CreateCartResponses, CreateCartErrors, ThrowOnError> => (options.client ?? client).post<CreateCartResponses, CreateCartErrors, ThrowOnError>({
+    url: '/api/shop/carts',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Get Cart
+ */
+export const cart = <ThrowOnError extends boolean = false>(options: Options<CartData, ThrowOnError>): RequestResult<CartResponses, CartErrors, ThrowOnError> => (options.client ?? client).get<CartResponses, CartErrors, ThrowOnError>({ url: '/api/shop/carts/{cart_id}', ...options });
+
+/**
+ * Set Cart Line
+ *
+ * Set how many of a product in a size the cart holds; 0 removes the line.
+ */
+export const setCartLine = <ThrowOnError extends boolean = false>(options: Options<SetCartLineData, ThrowOnError>): RequestResult<SetCartLineResponses, SetCartLineErrors, ThrowOnError> => (options.client ?? client).put<SetCartLineResponses, SetCartLineErrors, ThrowOnError>({
+    url: '/api/shop/carts/{cart_id}/lines',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Set Cart Wallet
+ */
+export const setCartWallet = <ThrowOnError extends boolean = false>(options: Options<SetCartWalletData, ThrowOnError>): RequestResult<SetCartWalletResponses, SetCartWalletErrors, ThrowOnError> => (options.client ?? client).put<SetCartWalletResponses, SetCartWalletErrors, ThrowOnError>({
+    url: '/api/shop/carts/{cart_id}/wallet',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Place Order
+ *
+ * Pay for the cart from its wallet; calling again returns the order already placed.
+ */
+export const checkout = <ThrowOnError extends boolean = false>(options: Options<CheckoutData, ThrowOnError>): RequestResult<CheckoutResponses, CheckoutErrors, ThrowOnError> => (options.client ?? client).post<CheckoutResponses, CheckoutErrors, ThrowOnError>({ url: '/api/shop/carts/{cart_id}/checkout', ...options });
+
+/**
+ * Start Wallet Link
+ *
+ * Begin saving the buyer's PayPal wallet; send the buyer to the approve URL.
+ */
+export const startWalletLink = <ThrowOnError extends boolean = false>(options?: Options<StartWalletLinkData, ThrowOnError>): RequestResult<StartWalletLinkResponses, unknown, ThrowOnError> => (options?.client ?? client).post<StartWalletLinkResponses, unknown, ThrowOnError>({ url: '/api/shop/wallets/link', ...options });
+
+/**
+ * Confirm Wallet Link
+ *
+ * Finish saving the wallet once the buyer has returned from PayPal.
+ */
+export const confirmWalletLink = <ThrowOnError extends boolean = false>(options: Options<ConfirmWalletLinkData, ThrowOnError>): RequestResult<ConfirmWalletLinkResponses, ConfirmWalletLinkErrors, ThrowOnError> => (options.client ?? client).post<ConfirmWalletLinkResponses, ConfirmWalletLinkErrors, ThrowOnError>({
+    url: '/api/shop/wallets/confirm',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Demo Wallet
+ */
+export const demoWallet = <ThrowOnError extends boolean = false>(options?: Options<DemoWalletData, ThrowOnError>): RequestResult<DemoWalletResponses, unknown, ThrowOnError> => (options?.client ?? client).get<DemoWalletResponses, unknown, ThrowOnError>({ url: '/api/shop/wallets/demo', ...options });
+
+/**
+ * Get Wallet
+ */
+export const wallet = <ThrowOnError extends boolean = false>(options: Options<WalletData, ThrowOnError>): RequestResult<WalletResponses, WalletErrors, ThrowOnError> => (options.client ?? client).get<WalletResponses, WalletErrors, ThrowOnError>({ url: '/api/shop/wallets/{wallet_id}', ...options });
+
+/**
+ * List Orders
+ */
+export const orders = <ThrowOnError extends boolean = false>(options?: Options<OrdersData, ThrowOnError>): RequestResult<OrdersResponses, unknown, ThrowOnError> => (options?.client ?? client).get<OrdersResponses, unknown, ThrowOnError>({ url: '/api/orders', ...options });
+
+/**
+ * Get Order
+ */
+export const order = <ThrowOnError extends boolean = false>(options: Options<OrderData, ThrowOnError>): RequestResult<OrderResponses, OrderErrors, ThrowOnError> => (options.client ?? client).get<OrderResponses, OrderErrors, ThrowOnError>({ url: '/api/orders/{number}', ...options });
 
 /**
  * Health

@@ -77,19 +77,28 @@ class WebhookStore:
                 raise UnknownEvent(event_id)
             return await self._enqueue(await driver_connection(session), event_id)
 
-    async def mark_processed(self, event_id: str) -> WebhookEvent:
-        """Record that the event's processing finished; the event itself."""
+    async def get(self, event_id: str) -> WebhookEvent:
+        statement = select(WebhookEventRecord.payload).where(
+            WebhookEventRecord.id == event_id
+        )
+        async with self._sessions() as session:
+            payload = await session.scalar(statement)
+        if payload is None:
+            raise UnknownEvent(event_id)
+        return WebhookEvent.model_validate(payload)
+
+    async def mark_processed(self, event_id: str) -> None:
+        """Record that the event's processing finished."""
         statement = (
             update(WebhookEventRecord)
             .where(WebhookEventRecord.id == event_id)
             .values(processed_at=func.now())
-            .returning(WebhookEventRecord.payload)
+            .returning(WebhookEventRecord.id)
         )
         async with self._sessions.begin() as session:
-            payload = (await session.execute(statement)).scalar_one_or_none()
-        if payload is None:
+            marked = (await session.execute(statement)).scalar_one_or_none()
+        if marked is None:
             raise UnknownEvent(event_id)
-        return WebhookEvent.model_validate(payload)
 
     async def events(self) -> list[ReceivedEvent]:
         """The most recent events, newest first."""

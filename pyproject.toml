@@ -1,6 +1,6 @@
 [project]
 name = "palisade"
-version = "0.6.0"
+version = "0.7.0"
 requires-python = ">=3.14"
 dependencies = []
 
@@ -31,7 +31,7 @@ palisade-api = { workspace = true }
 # One release version, bumped with `uv run bump-my-version bump <part>`; the copies below are
 # rewritten in the same run and the `version-sync` pre-commit hook fails when they drift.
 [tool.bumpversion]
-current_version = "0.6.0"
+current_version = "0.7.0"
 # The release worktree is staged when the bump runs, and the version-sync hook runs on dirty trees.
 allow_dirty = true
 
@@ -63,6 +63,8 @@ script_location = "palisade_api:migrations"
 # "recommended" is stricter than "strict": it also reports Any, unused call results, and stale ignores.
 typeCheckingMode = "recommended"
 include = ["api", "infra"]
+# Test helpers next to the tests import as top-level modules, the way pytest loads them.
+extraPaths = ["api/tests"]
 # Path.write_text() and next() return values nobody needs; flagging them adds only noise.
 reportUnusedCallResult = false
 

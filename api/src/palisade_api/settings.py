@@ -22,6 +22,10 @@ class Settings(DatabaseSettings):
     paypal_client_id: str
     paypal_client_secret: SecretStr
     paypal_webhook_id: str
+    # The site's origin as the buyer's browser reaches it; PayPal sends the buyer back to URLs under it.
+    public_origin: str
+    # The PayPal account whose linked wallet is the shop's default buyer.
+    demo_buyer_email: str
     log_level: LogLevel
     log_format: LogFormat
     # Startup applies pending migrations only where this is true, so one process owns the schema.

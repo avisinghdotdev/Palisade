@@ -1,9 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { productsOptions } from "@/api/client/@tanstack/react-query.gen";
+import { ExternalLink } from "@/components/external-link";
 import { HackathonLink } from "@/components/hackathon-link";
 import { ShopHeader } from "@/components/shop-header";
 import { Button } from "@/components/ui/button";
+import { pageTitle } from "@/page-title";
 
 import type { Route } from "./+types/credits";
 
@@ -12,7 +14,7 @@ export const links: Route.LinksFunction = () => [
 ];
 
 export const meta: Route.MetaFunction = () => [
-  { title: "About the shoes and photos · Ridgeline Running" },
+  { title: pageTitle("Photo Credits", "Shop") },
 ];
 
 export default function Credits() {
@@ -23,7 +25,7 @@ export default function Credits() {
       <ShopHeader to="/shop" />
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8 sm:px-6">
         <h1 className="text-2xl font-semibold tracking-tight">
-          About the shoes and photos
+          About the Shoes and Photos
         </h1>
         <div className="mt-4 space-y-3 text-sm leading-relaxed">
           <p>
@@ -40,20 +42,14 @@ export default function Credits() {
           </p>
           <p>
             Each photo is an Unsplash picture of the shoe, used under the{" "}
-            <a
-              className="underline underline-offset-2"
-              href="https://unsplash.com/license"
-              rel="noreferrer"
-              target="_blank"
-            >
+            <ExternalLink href="https://unsplash.com/license">
               Unsplash License
-              <span className="sr-only"> (opens in a new tab)</span>
-            </a>
+            </ExternalLink>
             , which allows free use without permission. The photographers are
             credited below.
           </p>
         </div>
-        <h2 className="mt-8 text-lg font-semibold">Photo credits</h2>
+        <h2 className="mt-8 text-lg font-semibold">Photo Credits</h2>
         {products.isPending && (
           <p className="mt-2 text-sm text-muted-foreground">Loading…</p>
         )}
@@ -67,7 +63,7 @@ export default function Credits() {
               size="sm"
               variant="outline"
             >
-              Try again
+              Try Again
             </Button>
           </p>
         )}
@@ -93,28 +89,17 @@ export default function Credits() {
                     {product.brand} {product.name}
                   </th>
                   <td className="py-2 pr-4">
-                    <a
-                      className="underline underline-offset-2"
-                      href={product.photo.url}
-                      rel="noreferrer"
-                      target="_blank"
-                    >
+                    <ExternalLink href={product.photo.url}>
                       On Unsplash
                       <span className="sr-only">
-                        : {product.brand} {product.name} (opens in a new tab)
+                        : {product.brand} {product.name}
                       </span>
-                    </a>
+                    </ExternalLink>
                   </td>
                   <td className="py-2">
-                    <a
-                      className="underline underline-offset-2"
-                      href={product.photo.by_url}
-                      rel="noreferrer"
-                      target="_blank"
-                    >
+                    <ExternalLink href={product.photo.by_url}>
                       {product.photo.by}
-                      <span className="sr-only"> (opens in a new tab)</span>
-                    </a>
+                    </ExternalLink>
                   </td>
                 </tr>
               ))}

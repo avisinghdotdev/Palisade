@@ -5,12 +5,15 @@ import type { Product } from "@/api/client";
 
 import { productsOptions } from "@/api/client/@tanstack/react-query.gen";
 import { AboutDialog } from "@/components/about-dialog";
+import { BuyerMenu } from "@/components/buyer-menu";
+import { CartSheet } from "@/components/cart-sheet";
 import { ConsoleLogo } from "@/components/console-logo";
 import { PalisadeBadge } from "@/components/palisade-badge";
 import { ProductTile } from "@/components/product-tile";
 import { ShopHeader } from "@/components/shop-header";
 import { SurfaceLink } from "@/components/surface-link";
 import { Button } from "@/components/ui/button";
+import { useBuyer } from "@/hooks/use-buyer";
 import { useHydrated } from "@/hooks/use-hydrated";
 
 import type { Route } from "./+types/shop";
@@ -33,18 +36,18 @@ const SORTS: Sort[] = [
   BY_BRAND,
   {
     id: "price-asc",
-    label: "Price: low to high",
+    label: "Price: Low to High",
     compare: (a, b) => Number(a.price.value) - Number(b.price.value),
   },
   {
     id: "price-desc",
-    label: "Price: high to low",
+    label: "Price: High to Low",
     compare: (a, b) => Number(b.price.value) - Number(a.price.value),
   },
 ];
 
 export const meta: Route.MetaFunction = () => [
-  { title: "Ridgeline Running" },
+  { title: "Shop" },
   {
     name: "description",
     content:
@@ -119,6 +122,7 @@ function FilterGroup({
 
 export default function Shop() {
   const products = useQuery(productsOptions());
+  const buyer = useBuyer();
   const [params, setParams] = useSearchParams();
   // The prerendered page knows no query string, so the filters apply only once hydrated.
   const hydrated = useHydrated();
@@ -169,10 +173,12 @@ export default function Shop() {
     <div className="theme-shop flex min-h-dvh flex-col bg-background text-foreground">
       <ShopHeader to="/shop">
         <PalisadeBadge>Protected by Palisade</PalisadeBadge>
+        <BuyerMenu />
+        <CartSheet wallet={buyer.wallet} />
         <SurfaceLink icon={<ConsoleLogo />} to="/merchant">
-          Merchant console
+          Merchant Console
         </SurfaceLink>
-        <AboutDialog title="About Shop">
+        <AboutDialog title="About Ridgeline Running">
           <p>
             Ridgeline Running is a demo shop whose checkout AI shopping agents
             can use. Nothing is for sale. Palisade verifies each agent, records
@@ -185,14 +191,8 @@ export default function Shop() {
             project. Photos are from Unsplash under the Unsplash License.
           </p>
           <p>
-            <Link
-              className="underline underline-offset-2"
-              rel="noreferrer"
-              target="_blank"
-              to="/credits"
-            >
-              Photo credits and license
-              <span className="sr-only"> (opens in a new tab)</span>
+            <Link className="underline underline-offset-2" to="/credits">
+              Photo Credits and License
             </Link>
           </p>
         </AboutDialog>
@@ -200,7 +200,7 @@ export default function Shop() {
       <main className="flex-1 px-4 py-8 sm:px-6 lg:px-8">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <h1 className="text-2xl font-semibold tracking-tight">
-            Running shoes
+            Running Shoes
           </h1>
           <div className="flex items-center gap-2 text-sm">
             <label className="text-muted-foreground" htmlFor="sort">
@@ -227,6 +227,13 @@ export default function Shop() {
             </select>
           </div>
         </div>
+        {buyer.isError && (
+          <p className="mt-4 text-sm text-destructive" role="alert">
+            {buyer.paysWithDemo
+              ? "The demo buyer's PayPal wallet is not linked yet, so nothing can be bought."
+              : "Your linked PayPal wallet could not be loaded. Switch to the demo buyer or link again."}
+          </p>
+        )}
         <p aria-live="polite" className="sr-only">
           {products.data && `${String(shown.length)} shoes shown`}
         </p>
@@ -265,7 +272,7 @@ export default function Shop() {
                   size="sm"
                   variant="outline"
                 >
-                  Try again
+                  Try Again
                 </Button>
               </p>
             )}
@@ -278,7 +285,10 @@ export default function Shop() {
               <ul className="grid grid-cols-2 gap-x-4 gap-y-8 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
                 {shown.map((product) => (
                   <li key={product.id}>
-                    <ProductTile product={product} />
+                    <ProductTile
+                      product={product}
+                      walletId={buyer.wallet?.id}
+                    />
                   </li>
                 ))}
               </ul>

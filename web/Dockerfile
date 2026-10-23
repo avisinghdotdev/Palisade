@@ -17,8 +17,7 @@ FROM source AS dev-server
 CMD ["pnpm", "run", "dev", "--host", "--port", "8080"]
 
 FROM source AS build
-# The SPA fallback only serves routes that are not prerendered; nginx answers those with 404 instead.
-RUN pnpm run build && rm dist/client/__spa-fallback.html
+RUN pnpm run build
 
 FROM nginxinc/nginx-unprivileged:1.30.6-alpine-slim AS serve
 # The entrypoint renders templates with envsubst; the filter keeps nginx's own $variables untouched.

@@ -3,8 +3,8 @@
 import { type DefaultError, queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 
 import { client } from '../client.gen';
-import { health, type Options, paypalHealth, paypalWebhook, product, products, replayWebhookEvent, webhookEvents } from '../sdk.gen';
-import type { HealthData, HealthResponse, PaypalHealthData, PaypalHealthResponse, PaypalWebhookData, PaypalWebhookError, PaypalWebhookResponse, ProductData, ProductError, ProductResponse, ProductsData, ProductsResponse, ReplayWebhookEventData, ReplayWebhookEventError, ReplayWebhookEventResponse, WebhookEventsData, WebhookEventsResponse } from '../types.gen';
+import { cart, checkout, confirmWalletLink, createCart, demoWallet, health, type Options, order, orders, paypalHealth, paypalWebhook, product, products, replayWebhookEvent, setCartLine, setCartWallet, startWalletLink, wallet, webhookEvents } from '../sdk.gen';
+import type { CartData, CartError, CartResponse, CheckoutData, CheckoutError, CheckoutResponse, ConfirmWalletLinkData, ConfirmWalletLinkError, ConfirmWalletLinkResponse, CreateCartData, CreateCartError, CreateCartResponse, DemoWalletData, DemoWalletResponse, HealthData, HealthResponse, OrderData, OrderError, OrderResponse, OrdersData, OrdersResponse, PaypalHealthData, PaypalHealthResponse, PaypalWebhookData, PaypalWebhookError, PaypalWebhookResponse, ProductData, ProductError, ProductResponse, ProductsData, ProductsResponse, ReplayWebhookEventData, ReplayWebhookEventError, ReplayWebhookEventResponse, SetCartLineData, SetCartLineError, SetCartLineResponse, SetCartWalletData, SetCartWalletError, SetCartWalletResponse, StartWalletLinkData, StartWalletLinkResponse, WalletData, WalletError, WalletResponse, WebhookEventsData, WebhookEventsResponse } from '../types.gen';
 
 export type QueryKey<TOptions extends Options> = [
     Pick<TOptions, 'baseUrl' | 'body' | 'headers' | 'path' | 'query'> & {
@@ -151,6 +151,208 @@ export const productOptions = (options: Options<ProductData>) => queryOptions<Pr
         return data;
     },
     queryKey: productQueryKey(options)
+});
+
+/**
+ * Create Cart
+ *
+ * An empty cart that the given wallet will pay for.
+ */
+export const createCartMutation = (options?: Partial<Options<CreateCartData>>): UseMutationOptions<CreateCartResponse, CreateCartError, Options<CreateCartData>> => {
+    const mutationOptions: UseMutationOptions<CreateCartResponse, CreateCartError, Options<CreateCartData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await createCart({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const cartQueryKey = (options: Options<CartData>) => createQueryKey('cart', options);
+
+/**
+ * Get Cart
+ */
+export const cartOptions = (options: Options<CartData>) => queryOptions<CartResponse, CartError, CartResponse, ReturnType<typeof cartQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await cart({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: cartQueryKey(options)
+});
+
+/**
+ * Set Cart Line
+ *
+ * Set how many of a product in a size the cart holds; 0 removes the line.
+ */
+export const setCartLineMutation = (options?: Partial<Options<SetCartLineData>>): UseMutationOptions<SetCartLineResponse, SetCartLineError, Options<SetCartLineData>> => {
+    const mutationOptions: UseMutationOptions<SetCartLineResponse, SetCartLineError, Options<SetCartLineData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await setCartLine({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Set Cart Wallet
+ */
+export const setCartWalletMutation = (options?: Partial<Options<SetCartWalletData>>): UseMutationOptions<SetCartWalletResponse, SetCartWalletError, Options<SetCartWalletData>> => {
+    const mutationOptions: UseMutationOptions<SetCartWalletResponse, SetCartWalletError, Options<SetCartWalletData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await setCartWallet({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Place Order
+ *
+ * Pay for the cart from its wallet; calling again returns the order already placed.
+ */
+export const checkoutMutation = (options?: Partial<Options<CheckoutData>>): UseMutationOptions<CheckoutResponse, CheckoutError, Options<CheckoutData>> => {
+    const mutationOptions: UseMutationOptions<CheckoutResponse, CheckoutError, Options<CheckoutData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await checkout({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Start Wallet Link
+ *
+ * Begin saving the buyer's PayPal wallet; send the buyer to the approve URL.
+ */
+export const startWalletLinkMutation = (options?: Partial<Options<StartWalletLinkData>>): UseMutationOptions<StartWalletLinkResponse, DefaultError, Options<StartWalletLinkData>> => {
+    const mutationOptions: UseMutationOptions<StartWalletLinkResponse, DefaultError, Options<StartWalletLinkData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await startWalletLink({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Confirm Wallet Link
+ *
+ * Finish saving the wallet once the buyer has returned from PayPal.
+ */
+export const confirmWalletLinkMutation = (options?: Partial<Options<ConfirmWalletLinkData>>): UseMutationOptions<ConfirmWalletLinkResponse, ConfirmWalletLinkError, Options<ConfirmWalletLinkData>> => {
+    const mutationOptions: UseMutationOptions<ConfirmWalletLinkResponse, ConfirmWalletLinkError, Options<ConfirmWalletLinkData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await confirmWalletLink({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const demoWalletQueryKey = (options?: Options<DemoWalletData>) => createQueryKey('demoWallet', options);
+
+/**
+ * Demo Wallet
+ */
+export const demoWalletOptions = (options?: Options<DemoWalletData>) => queryOptions<DemoWalletResponse, DefaultError, DemoWalletResponse, ReturnType<typeof demoWalletQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await demoWallet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: demoWalletQueryKey(options)
+});
+
+export const walletQueryKey = (options: Options<WalletData>) => createQueryKey('wallet', options);
+
+/**
+ * Get Wallet
+ */
+export const walletOptions = (options: Options<WalletData>) => queryOptions<WalletResponse, WalletError, WalletResponse, ReturnType<typeof walletQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await wallet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: walletQueryKey(options)
+});
+
+export const ordersQueryKey = (options?: Options<OrdersData>) => createQueryKey('orders', options);
+
+/**
+ * List Orders
+ */
+export const ordersOptions = (options?: Options<OrdersData>) => queryOptions<OrdersResponse, DefaultError, OrdersResponse, ReturnType<typeof ordersQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await orders({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: ordersQueryKey(options)
+});
+
+export const orderQueryKey = (options: Options<OrderData>) => createQueryKey('order', options);
+
+/**
+ * Get Order
+ */
+export const orderOptions = (options: Options<OrderData>) => queryOptions<OrderResponse, OrderError, OrderResponse, ReturnType<typeof orderQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await order({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: orderQueryKey(options)
 });
 
 export const healthQueryKey = (options?: Options<HealthData>) => createQueryKey('health', options);
