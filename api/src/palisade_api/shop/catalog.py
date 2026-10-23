@@ -16,6 +16,12 @@ class Money(BaseModel):
     currency_code: Literal["USD"]
 
 
+def money(cents: int) -> Money:
+    """Whole US cents as PayPal's two-decimal string."""
+    dollars, rest = divmod(cents, 100)
+    return Money(value=f"{dollars}.{rest:02d}", currency_code="USD")
+
+
 class PhotoCredit(BaseModel):
     """Who took the product photo and where it lives on Unsplash."""
 
@@ -42,14 +48,13 @@ class UnknownProduct(LookupError):
 
 
 def product(record: ProductRecord) -> Product:
-    dollars, cents = divmod(record.price_cents, 100)
     return Product(
         id=record.id,
         brand=record.brand,
         name=record.name,
         category=record.category,
         description=record.description,
-        price=Money(value=f"{dollars}.{cents:02d}", currency_code="USD"),
+        price=money(record.price_cents),
         sizes=record.sizes,
         image_path=record.image_path,
         photo=PhotoCredit(

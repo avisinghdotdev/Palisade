@@ -5,6 +5,67 @@ export type ClientOptions = {
 };
 
 /**
+ * Cart
+ */
+export type Cart = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Wallet Id
+     */
+    wallet_id: string;
+    /**
+     * Status
+     */
+    status: 'open' | 'checking_out' | 'completed';
+    /**
+     * Lines
+     */
+    lines: Array<CartLine>;
+    total: Money;
+};
+
+/**
+ * CartLine
+ */
+export type CartLine = {
+    /**
+     * Product Id
+     */
+    product_id: string;
+    /**
+     * Size
+     */
+    size: string;
+    /**
+     * Quantity
+     */
+    quantity: number;
+    /**
+     * Brand
+     */
+    brand: string;
+    /**
+     * Name
+     */
+    name: string;
+    unit_price: Money;
+    line_total: Money;
+};
+
+/**
+ * CartWallet
+ */
+export type CartWallet = {
+    /**
+     * Wallet Id
+     */
+    wallet_id: string;
+};
+
+/**
  * HTTPValidationError
  */
 export type HttpValidationError = {
@@ -31,6 +92,52 @@ export type Health = {
 export type JsonValue = unknown;
 
 /**
+ * LineChange
+ *
+ * A product in a size and the quantity wanted; 0 removes the line.
+ */
+export type LineChange = {
+    /**
+     * Product Id
+     */
+    product_id: string;
+    /**
+     * Size
+     */
+    size: string;
+    /**
+     * Quantity
+     */
+    quantity: number;
+};
+
+/**
+ * LinkConfirmation
+ */
+export type LinkConfirmation = {
+    /**
+     * Setup Token Id
+     */
+    setup_token_id: string;
+};
+
+/**
+ * LinkStart
+ *
+ * Where to send the buyer to approve the link, and the token to confirm with afterwards.
+ */
+export type LinkStart = {
+    /**
+     * Setup Token Id
+     */
+    setup_token_id: string;
+    /**
+     * Approve Url
+     */
+    approve_url: string;
+};
+
+/**
  * Money
  *
  * An amount in PayPal's shape, so an order line can carry it unchanged.
@@ -44,6 +151,169 @@ export type Money = {
      * Currency Code
      */
     currency_code: 'USD';
+};
+
+/**
+ * Order
+ */
+export type Order = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Number
+     */
+    number: string;
+    /**
+     * Cart Id
+     */
+    cart_id: string;
+    /**
+     * Channel
+     */
+    channel: 'human' | 'agent';
+    /**
+     * Status
+     */
+    status: 'creating' | 'declined' | 'failed' | 'authorized' | 'capture_pending' | 'captured' | 'voided' | 'refunded' | 'reversed';
+    total: Money;
+    /**
+     * Custom Id
+     */
+    custom_id: string | null;
+    /**
+     * Paypal Order Id
+     */
+    paypal_order_id: string | null;
+    /**
+     * Authorization Id
+     */
+    authorization_id: string | null;
+    /**
+     * Authorization Expires At
+     */
+    authorization_expires_at: string | null;
+    /**
+     * Capture Id
+     */
+    capture_id: string | null;
+    /**
+     * Payer Email
+     */
+    payer_email: string | null;
+    /**
+     * Wallet Email
+     */
+    wallet_email: string;
+    /**
+     * Wallet Demo
+     */
+    wallet_demo: boolean;
+    /**
+     * Lines
+     */
+    lines: Array<OrderLine>;
+    /**
+     * Events
+     */
+    events: Array<OrderEvent>;
+    /**
+     * Calls
+     */
+    calls: Array<PayPalCall>;
+    /**
+     * Created At
+     */
+    created_at: string;
+};
+
+/**
+ * OrderEvent
+ */
+export type OrderEvent = {
+    /**
+     * From Status
+     */
+    from_status: 'creating' | 'declined' | 'failed' | 'authorized' | 'capture_pending' | 'captured' | 'voided' | 'refunded' | 'reversed' | null;
+    /**
+     * To Status
+     */
+    to_status: 'creating' | 'declined' | 'failed' | 'authorized' | 'capture_pending' | 'captured' | 'voided' | 'refunded' | 'reversed';
+    /**
+     * Source
+     */
+    source: 'api' | 'webhook';
+    /**
+     * Webhook Event Id
+     */
+    webhook_event_id: string | null;
+    /**
+     * Detail
+     */
+    detail: string | null;
+    /**
+     * At
+     */
+    at: string;
+};
+
+/**
+ * OrderLine
+ */
+export type OrderLine = {
+    /**
+     * Product Id
+     */
+    product_id: string;
+    /**
+     * Size
+     */
+    size: string;
+    /**
+     * Quantity
+     */
+    quantity: number;
+    /**
+     * Brand
+     */
+    brand: string;
+    /**
+     * Name
+     */
+    name: string;
+    unit_price: Money;
+    line_total: Money;
+};
+
+/**
+ * PayPalCall
+ */
+export type PayPalCall = {
+    /**
+     * Action
+     */
+    action: 'create' | 'capture' | 'void';
+    /**
+     * Request Id
+     */
+    request_id: string;
+    /**
+     * Status Code
+     */
+    status_code: number | null;
+    /**
+     * Debug Id
+     */
+    debug_id: string | null;
+    /**
+     * Started At
+     */
+    started_at: string;
+    /**
+     * Finished At
+     */
+    finished_at: string | null;
 };
 
 /**
@@ -175,6 +445,36 @@ export type ValidationError = {
     ctx?: {
         [key: string]: unknown;
     };
+};
+
+/**
+ * Wallet
+ */
+export type Wallet = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Email
+     */
+    email: string;
+    /**
+     * First Name
+     */
+    first_name: string;
+    /**
+     * Payer Id
+     */
+    payer_id: string;
+    /**
+     * Demo
+     */
+    demo: boolean;
+    /**
+     * Status
+     */
+    status: 'active' | 'deleted';
 };
 
 /**
@@ -371,6 +671,286 @@ export type ProductResponses = {
 };
 
 export type ProductResponse = ProductResponses[keyof ProductResponses];
+
+export type CreateCartData = {
+    body: CartWallet;
+    path?: never;
+    query?: never;
+    url: '/api/shop/carts';
+};
+
+export type CreateCartErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateCartError = CreateCartErrors[keyof CreateCartErrors];
+
+export type CreateCartResponses = {
+    /**
+     * Successful Response
+     */
+    201: Cart;
+};
+
+export type CreateCartResponse = CreateCartResponses[keyof CreateCartResponses];
+
+export type CartData = {
+    body?: never;
+    path: {
+        /**
+         * Cart Id
+         */
+        cart_id: string;
+    };
+    query?: never;
+    url: '/api/shop/carts/{cart_id}';
+};
+
+export type CartErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CartError = CartErrors[keyof CartErrors];
+
+export type CartResponses = {
+    /**
+     * Successful Response
+     */
+    200: Cart;
+};
+
+export type CartResponse = CartResponses[keyof CartResponses];
+
+export type SetCartLineData = {
+    body: LineChange;
+    path: {
+        /**
+         * Cart Id
+         */
+        cart_id: string;
+    };
+    query?: never;
+    url: '/api/shop/carts/{cart_id}/lines';
+};
+
+export type SetCartLineErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SetCartLineError = SetCartLineErrors[keyof SetCartLineErrors];
+
+export type SetCartLineResponses = {
+    /**
+     * Successful Response
+     */
+    200: Cart;
+};
+
+export type SetCartLineResponse = SetCartLineResponses[keyof SetCartLineResponses];
+
+export type SetCartWalletData = {
+    body: CartWallet;
+    path: {
+        /**
+         * Cart Id
+         */
+        cart_id: string;
+    };
+    query?: never;
+    url: '/api/shop/carts/{cart_id}/wallet';
+};
+
+export type SetCartWalletErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SetCartWalletError = SetCartWalletErrors[keyof SetCartWalletErrors];
+
+export type SetCartWalletResponses = {
+    /**
+     * Successful Response
+     */
+    200: Cart;
+};
+
+export type SetCartWalletResponse = SetCartWalletResponses[keyof SetCartWalletResponses];
+
+export type CheckoutData = {
+    body?: never;
+    path: {
+        /**
+         * Cart Id
+         */
+        cart_id: string;
+    };
+    query?: never;
+    url: '/api/shop/carts/{cart_id}/checkout';
+};
+
+export type CheckoutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CheckoutError = CheckoutErrors[keyof CheckoutErrors];
+
+export type CheckoutResponses = {
+    /**
+     * Successful Response
+     */
+    200: Order;
+};
+
+export type CheckoutResponse = CheckoutResponses[keyof CheckoutResponses];
+
+export type StartWalletLinkData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/shop/wallets/link';
+};
+
+export type StartWalletLinkResponses = {
+    /**
+     * Successful Response
+     */
+    200: LinkStart;
+};
+
+export type StartWalletLinkResponse = StartWalletLinkResponses[keyof StartWalletLinkResponses];
+
+export type ConfirmWalletLinkData = {
+    body: LinkConfirmation;
+    path?: never;
+    query?: never;
+    url: '/api/shop/wallets/confirm';
+};
+
+export type ConfirmWalletLinkErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ConfirmWalletLinkError = ConfirmWalletLinkErrors[keyof ConfirmWalletLinkErrors];
+
+export type ConfirmWalletLinkResponses = {
+    /**
+     * Successful Response
+     */
+    200: Wallet;
+};
+
+export type ConfirmWalletLinkResponse = ConfirmWalletLinkResponses[keyof ConfirmWalletLinkResponses];
+
+export type DemoWalletData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/shop/wallets/demo';
+};
+
+export type DemoWalletResponses = {
+    /**
+     * Successful Response
+     */
+    200: Wallet;
+};
+
+export type DemoWalletResponse = DemoWalletResponses[keyof DemoWalletResponses];
+
+export type WalletData = {
+    body?: never;
+    path: {
+        /**
+         * Wallet Id
+         */
+        wallet_id: string;
+    };
+    query?: never;
+    url: '/api/shop/wallets/{wallet_id}';
+};
+
+export type WalletErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type WalletError = WalletErrors[keyof WalletErrors];
+
+export type WalletResponses = {
+    /**
+     * Successful Response
+     */
+    200: Wallet;
+};
+
+export type WalletResponse = WalletResponses[keyof WalletResponses];
+
+export type OrdersData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/orders';
+};
+
+export type OrdersResponses = {
+    /**
+     * Response Orders
+     *
+     * Successful Response
+     */
+    200: Array<Order>;
+};
+
+export type OrdersResponse = OrdersResponses[keyof OrdersResponses];
+
+export type OrderData = {
+    body?: never;
+    path: {
+        /**
+         * Number
+         */
+        number: string;
+    };
+    query?: never;
+    url: '/api/orders/{number}';
+};
+
+export type OrderErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type OrderError = OrderErrors[keyof OrderErrors];
+
+export type OrderResponses = {
+    /**
+     * Successful Response
+     */
+    200: Order;
+};
+
+export type OrderResponse = OrderResponses[keyof OrderResponses];
 
 export type HealthData = {
     body?: never;

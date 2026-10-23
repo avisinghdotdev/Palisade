@@ -83,6 +83,43 @@
   --sidebar-ring: oklch(0.708 0 0);
 }
 
+/* PayPal's button gold and its hover shade, from PayPal's checkout buttons. */
+@theme {
+  --color-paypal-gold: #ffc439;
+  --color-paypal-gold-hover: #f2ba36;
+}
+
+/* A dot that brightens and swells once per beat; dots started in turn read as a hand-off. */
+@keyframes relay {
+  0%,
+  60%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.8);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1.3);
+  }
+}
+
+/* The torn bottom edge of a till receipt: small teeth cut out of the paper. */
+@utility receipt-tear {
+  mask: conic-gradient(
+      from -45deg at bottom,
+      #0000,
+      #000 1deg 89deg,
+      #0000 90deg
+    )
+    50% / 12px 100%;
+}
+
+/* A printed receipt fills the sheet itself. With no page margin, browsers have no room */
+/* for the page title, address, and page number they would otherwise print around it. */
+@page receipt {
+  margin: 0;
+}
+
 /* Dialogs sit on a blurred, dimmed page rather than the preset's faint veil. */
 [data-slot="dialog-overlay"] {
   @apply bg-black/40 backdrop-blur-sm;

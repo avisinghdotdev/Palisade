@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Palisade API",
-    "version": "0.6.0"
+    "version": "0.7.0"
   },
   "paths": {
     "/api/paypal/health": {
@@ -233,6 +233,437 @@
         }
       }
     },
+    "/api/shop/carts": {
+      "post": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Create Cart",
+        "description": "An empty cart that the given wallet will pay for.",
+        "operationId": "create_cart",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CartWallet"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cart"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shop/carts/{cart_id}": {
+      "get": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Get Cart",
+        "operationId": "cart",
+        "parameters": [
+          {
+            "name": "cart_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Cart Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cart"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shop/carts/{cart_id}/lines": {
+      "put": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Set Cart Line",
+        "description": "Set how many of a product in a size the cart holds; 0 removes the line.",
+        "operationId": "set_cart_line",
+        "parameters": [
+          {
+            "name": "cart_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Cart Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LineChange"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cart"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shop/carts/{cart_id}/wallet": {
+      "put": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Set Cart Wallet",
+        "operationId": "set_cart_wallet",
+        "parameters": [
+          {
+            "name": "cart_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Cart Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CartWallet"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cart"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shop/carts/{cart_id}/checkout": {
+      "post": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Place Order",
+        "description": "Pay for the cart from its wallet; calling again returns the order already placed.",
+        "operationId": "checkout",
+        "parameters": [
+          {
+            "name": "cart_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Cart Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shop/wallets/link": {
+      "post": {
+        "tags": [
+          "wallets"
+        ],
+        "summary": "Start Wallet Link",
+        "description": "Begin saving the buyer's PayPal wallet; send the buyer to the approve URL.",
+        "operationId": "start_wallet_link",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinkStart"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shop/wallets/confirm": {
+      "post": {
+        "tags": [
+          "wallets"
+        ],
+        "summary": "Confirm Wallet Link",
+        "description": "Finish saving the wallet once the buyer has returned from PayPal.",
+        "operationId": "confirm_wallet_link",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkConfirmation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Wallet"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shop/wallets/demo": {
+      "get": {
+        "tags": [
+          "wallets"
+        ],
+        "summary": "Demo Wallet",
+        "operationId": "demo_wallet",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Wallet"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shop/wallets/{wallet_id}": {
+      "get": {
+        "tags": [
+          "wallets"
+        ],
+        "summary": "Get Wallet",
+        "operationId": "wallet",
+        "parameters": [
+          {
+            "name": "wallet_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Wallet Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Wallet"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/orders": {
+      "get": {
+        "tags": [
+          "orders"
+        ],
+        "summary": "List Orders",
+        "operationId": "orders",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Order"
+                  },
+                  "type": "array",
+                  "title": "Response Orders"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/orders/{number}": {
+      "get": {
+        "tags": [
+          "orders"
+        ],
+        "summary": "Get Order",
+        "operationId": "order",
+        "parameters": [
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "summary": "Health",
@@ -254,6 +685,103 @@
   },
   "components": {
     "schemas": {
+      "Cart": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "wallet_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Wallet Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "checking_out",
+              "completed"
+            ],
+            "title": "Status"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/CartLine"
+            },
+            "type": "array",
+            "title": "Lines"
+          },
+          "total": {
+            "$ref": "#/components/schemas/Money"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "wallet_id",
+          "status",
+          "lines",
+          "total"
+        ],
+        "title": "Cart"
+      },
+      "CartLine": {
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "title": "Product Id"
+          },
+          "size": {
+            "type": "string",
+            "title": "Size"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          },
+          "brand": {
+            "type": "string",
+            "title": "Brand"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "unit_price": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "line_total": {
+            "$ref": "#/components/schemas/Money"
+          }
+        },
+        "type": "object",
+        "required": [
+          "product_id",
+          "size",
+          "quantity",
+          "brand",
+          "name",
+          "unit_price",
+          "line_total"
+        ],
+        "title": "CartLine"
+      },
+      "CartWallet": {
+        "properties": {
+          "wallet_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Wallet Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "wallet_id"
+        ],
+        "title": "CartWallet"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -287,6 +815,64 @@
         "title": "Health"
       },
       "JsonValue": {},
+      "LineChange": {
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "title": "Product Id"
+          },
+          "size": {
+            "type": "string",
+            "title": "Size"
+          },
+          "quantity": {
+            "type": "integer",
+            "maximum": 20.0,
+            "minimum": 0.0,
+            "title": "Quantity"
+          }
+        },
+        "type": "object",
+        "required": [
+          "product_id",
+          "size",
+          "quantity"
+        ],
+        "title": "LineChange",
+        "description": "A product in a size and the quantity wanted; 0 removes the line."
+      },
+      "LinkConfirmation": {
+        "properties": {
+          "setup_token_id": {
+            "type": "string",
+            "title": "Setup Token Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "setup_token_id"
+        ],
+        "title": "LinkConfirmation"
+      },
+      "LinkStart": {
+        "properties": {
+          "setup_token_id": {
+            "type": "string",
+            "title": "Setup Token Id"
+          },
+          "approve_url": {
+            "type": "string",
+            "title": "Approve Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "setup_token_id",
+          "approve_url"
+        ],
+        "title": "LinkStart",
+        "description": "Where to send the buyer to approve the link, and the token to confirm with afterwards."
+      },
       "Money": {
         "properties": {
           "value": {
@@ -306,6 +892,366 @@
         ],
         "title": "Money",
         "description": "An amount in PayPal's shape, so an order line can carry it unchanged."
+      },
+      "Order": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "number": {
+            "type": "string",
+            "title": "Number"
+          },
+          "cart_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Cart Id"
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "human",
+              "agent"
+            ],
+            "title": "Channel"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "creating",
+              "declined",
+              "failed",
+              "authorized",
+              "capture_pending",
+              "captured",
+              "voided",
+              "refunded",
+              "reversed"
+            ],
+            "title": "Status"
+          },
+          "total": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "custom_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Id"
+          },
+          "paypal_order_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paypal Order Id"
+          },
+          "authorization_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authorization Id"
+          },
+          "authorization_expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authorization Expires At"
+          },
+          "capture_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capture Id"
+          },
+          "payer_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payer Email"
+          },
+          "wallet_email": {
+            "type": "string",
+            "title": "Wallet Email"
+          },
+          "wallet_demo": {
+            "type": "boolean",
+            "title": "Wallet Demo"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/OrderLine"
+            },
+            "type": "array",
+            "title": "Lines"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/OrderEvent"
+            },
+            "type": "array",
+            "title": "Events"
+          },
+          "calls": {
+            "items": {
+              "$ref": "#/components/schemas/PayPalCall"
+            },
+            "type": "array",
+            "title": "Calls"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "number",
+          "cart_id",
+          "channel",
+          "status",
+          "total",
+          "custom_id",
+          "paypal_order_id",
+          "authorization_id",
+          "authorization_expires_at",
+          "capture_id",
+          "payer_email",
+          "wallet_email",
+          "wallet_demo",
+          "lines",
+          "events",
+          "calls",
+          "created_at"
+        ],
+        "title": "Order"
+      },
+      "OrderEvent": {
+        "properties": {
+          "from_status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "creating",
+                  "declined",
+                  "failed",
+                  "authorized",
+                  "capture_pending",
+                  "captured",
+                  "voided",
+                  "refunded",
+                  "reversed"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Status"
+          },
+          "to_status": {
+            "type": "string",
+            "enum": [
+              "creating",
+              "declined",
+              "failed",
+              "authorized",
+              "capture_pending",
+              "captured",
+              "voided",
+              "refunded",
+              "reversed"
+            ],
+            "title": "To Status"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "api",
+              "webhook"
+            ],
+            "title": "Source"
+          },
+          "webhook_event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Webhook Event Id"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "from_status",
+          "to_status",
+          "source",
+          "webhook_event_id",
+          "detail",
+          "at"
+        ],
+        "title": "OrderEvent"
+      },
+      "OrderLine": {
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "title": "Product Id"
+          },
+          "size": {
+            "type": "string",
+            "title": "Size"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          },
+          "brand": {
+            "type": "string",
+            "title": "Brand"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "unit_price": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "line_total": {
+            "$ref": "#/components/schemas/Money"
+          }
+        },
+        "type": "object",
+        "required": [
+          "product_id",
+          "size",
+          "quantity",
+          "brand",
+          "name",
+          "unit_price",
+          "line_total"
+        ],
+        "title": "OrderLine"
+      },
+      "PayPalCall": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "create",
+              "capture",
+              "void"
+            ],
+            "title": "Action"
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "status_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Code"
+          },
+          "debug_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Debug Id"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action",
+          "request_id",
+          "status_code",
+          "debug_id",
+          "started_at",
+          "finished_at"
+        ],
+        "title": "PayPalCall"
       },
       "PayPalHealth": {
         "properties": {
@@ -501,6 +1447,49 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "Wallet": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "first_name": {
+            "type": "string",
+            "title": "First Name"
+          },
+          "payer_id": {
+            "type": "string",
+            "title": "Payer Id"
+          },
+          "demo": {
+            "type": "boolean",
+            "title": "Demo"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "deleted"
+            ],
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "email",
+          "first_name",
+          "payer_id",
+          "demo",
+          "status"
+        ],
+        "title": "Wallet"
       },
       "WebhookEvent": {
         "properties": {
