@@ -19,16 +19,18 @@ export function ShopHeader({
       <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
         <div className="flex min-w-0 items-center gap-3">
           <Link
-            className="flex items-center gap-2 text-lg font-semibold tracking-tight whitespace-nowrap"
+            className="flex min-w-0 items-center gap-2 text-base font-semibold tracking-tight sm:text-lg"
             to={to}
           >
             <ShopLogo className="size-6 shrink-0 text-primary" />
-            Ridgeline Running
+            <span className="truncate">Ridgeline Running</span>
           </Link>
           {beside}
         </div>
         {children !== undefined && (
-          <div className="flex items-center gap-3">{children}</div>
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+            {children}
+          </div>
         )}
       </div>
     </header>

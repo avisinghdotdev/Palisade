@@ -15,6 +15,8 @@ param imageTag = readEnvironmentVariable('IMAGE_TAG')
 param revisionSuffix = readEnvironmentVariable('REVISION_SUFFIX')
 param originCertificateName = 'cert-palisade-origin-prod'
 param customDomains = ['palisade.avisingh.dev']
+param publicOrigin = 'https://palisade.avisingh.dev'
+param demoBuyerEmail = 'buyer.business@palisade.example.com'
 // Cloudflare IPv4 ranges, https://www.cloudflare.com/ips-v4, as of 2026-10-09.
 param allowedInboundCidrs = [
   '173.245.48.0/20'

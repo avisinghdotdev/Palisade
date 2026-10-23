@@ -125,7 +125,7 @@ async def run_queued_jobs(store: WebhookStore) -> None:
     await jobs.run_worker_async(
         wait=False,
         install_signal_handlers=False,
-        additional_context={"webhook_store": store},
+        additional_context={"webhook_store": store, "webhook_handlers": {}},
     )
 
 

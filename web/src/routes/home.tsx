@@ -1,3 +1,4 @@
+import { ArrowUpRight } from "lucide-react";
 import { Link } from "react-router";
 
 import { AboutDialog } from "@/components/about-dialog";
@@ -20,19 +21,19 @@ export const links: Route.LinksFunction = () => [
 
 const STEPS = [
   {
-    title: "The buyer signs a mandate",
+    title: "The Buyer Signs a Mandate",
     body: "An AI shopping agent proposes a cart. The buyer approves it on Palisade's consent page with a passkey, which produces a signed record of the items, the amount cap, the merchant, and the expiry.",
   },
   {
-    title: "Palisade checks the agent",
-    body: "The agent signs its requests with its own key. Palisade verifies the signature and applies the merchant's policy: which agents may buy, spend caps, and the amount above which the buyer must approve again.",
+    title: "Palisade Checks the Agent",
+    body: "The agent signs its requests with its own key. Palisade verifies the signature and applies the merchant's policy: which agents may buy, spend caps, and blocked categories.",
   },
   {
-    title: "The mandate is bound to the PayPal order",
-    body: "Palisade creates the PayPal order with the mandate's id and hash in its custom id, then captures the payment once the checks pass. Every order is tagged as placed by an agent or by a person.",
+    title: "The Mandate is Bound to the PayPal Order",
+    body: "Palisade creates the PayPal order with the mandate's ID and hash in its custom ID, then captures the payment once the checks pass. Every order is tagged as placed by an agent or by a person.",
   },
   {
-    title: "Disputes are answered with evidence",
+    title: "Disputes are Answered with Evidence",
     body: "When PayPal sends a dispute webhook, Palisade routes it by reason, assembles the mandate record, tracking, and policy checks, has Claude write the narrative, and files it through the PayPal Disputes API.",
   },
 ];
@@ -68,7 +69,7 @@ export default function Home() {
       </header>
       <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
         <h1 className="text-3xl font-semibold tracking-tight">
-          Trust and dispute defense for purchases that AI agents make with
+          Trust and Dispute Defense for Purchases That AI Agents Make with
           PayPal
         </h1>
         <p className="mt-3 text-muted-foreground">
@@ -79,7 +80,7 @@ export default function Home() {
         </p>
 
         <h2 className="mt-12 text-xl font-semibold tracking-tight">
-          How it works
+          How It Works
         </h2>
         <ol className="mt-4 space-y-4">
           {STEPS.map((step, index) => (
@@ -98,7 +99,7 @@ export default function Home() {
         </ol>
 
         <h2 className="mt-12 text-xl font-semibold tracking-tight">
-          For merchants
+          For Merchants
         </h2>
         <p className="mt-3 text-sm text-muted-foreground">
           Palisade sits in front of a merchant's PayPal checkout. The merchant
@@ -110,22 +111,28 @@ export default function Home() {
         </p>
 
         <h2 className="mt-12 text-xl font-semibold tracking-tight">
-          See it in action
+          See It in Action
         </h2>
+        {/* This page explains the demo, so its two surfaces open beside it rather than replacing it. */}
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <Link
             className="rounded-xl focus-visible:outline-2"
-            rel="noreferrer"
             target="_blank"
             to="/shop"
           >
             <Card className="theme-shop h-full transition-colors hover:bg-accent/60">
               <CardHeader>
-                <ShopLogo className="size-6 text-primary" />
+                <div className="flex items-start justify-between">
+                  <ShopLogo className="size-6 text-primary" />
+                  <ArrowUpRight
+                    aria-hidden
+                    className="size-4 text-muted-foreground"
+                  />
+                </div>
                 <CardTitle>Ridgeline Running</CardTitle>
                 <CardDescription>
-                  The demo shop. Browse the shoes, then buy yourself or through
-                  an agent.
+                  The demo store. Pick shoes and pay with a saved PayPal sandbox
+                  wallet.
                   <span className="sr-only"> (opens in a new tab)</span>
                 </CardDescription>
               </CardHeader>
@@ -133,17 +140,22 @@ export default function Home() {
           </Link>
           <Link
             className="rounded-xl focus-visible:outline-2"
-            rel="noreferrer"
             target="_blank"
             to="/merchant"
           >
             <Card className="theme-shop h-full transition-colors hover:bg-accent/60">
               <CardHeader>
-                <ConsoleLogo className="size-6 text-primary" />
-                <CardTitle>Merchant console</CardTitle>
+                <div className="flex items-start justify-between">
+                  <ConsoleLogo className="size-6 text-primary" />
+                  <ArrowUpRight
+                    aria-hidden
+                    className="size-4 text-muted-foreground"
+                  />
+                </div>
+                <CardTitle>Merchant Console</CardTitle>
                 <CardDescription>
-                  What the store sees: every PayPal event, and soon every order,
-                  agent, and dispute.
+                  What the store sees: every order with its PayPal payment, and
+                  every PayPal event.
                   <span className="sr-only"> (opens in a new tab)</span>
                 </CardDescription>
               </CardHeader>

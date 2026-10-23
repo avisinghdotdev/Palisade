@@ -1,6 +1,7 @@
 import asyncio
 import os
 from collections.abc import AsyncIterator
+from uuid import UUID, uuid4, uuid7
 
 import certifi
 import httpx2
@@ -10,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from palisade_api.database import create_engine
 from palisade_api.main import app
 from palisade_api.settings import DatabaseSettings
+from palisade_api.wallets.models import WalletRecord
 
 # psycopg's bundled OpenSSL finds no system trust store on Windows; `sslrootcert=system` then
 # falls back to this file.
@@ -39,6 +41,26 @@ async def sessions() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
         )
         await transaction.rollback()
     await engine.dispose()
+
+
+@pytest.fixture
+async def wallet_id(sessions: async_sessionmaker[AsyncSession]) -> UUID:
+    """A saved wallet inside the test's transaction, for carts and orders to use."""
+    identifier = uuid7()
+    async with sessions.begin() as session:
+        session.add(
+            WalletRecord(
+                id=identifier,
+                paypal_customer_id="customer_test",
+                payment_token_id=f"PT-TEST-{uuid4().hex[:8]}",
+                payer_id="PAYER-TEST",
+                email="buyer@palisade.test",
+                first_name="Test",
+                demo=False,
+                status="active",
+            )
+        )
+    return identifier
 
 
 @pytest.fixture

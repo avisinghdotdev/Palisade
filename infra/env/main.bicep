@@ -38,6 +38,12 @@ param customDomains string[] = []
 @description('Name of the origin certificate in the vault. Empty until it has been imported.')
 param originCertificateName string = ''
 
+@description('The site origin the buyer\'s browser uses; PayPal sends the buyer back to URLs under it.')
+param publicOrigin string
+
+@description('PayPal sandbox account whose linked wallet is the shop\'s default buyer.')
+param demoBuyerEmail string
+
 param budgetAmount int
 param budgetStartDate string
 param budgetContactEmails string[]
@@ -61,6 +67,8 @@ var apiSecretEnvironment = [for item in apiSecrets: { name: item.env, secretRef:
 var apiEnvironment = [
   { name: 'LOG_LEVEL', value: 'INFO' }
   { name: 'LOG_FORMAT', value: 'json' }
+  { name: 'PUBLIC_ORIGIN', value: publicOrigin }
+  { name: 'DEMO_BUYER_EMAIL', value: demoBuyerEmail }
   // Startup applies pending migrations under an advisory lock, so a second replica waits.
   { name: 'RUN_MIGRATIONS', value: 'true' }
   // Every replica runs the job worker; the queue hands each job to one of them.

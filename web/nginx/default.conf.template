@@ -27,14 +27,22 @@ server {
   add_header Referrer-Policy "strict-origin-when-cross-origin" always;
   add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
   # React Router inlines its hydration scripts, so script-src needs 'unsafe-inline' until hashes are generated per build.
-  add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" always;
+  # Cloudflare injects its Web Analytics beacon, which loads from and posts to the two cloudflareinsights hosts.
+  add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://cloudflareinsights.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" always;
 
   # API_UPSTREAM is substituted at container start; the API owns the /api prefix.
-  location /api/ {
+  # ^~ keeps the file-name rule below from claiming API paths that end in an extension.
+  location ^~ /api/ {
     proxy_pass http://${API_UPSTREAM};
   }
 
+  # A path that names a file is that file or a 404, never the SPA: a stale bundle must fail as missing.
+  location ~ \.[A-Za-z0-9]+$ {
+    try_files $uri =404;
+  }
+
+  # Routes with a parameter in the path are not prerendered; the SPA fallback renders them in the browser.
   location / {
-    try_files $uri $uri/index.html =404;
+    try_files $uri $uri/index.html /__spa-fallback.html;
   }
 }

@@ -1,14 +1,10 @@
-/** The hackathon's announcement page, in a new tab. */
+import { ExternalLink } from "@/components/external-link";
+
+/** The hackathon's announcement page. */
 export function HackathonLink() {
   return (
-    <a
-      className="underline underline-offset-2 hover:text-foreground"
-      href="https://developer.paypal.com/community/blog/PayPal_AI_Hackathon/"
-      rel="noreferrer"
-      target="_blank"
-    >
+    <ExternalLink href="https://developer.paypal.com/community/blog/PayPal_AI_Hackathon/">
       PayPal AI Hackathon 2026
-      <span className="sr-only"> (opens in a new tab)</span>
-    </a>
+    </ExternalLink>
   );
 }
