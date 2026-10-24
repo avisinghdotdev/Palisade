@@ -48,7 +48,8 @@ def configure_logging(
     """Send structlog and stdlib records through one handler on `stream`, stdout by default.
 
     Uvicorn's server records are rerouted to that handler. Its access log is dropped because the
-    `api_request` event already covers every request. httpx2's per-call lines are dropped too.
+    `api_request` event already covers every request. httpx2's per-call lines and two libraries'
+    import-time notes are dropped too.
     """
     shared_processors: list[Processor] = [
         structlog.contextvars.merge_contextvars,
@@ -90,6 +91,9 @@ def configure_logging(
     # httpx2 logs a call before its caller binds the debug id, so the line carries the previous
     # call's id; the PayPal client's own `paypal_call` event replaces it.
     logging.getLogger("httpx2").setLevel(logging.WARNING)
+    # Import-time notes that the app loaded its tasks and Alembic its plugins.
+    for name in ("procrastinate.blueprints", "alembic.runtime.plugins"):
+        logging.getLogger(name).setLevel(logging.WARNING)
 
 
 def _order_fields(_logger: object, _method: str, event_dict: EventDict) -> EventDict:

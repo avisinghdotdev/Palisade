@@ -222,6 +222,7 @@ export type Order = {
      * Calls
      */
     calls: Array<PayPalCall>;
+    shipment: Shipment | null;
     /**
      * Created At
      */
@@ -243,7 +244,7 @@ export type OrderEvent = {
     /**
      * Source
      */
-    source: 'api' | 'webhook';
+    source: 'api' | 'webhook' | 'repair';
     /**
      * Webhook Event Id
      */
@@ -259,7 +260,7 @@ export type OrderEvent = {
     /**
      * Paypal Event
      *
-     * The PayPal event a webhook row records; None on a checkout row.
+     * The PayPal event a webhook row records; None on a checkout or repair row.
      */
     readonly paypal_event: 'PAYMENT.AUTHORIZATION.CREATED' | 'PAYMENT.AUTHORIZATION.VOIDED' | 'PAYMENT.CAPTURE.PENDING' | 'PAYMENT.CAPTURE.COMPLETED' | 'PAYMENT.CAPTURE.DECLINED' | 'PAYMENT.CAPTURE.REFUNDED' | 'PAYMENT.CAPTURE.REVERSED' | null;
 };
@@ -336,7 +337,7 @@ export type PayPalCall = {
     /**
      * Action
      */
-    action: 'create' | 'capture' | 'void';
+    action: 'create' | 'capture' | 'void' | 'track';
     /**
      * Request Id
      */
@@ -470,6 +471,42 @@ export type ReceivedEvent = {
      * Processed At
      */
     processed_at: string | null;
+};
+
+/**
+ * Shipment
+ */
+export type Shipment = {
+    /**
+     * Carrier
+     */
+    carrier: 'USPS' | 'UPS';
+    /**
+     * Tracking Number
+     */
+    tracking_number: string;
+    /**
+     * Paypal Tracker Id
+     */
+    paypal_tracker_id: string;
+    /**
+     * Shipped At
+     */
+    shipped_at: string;
+};
+
+/**
+ * ShipmentRequest
+ */
+export type ShipmentRequest = {
+    /**
+     * Carrier
+     */
+    carrier: 'USPS' | 'UPS';
+    /**
+     * Tracking Number
+     */
+    tracking_number: string;
 };
 
 /**
@@ -635,6 +672,7 @@ export type OrderWritable = {
      * Calls
      */
     calls: Array<PayPalCall>;
+    shipment: Shipment | null;
     /**
      * Created At
      */
@@ -656,7 +694,7 @@ export type OrderEventWritable = {
     /**
      * Source
      */
-    source: 'api' | 'webhook';
+    source: 'api' | 'webhook' | 'repair';
     /**
      * Webhook Event Id
      */
@@ -1109,6 +1147,36 @@ export type OrderResponses = {
 };
 
 export type OrderResponse = OrderResponses[keyof OrderResponses];
+
+export type ShipOrderData = {
+    body: ShipmentRequest;
+    path: {
+        /**
+         * Number
+         */
+        number: string;
+    };
+    query?: never;
+    url: '/api/orders/{number}/shipment';
+};
+
+export type ShipOrderErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ShipOrderError = ShipOrderErrors[keyof ShipOrderErrors];
+
+export type ShipOrderResponses = {
+    /**
+     * Successful Response
+     */
+    200: Order;
+};
+
+export type ShipOrderResponse = ShipOrderResponses[keyof ShipOrderResponses];
 
 export type HealthData = {
     body?: never;

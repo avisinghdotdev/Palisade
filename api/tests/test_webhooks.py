@@ -113,8 +113,12 @@ def paypal(store: WebhookStore) -> Iterator[PayPalStub]:
 
 
 @pytest.fixture
-async def queue() -> AsyncIterator[InMemoryConnector]:
-    """Jobs kept in memory instead of the database, so the worker can run them inside the test."""
+async def queue(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[InMemoryConnector]:
+    """Jobs kept in memory instead of the database, so the worker can run them inside the test.
+
+    Only the jobs a test defers are queued: the worker's periodic order repair is left out.
+    """
+    monkeypatch.setattr(jobs.periodic_registry, "periodic_tasks", {})
     connector = InMemoryConnector()
     with jobs.replace_connector(connector):
         async with jobs.open_async():

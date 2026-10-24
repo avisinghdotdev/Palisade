@@ -43,7 +43,7 @@ const HEADLINES: Record<Order["status"], { title: string; detail: string }> = {
   failed: {
     title: "We Could Not Confirm Your Payment",
     detail:
-      "PayPal did not answer in time. The merchant sees this order and can check it.",
+      "PayPal did not answer in time. The shop asks PayPal again within minutes; reload this page to see the outcome.",
   },
   voided: {
     title: "Your Payment was Released",

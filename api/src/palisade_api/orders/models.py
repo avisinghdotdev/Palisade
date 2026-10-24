@@ -53,6 +53,7 @@ class OrderRecord(Base):
         order_by="OrderEventRecord.id"
     )
     calls: Mapped[list[PayPalCallRecord]] = relationship(order_by="PayPalCallRecord.id")
+    shipment: Mapped[ShipmentRecord | None] = relationship()
 
 
 class OrderLineRecord(Base):
@@ -78,9 +79,10 @@ class PayPalCallRecord(Base):
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
     order_id: Mapped[UUID] = mapped_column(ForeignKey("orders.id"), index=True)
-    # "create", "capture", or "void".
+    # "create", "capture", "void", or "track".
     action: Mapped[str] = mapped_column(Text)
-    # The PayPal-Request-Id sent; a repeat with the same id is answered with the same result.
+    # The PayPal-Request-Id sent; a repeat with the same id is answered with the same result, and
+    # the row keeps the latest answer.
     request_id: Mapped[str] = mapped_column(Text, unique=True)
     request_body: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     status_code: Mapped[int | None] = mapped_column(Integer)
@@ -101,7 +103,8 @@ class OrderEventRecord(Base):
     order_id: Mapped[UUID] = mapped_column(ForeignKey("orders.id"), index=True)
     from_status: Mapped[str | None] = mapped_column(Text)
     to_status: Mapped[str] = mapped_column(Text)
-    # "api" for the checkout itself, "webhook" for a PayPal event.
+    # "api" for the checkout itself, "webhook" for a PayPal event, "repair" for the job that
+    # finishes a checkout left halfway.
     source: Mapped[str] = mapped_column(Text)
     # Unique, so a replayed or retried webhook can never add a second row.
     webhook_event_id: Mapped[str | None] = mapped_column(
@@ -109,5 +112,21 @@ class OrderEventRecord(Base):
     )
     detail: Mapped[str | None] = mapped_column(Text)
     at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ShipmentRecord(Base):
+    """The tracking the merchant added to an order's PayPal capture; one per order."""
+
+    __tablename__: str = "shipments"
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    order_id: Mapped[UUID] = mapped_column(ForeignKey("orders.id"), unique=True)
+    carrier: Mapped[str] = mapped_column(Text)
+    tracking_number: Mapped[str] = mapped_column(Text)
+    # PayPal names a tracker by the capture id and the tracking number joined with a hyphen.
+    paypal_tracker_id: Mapped[str] = mapped_column(Text)
+    shipped_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

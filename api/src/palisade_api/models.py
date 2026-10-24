@@ -6,6 +6,7 @@ from palisade_api.orders.models import (
     OrderLineRecord,
     OrderRecord,
     PayPalCallRecord,
+    ShipmentRecord,
 )
 from palisade_api.shop.models import CartLineRecord, CartRecord, ProductRecord
 from palisade_api.wallets.models import WalletRecord
@@ -20,6 +21,7 @@ __all__ = [
     "OrderRecord",
     "PayPalCallRecord",
     "ProductRecord",
+    "ShipmentRecord",
     "WalletRecord",
     "WebhookEventRecord",
 ]

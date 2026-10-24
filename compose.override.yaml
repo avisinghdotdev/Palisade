@@ -28,7 +28,7 @@ services:
       watch:
         - path: api/src
           target: /app/api/src
-          action: sync
+          action: sync+restart
         - path: api/pyproject.toml
           action: rebuild
         - path: uv.lock
