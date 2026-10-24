@@ -70,8 +70,9 @@ jobs:
             --deny-settings-mode denyDelete --deny-settings-apply-to-child-scopes \
             --deny-settings-excluded-principals "cc37a2c5-39c9-44c8-8eab-d48cda185d0f a4db2292-7f75-4aac-8b2c-74d57c9c181f" \
             --yes --output none
-      - name: Health check through Cloudflare
+      # /api/ready answers only once the new revision reaches the database with its vault secret.
+      - name: Readiness check through Cloudflare
         run: |
-          body=$(curl --fail --silent --show-error --retry 6 --retry-all-errors --retry-delay 10 https://palisade.avisingh.dev/api/health)
+          body=$(curl --fail --silent --show-error --retry 6 --retry-all-errors --retry-delay 10 https://palisade.avisingh.dev/api/ready)
           echo "$body"
-          grep --quiet '"status":"ok"' <<< "$body"
+          grep --quiet '"status":"ready"' <<< "$body"

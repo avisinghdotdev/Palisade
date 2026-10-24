@@ -2,13 +2,14 @@
 
 import asyncio
 from dataclasses import dataclass
+from time import perf_counter
 from typing import final
 
 import httpx2
 import structlog
 from pydantic import BaseModel, JsonValue, ValidationError
 
-from palisade_api.paypal.auth import PayPalAuth
+from palisade_api.paypal.auth import PayPalAuth, log_call
 
 # PayPal asks for one repeat of a call that timed out or answered 5xx, with the same request id,
 # and for a later retry of a 409; the repeat follows after this pause.
@@ -104,6 +105,7 @@ class PayPalClient:
     async def post_json(self, path: str, body: bytes) -> httpx2.Response:
         """POST a JSON document given as bytes, so the caller controls its exact wire form."""
         token = await self._auth.token()
+        started = perf_counter()
         response = await self._http.post(
             path,
             content=body,
@@ -112,7 +114,7 @@ class PayPalClient:
                 "Content-Type": "application/json",
             },
         )
-        self._bind_debug_id(response)
+        self._record("POST", path, response, started)
         return response
 
     async def _send(
@@ -125,6 +127,7 @@ class PayPalClient:
     ) -> httpx2.Response | None:
         """One attempt; None when the request timed out."""
         token = await self._auth.token()
+        started = perf_counter()
         try:
             response = await self._http.request(
                 method,
@@ -135,7 +138,7 @@ class PayPalClient:
         except httpx2.TimeoutException:
             logger.warning("paypal_timeout", method=method, path=path)
             return None
-        self._bind_debug_id(response)
+        self._record(method, path, response, started)
         return response
 
     def _result(self, response: httpx2.Response) -> PayPalResponse:
@@ -146,8 +149,11 @@ class PayPalClient:
         return PayPalResponse(response.status_code, debug_id, body)
 
     @staticmethod
-    def _bind_debug_id(response: httpx2.Response) -> None:
-        # PayPal support asks for this id; bound here, it lands on the request's wide event.
+    def _record(
+        method: str, path: str, response: httpx2.Response, started: float
+    ) -> None:
+        log_call(method, path, response, started)
+        # Bound as well, the last call's id lands on the request's wide event.
         debug_id = response.headers.get("paypal-debug-id")
         if debug_id is not None:
             structlog.contextvars.bind_contextvars(paypal_debug_id=debug_id)

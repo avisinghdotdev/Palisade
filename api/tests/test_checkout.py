@@ -6,12 +6,14 @@ import httpx2
 import pytest
 from paypal_stub import PayPalStub, json_answer, timeout
 from pydantic import BaseModel, JsonValue, TypeAdapter
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from palisade_api.main import app
 from palisade_api.orders.checkout import Checkout
+from palisade_api.orders.models import OrderRecord
 from palisade_api.orders.router import orders as orders_dependency
-from palisade_api.orders.store import Order, Orders
+from palisade_api.orders.store import Order, Orders, OrderSummary
 from palisade_api.paypal.auth import PayPalAuth
 from palisade_api.paypal.client import PayPalClient
 from palisade_api.shop.cart import Cart, Carts
@@ -25,7 +27,7 @@ CREATE_PATH = "/v2/checkout/orders"
 CAPTURE_PATH = "/v2/payments/authorizations/AUTH-1/capture"
 VOID_PATH = "/v2/payments/authorizations/AUTH-1/void"
 NUMBER = re.compile(r"^RR-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$")
-ORDERS = TypeAdapter(list[Order])
+ORDERS = TypeAdapter(list[OrderSummary])
 
 
 class Item(BaseModel):
@@ -55,9 +57,23 @@ class CreateBody(BaseModel):
     payment_source: Source
 
 
-async def orders_for(client: httpx2.AsyncClient, cart_id: UUID) -> list[Order]:
-    listed = ORDERS.validate_json((await client.get("/api/orders")).content)
-    return [item for item in listed if item.cart_id == cart_id]
+async def orders_for(
+    client: httpx2.AsyncClient,
+    sessions: async_sessionmaker[AsyncSession],
+    cart_id: UUID,
+) -> list[Order]:
+    """Every order placed from the cart, oldest first, as the API returns it."""
+    statement = (
+        select(OrderRecord.number)
+        .where(OrderRecord.cart_id == cart_id)
+        .order_by(OrderRecord.created_at)
+    )
+    async with sessions() as session:
+        numbers = (await session.scalars(statement)).all()
+    return [
+        Order.model_validate_json((await client.get(f"/api/orders/{number}")).content)
+        for number in numbers
+    ]
 
 
 def created_order() -> dict[str, object]:
@@ -228,7 +244,10 @@ async def test_checking_out_again_returns_the_same_order(
 
 @pytest.mark.usefixtures("shop")
 async def test_a_declined_payment_reopens_the_cart(
-    paypal: PayPalStub, client: httpx2.AsyncClient, wallet_id: UUID
+    paypal: PayPalStub,
+    client: httpx2.AsyncClient,
+    wallet_id: UUID,
+    sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     paypal.on("POST", CREATE_PATH, json_answer(422, declined()))
     cart = await cart_with_shoes(client, wallet_id)
@@ -238,7 +257,7 @@ async def test_a_declined_payment_reopens_the_cart(
     assert response.status_code == 402
     assert "INSTRUMENT_DECLINED" in response.json()["detail"]
     assert await cart_status(client, cart.id) == "open"
-    [order] = await orders_for(client, cart.id)
+    [order] = await orders_for(client, sessions, cart.id)
     assert order.status == "declined"
     assert order.events[-1].detail == "INSTRUMENT_DECLINED"
     assert order.calls[0].debug_id == "debug-422"
@@ -281,7 +300,10 @@ async def test_a_create_that_never_answers_leaves_the_order_failed(
 
 @pytest.mark.usefixtures("shop")
 async def test_a_refused_capture_voids_the_hold(
-    paypal: PayPalStub, client: httpx2.AsyncClient, wallet_id: UUID
+    paypal: PayPalStub,
+    client: httpx2.AsyncClient,
+    wallet_id: UUID,
+    sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     paypal.on("POST", CAPTURE_PATH, json_answer(422, declined()))
     cart = await cart_with_shoes(client, wallet_id)
@@ -291,7 +313,7 @@ async def test_a_refused_capture_voids_the_hold(
     assert response.status_code == 402
     assert len(paypal.sent("POST", VOID_PATH)) == 1
     assert await cart_status(client, cart.id) == "open"
-    [order] = await orders_for(client, cart.id)
+    [order] = await orders_for(client, sessions, cart.id)
     assert order.status == "voided"
     assert [call.action for call in order.calls] == ["create", "capture", "void"]
 

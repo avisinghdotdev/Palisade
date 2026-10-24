@@ -13,7 +13,20 @@ export const STATUS_LABELS: Record<Order["status"], string> = {
   reversed: "Reversed",
 };
 
-/** What happened when an order reached each status, as its timeline tells it. */
+type PaymentEvent = NonNullable<Order["events"][number]["paypal_event"]>;
+
+/** What each PayPal payment webhook reported, as the order's timeline tells it. */
+export const WEBHOOK_LABELS: Record<PaymentEvent, string> = {
+  "PAYMENT.AUTHORIZATION.CREATED": "PayPal Confirmed the Authorization",
+  "PAYMENT.AUTHORIZATION.VOIDED": "PayPal Confirmed the Void",
+  "PAYMENT.CAPTURE.PENDING": "PayPal Reported the Capture Pending",
+  "PAYMENT.CAPTURE.COMPLETED": "PayPal Confirmed the Capture",
+  "PAYMENT.CAPTURE.DECLINED": "PayPal Declined the Capture",
+  "PAYMENT.CAPTURE.REFUNDED": "PayPal Refunded the Capture",
+  "PAYMENT.CAPTURE.REVERSED": "PayPal Reversed the Capture",
+};
+
+/** What happened when the checkout moved an order to each status, as its timeline tells it. */
 export const EVENT_LABELS: Record<Order["status"], string> = {
   creating: "Order Created",
   declined: "Payment Declined",

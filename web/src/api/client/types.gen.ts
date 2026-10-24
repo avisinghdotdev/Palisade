@@ -256,6 +256,12 @@ export type OrderEvent = {
      * At
      */
     at: string;
+    /**
+     * Paypal Event
+     *
+     * The PayPal event a webhook row records; None on a checkout row.
+     */
+    readonly paypal_event: 'PAYMENT.AUTHORIZATION.CREATED' | 'PAYMENT.AUTHORIZATION.VOIDED' | 'PAYMENT.CAPTURE.PENDING' | 'PAYMENT.CAPTURE.COMPLETED' | 'PAYMENT.CAPTURE.DECLINED' | 'PAYMENT.CAPTURE.REFUNDED' | 'PAYMENT.CAPTURE.REVERSED' | null;
 };
 
 /**
@@ -284,6 +290,43 @@ export type OrderLine = {
     name: string;
     unit_price: Money;
     line_total: Money;
+};
+
+/**
+ * OrderSummary
+ *
+ * An order as the console's list shows it, without its lines, events, and PayPal calls.
+ */
+export type OrderSummary = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Number
+     */
+    number: string;
+    /**
+     * Channel
+     */
+    channel: 'human' | 'agent';
+    /**
+     * Status
+     */
+    status: 'creating' | 'declined' | 'failed' | 'authorized' | 'capture_pending' | 'captured' | 'voided' | 'refunded' | 'reversed';
+    total: Money;
+    /**
+     * Capture Id
+     */
+    capture_id: string | null;
+    /**
+     * Wallet Email
+     */
+    wallet_email: string;
+    /**
+     * Created At
+     */
+    created_at: string;
 };
 
 /**
@@ -405,6 +448,16 @@ export type QueuedJob = {
 };
 
 /**
+ * Readiness
+ */
+export type Readiness = {
+    /**
+     * Status
+     */
+    status: 'ready';
+};
+
+/**
  * ReceivedEvent
  */
 export type ReceivedEvent = {
@@ -511,6 +564,111 @@ export type WebhookEvent = {
     resource: {
         [key: string]: JsonValue;
     };
+};
+
+/**
+ * Order
+ */
+export type OrderWritable = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Number
+     */
+    number: string;
+    /**
+     * Cart Id
+     */
+    cart_id: string;
+    /**
+     * Channel
+     */
+    channel: 'human' | 'agent';
+    /**
+     * Status
+     */
+    status: 'creating' | 'declined' | 'failed' | 'authorized' | 'capture_pending' | 'captured' | 'voided' | 'refunded' | 'reversed';
+    total: Money;
+    /**
+     * Custom Id
+     */
+    custom_id: string | null;
+    /**
+     * Paypal Order Id
+     */
+    paypal_order_id: string | null;
+    /**
+     * Authorization Id
+     */
+    authorization_id: string | null;
+    /**
+     * Authorization Expires At
+     */
+    authorization_expires_at: string | null;
+    /**
+     * Capture Id
+     */
+    capture_id: string | null;
+    /**
+     * Payer Email
+     */
+    payer_email: string | null;
+    /**
+     * Wallet Email
+     */
+    wallet_email: string;
+    /**
+     * Wallet Demo
+     */
+    wallet_demo: boolean;
+    /**
+     * Lines
+     */
+    lines: Array<OrderLine>;
+    /**
+     * Events
+     */
+    events: Array<OrderEventWritable>;
+    /**
+     * Calls
+     */
+    calls: Array<PayPalCall>;
+    /**
+     * Created At
+     */
+    created_at: string;
+};
+
+/**
+ * OrderEvent
+ */
+export type OrderEventWritable = {
+    /**
+     * From Status
+     */
+    from_status: 'creating' | 'declined' | 'failed' | 'authorized' | 'capture_pending' | 'captured' | 'voided' | 'refunded' | 'reversed' | null;
+    /**
+     * To Status
+     */
+    to_status: 'creating' | 'declined' | 'failed' | 'authorized' | 'capture_pending' | 'captured' | 'voided' | 'refunded' | 'reversed';
+    /**
+     * Source
+     */
+    source: 'api' | 'webhook';
+    /**
+     * Webhook Event Id
+     */
+    webhook_event_id: string | null;
+    /**
+     * Detail
+     */
+    detail: string | null;
+    /**
+     * At
+     */
+    at: string;
 };
 
 export type PaypalHealthData = {
@@ -917,7 +1075,7 @@ export type OrdersResponses = {
      *
      * Successful Response
      */
-    200: Array<Order>;
+    200: Array<OrderSummary>;
 };
 
 export type OrdersResponse = OrdersResponses[keyof OrdersResponses];
@@ -967,3 +1125,26 @@ export type HealthResponses = {
 };
 
 export type HealthResponse = HealthResponses[keyof HealthResponses];
+
+export type ReadyData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/ready';
+};
+
+export type ReadyErrors = {
+    /**
+     * The database did not answer in time.
+     */
+    503: unknown;
+};
+
+export type ReadyResponses = {
+    /**
+     * Successful Response
+     */
+    200: Readiness;
+};
+
+export type ReadyResponse = ReadyResponses[keyof ReadyResponses];

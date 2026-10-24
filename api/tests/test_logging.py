@@ -4,11 +4,14 @@ from io import StringIO
 
 import pytest
 import structlog
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
+from paypal_stub import PayPalStub, json_answer
 from pydantic import TypeAdapter
 
 from palisade_api.logging import RequestLogMiddleware, configure_logging
+from palisade_api.paypal.auth import PayPalAuth
+from palisade_api.paypal.client import PayPalClient
 
 EVENT = TypeAdapter(dict[str, object])
 RAY = "230b030023ae2822-SJC"
@@ -31,19 +34,31 @@ def boom() -> None:
     raise RuntimeError("boom")
 
 
+def healthy() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+def unhealthy() -> None:
+    raise HTTPException(503, "Not serving.")
+
+
 @pytest.fixture
 def client() -> TestClient:
     app = FastAPI()
     app.add_middleware(RequestLogMiddleware)
     app.add_api_route("/items/{item_id}", item)
     app.add_api_route("/boom", boom)
+    app.add_api_route("/api/health", healthy)
     return TestClient(app)
+
+
+def events_of(stream: StringIO) -> list[dict[str, object]]:
+    return [EVENT.validate_json(line) for line in stream.getvalue().splitlines()]
 
 
 def events(stream: StringIO, name: str = "api_request") -> list[dict[str, object]]:
     """Parsed JSON lines named `name`; the test client's own HTTP log lines are skipped."""
-    parsed = [EVENT.validate_json(line) for line in stream.getvalue().splitlines()]
-    return [event for event in parsed if event["event"] == name]
+    return [event for event in events_of(stream) if event["event"] == name]
 
 
 def test_each_request_logs_one_event_carrying_the_ids(
@@ -95,6 +110,45 @@ def test_a_client_error_is_not_an_error(json_log: StringIO, client: TestClient) 
     [event] = events(json_log)
     assert event["outcome"] == "client_error"
     assert event["route"] is None
+
+
+def test_a_passing_probe_writes_no_event(
+    json_log: StringIO, client: TestClient
+) -> None:
+    client.get("/api/health")
+
+    assert events(json_log) == []
+
+
+def test_a_failing_probe_is_logged(json_log: StringIO) -> None:
+    app = FastAPI()
+    app.add_middleware(RequestLogMiddleware)
+    app.add_api_route("/api/health", unhealthy)
+
+    TestClient(app).get("/api/health")
+
+    [event] = events(json_log)
+    assert event["status_code"] == 503
+
+
+@pytest.mark.anyio
+async def test_each_paypal_call_logs_its_own_debug_id(json_log: StringIO) -> None:
+    paypal = PayPalStub()
+    paypal.on("POST", "/v2/checkout/orders", json_answer(201, {"id": "ORDER-1"}))
+    paypal.on("GET", "/v2/checkout/orders/ORDER-1", json_answer(200, {}))
+    http = paypal.client()
+    client = PayPalClient(http, PayPalAuth(http, "client-id", "client-secret"))
+
+    await client.post("/v2/checkout/orders", {}, request_id="request-1")
+    await client.get("/v2/checkout/orders/ORDER-1")
+
+    calls = events(json_log, "paypal_call")
+    assert [(call["path"], call["paypal_debug_id"]) for call in calls] == [
+        ("/v1/oauth2/token", None),
+        ("/v2/checkout/orders", "debug-201"),
+        ("/v2/checkout/orders/ORDER-1", "debug-200"),
+    ]
+    assert all(event["logger"] != "httpx2" for event in events_of(json_log))
 
 
 def test_stdlib_records_render_as_the_same_json(json_log: StringIO) -> None:

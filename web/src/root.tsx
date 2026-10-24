@@ -22,6 +22,12 @@ import "./app.css";
 const siteTitle = "Palisade";
 const queryClient = new QueryClient();
 
+// The store's mark on every page, the SPA fallback included, so no browser asks for
+// /favicon.ico. The landing page adds Palisade's mark after it, and the last icon wins.
+export const links: Route.LinksFunction = () => [
+  { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
+];
+
 // React Router passes null, not undefined, when nothing failed.
 export const meta: Route.MetaFunction = ({ error }) => [
   {
@@ -104,7 +110,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
           <li>
             <Link
               className="rounded-md border bg-card px-3 py-2 hover:bg-accent"
-              to="/merchant"
+              to="/console"
             >
               Merchant Console
             </Link>

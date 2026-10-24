@@ -10,14 +10,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from palisade_api.orders.models import OrderEventRecord, OrderRecord
-from palisade_api.orders.store import OrderStatus
+from palisade_api.orders.store import OrderStatus, PaymentEvent
 from palisade_api.webhooks.store import WebhookEvent
 from palisade_api.webhooks.tasks import Handler
 
 Kind = Literal["authorization", "capture"]
 
 # What each event says about the order; None records the event without changing the status.
-EVENTS: dict[str, tuple[Kind, OrderStatus | None]] = {
+EVENTS: dict[PaymentEvent, tuple[Kind, OrderStatus | None]] = {
     "PAYMENT.AUTHORIZATION.CREATED": ("authorization", None),
     "PAYMENT.AUTHORIZATION.VOIDED": ("authorization", "voided"),
     "PAYMENT.CAPTURE.PENDING": ("capture", "capture_pending"),
@@ -71,10 +71,25 @@ async def apply(
         else OrderRecord.capture_id
     )
     async with sessions.begin() as session:
-        record = await session.scalar(select(OrderRecord).where(column == paypal_id))
+        # The row lock runs one order's events one at a time, across worker replicas too.
+        record = await session.scalar(
+            select(OrderRecord).where(column == paypal_id).with_for_update()
+        )
         if record is None:
             logger.info(
                 "webhook_unmatched", event_id=event.id, event_type=event.event_type
+            )
+            return
+        recorded = await session.scalar(
+            select(OrderEventRecord.id).where(
+                OrderEventRecord.webhook_event_id == event.id
+            )
+        )
+        if recorded is not None:
+            logger.info(
+                "webhook_already_applied",
+                event_id=event.id,
+                order_number=record.number,
             )
             return
         from_status = record.status

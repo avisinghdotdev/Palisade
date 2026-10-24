@@ -4,10 +4,10 @@ from datetime import datetime
 from typing import Literal, final
 from uuid import UUID
 
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel, TypeAdapter, computed_field
 from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload, selectinload
 
 from palisade_api.orders.models import (
     OrderEventRecord,
@@ -33,6 +33,17 @@ OrderStatus = Literal[
 ORDER_STATUS = TypeAdapter(OrderStatus)
 Channel = Literal["human", "agent"]
 CHANNEL = TypeAdapter(Channel)
+# The PayPal payment events an order's timeline records.
+PaymentEvent = Literal[
+    "PAYMENT.AUTHORIZATION.CREATED",
+    "PAYMENT.AUTHORIZATION.VOIDED",
+    "PAYMENT.CAPTURE.PENDING",
+    "PAYMENT.CAPTURE.COMPLETED",
+    "PAYMENT.CAPTURE.DECLINED",
+    "PAYMENT.CAPTURE.REFUNDED",
+    "PAYMENT.CAPTURE.REVERSED",
+]
+PAYMENT_EVENT = TypeAdapter(PaymentEvent)
 ORDERS_LISTED = 100
 
 
@@ -51,8 +62,17 @@ class OrderEvent(BaseModel):
     to_status: OrderStatus
     source: Literal["api", "webhook"]
     webhook_event_id: str | None
+    # PayPal's issue codes on a checkout row; the PayPal event type on a webhook row.
     detail: str | None
     at: datetime
+
+    @computed_field
+    @property
+    def paypal_event(self) -> PaymentEvent | None:
+        """The PayPal event a webhook row records; None on a checkout row."""
+        if self.source == "api":
+            return None
+        return PAYMENT_EVENT.validate_python(self.detail)
 
 
 class PayPalCall(BaseModel):
@@ -62,6 +82,19 @@ class PayPalCall(BaseModel):
     debug_id: str | None
     started_at: datetime
     finished_at: datetime | None
+
+
+class OrderSummary(BaseModel):
+    """An order as the console's list shows it, without its lines, events, and PayPal calls."""
+
+    id: UUID
+    number: str
+    channel: Channel
+    status: OrderStatus
+    total: Money
+    capture_id: str | None
+    wallet_email: str
+    created_at: datetime
 
 
 class Order(BaseModel):
@@ -110,6 +143,19 @@ def paypal_call(call: PayPalCallRecord) -> PayPalCall:
     return PayPalCall.model_validate(call, from_attributes=True)
 
 
+def order_summary(record: OrderRecord) -> OrderSummary:
+    return OrderSummary(
+        id=record.id,
+        number=record.number,
+        channel=CHANNEL.validate_python(record.channel),
+        status=ORDER_STATUS.validate_python(record.status),
+        total=money(record.total_cents),
+        capture_id=record.capture_id,
+        wallet_email=record.wallet.email,
+        created_at=record.created_at,
+    )
+
+
 def order(record: OrderRecord) -> Order:
     return Order(
         id=record.id,
@@ -135,7 +181,7 @@ def order(record: OrderRecord) -> Order:
 
 def with_details(statement: Select[OrderRecord]) -> Select[OrderRecord]:
     return statement.options(
-        selectinload(OrderRecord.wallet),
+        joinedload(OrderRecord.wallet),
         selectinload(OrderRecord.lines),
         selectinload(OrderRecord.events),
         selectinload(OrderRecord.calls),
@@ -156,16 +202,17 @@ class Orders:
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         self._sessions = sessions
 
-    async def list(self) -> list[Order]:
+    async def list(self) -> list[OrderSummary]:
         """The most recent orders, newest first."""
-        statement = with_details(
+        statement = (
             select(OrderRecord)
+            .options(joinedload(OrderRecord.wallet))
             .order_by(OrderRecord.created_at.desc())
             .limit(ORDERS_LISTED)
         )
         async with self._sessions() as session:
             records = (await session.scalars(statement)).all()
-            return [order(record) for record in records]
+            return [order_summary(record) for record in records]
 
     async def get(self, number: str) -> Order:
         statement = with_details(

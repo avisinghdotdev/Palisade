@@ -2,7 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from palisade_api.orders.store import Order, Orders, UnknownOrder
+from palisade_api.orders.store import Order, Orders, OrderSummary, UnknownOrder
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
 
@@ -14,7 +14,9 @@ def orders(request: Request) -> Orders:
 
 
 @router.get("", operation_id="orders")
-async def list_orders(service: Annotated[Orders, Depends(orders)]) -> list[Order]:
+async def list_orders(
+    service: Annotated[Orders, Depends(orders)],
+) -> list[OrderSummary]:
     return await service.list()
 
 

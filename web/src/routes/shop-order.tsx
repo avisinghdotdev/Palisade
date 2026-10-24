@@ -15,10 +15,6 @@ import { errorDetail } from "@/shopper";
 
 import type { Route } from "./+types/shop-order";
 
-export const links: Route.LinksFunction = () => [
-  { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
-];
-
 export const meta: Route.MetaFunction = ({ params }) => [
   { title: pageTitle(`Receipt ${params.number}`, "Shop") },
 ];
@@ -138,7 +134,7 @@ export default function ShopOrder({ params }: Route.ComponentProps) {
                   Print or Save as PDF
                 </Button>
                 <Button asChild className="sm:flex-1" variant="outline">
-                  <Link to={`/merchant/orders/${order.data.number}`}>
+                  <Link to={`/console/orders/${order.data.number}`}>
                     <ConsoleLogo />
                     View in Merchant Console
                   </Link>

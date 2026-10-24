@@ -1,4 +1,5 @@
-set windows-shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-Command"]
+# Bypass lets npm's pnpm.ps1 shim run under Windows' default Restricted policy, for this process only.
+set windows-shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
 
 # List available recipes
 default:
