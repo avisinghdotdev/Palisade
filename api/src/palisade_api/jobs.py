@@ -3,10 +3,11 @@
 import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager, suppress
+from typing import cast
 
 import psycopg
 import structlog
-from procrastinate import App, PsycopgConnector
+from procrastinate import App, JobContext, PsycopgConnector
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # Jobs still running when the API stops get this long to finish before they are aborted for a retry.
@@ -14,9 +15,22 @@ SHUTDOWN_GRACE_SECONDS = 20.0
 
 logger = structlog.stdlib.get_logger(__name__)
 
-# Tasks register here at import. This connector is never opened: a job is deferred on the
-# caller's own connection, and the worker opens its own connector in `run_worker`.
-jobs = App(connector=PsycopgConnector())
+# Tasks register when their module is imported; the worker imports these before it starts. This
+# connector is never opened: a job is deferred on the caller's own connection, and the worker
+# opens its own connector in `run_worker`.
+jobs = App(
+    connector=PsycopgConnector(),
+    import_paths=["palisade_api.webhooks.tasks", "palisade_api.orders.tasks"],
+)
+
+
+def context_value[T](context: JobContext, key: str, kind: type[T]) -> T:
+    """`key` from the context `run_worker` was given, checked to be a `kind`."""
+    # Procrastinate types the context as a bare dict; the lifespan fills it.
+    value = cast("dict[str, object]", context.additional_context)[key]
+    if not isinstance(value, kind):
+        raise TypeError(f"{key} in the job context is a {type(value).__name__}")
+    return value
 
 
 async def driver_connection(session: AsyncSession) -> psycopg.AsyncConnection[object]:

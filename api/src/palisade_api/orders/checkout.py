@@ -5,21 +5,28 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import final
-from uuid import UUID, uuid4, uuid7
+from uuid import UUID, uuid7
 
 from pydantic import BaseModel, JsonValue
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
+from palisade_api.orders.calls import PayPalCalls
 from palisade_api.orders.models import (
     OrderEventRecord,
     OrderLineRecord,
     OrderRecord,
-    PayPalCallRecord,
 )
-from palisade_api.orders.store import Order, Orders, OrderStatus, load_order, order
-from palisade_api.paypal.client import PayPalClient, PayPalError, PayPalResponse
+from palisade_api.orders.store import (
+    EventSource,
+    Order,
+    Orders,
+    OrderStatus,
+    load_order,
+    order,
+)
+from palisade_api.paypal.client import PayPalError
 from palisade_api.shop.cart import CartNotOpen, CartStatus, UnknownCart
 from palisade_api.shop.catalog import money
 from palisade_api.shop.models import CartLineRecord, CartRecord, ProductRecord
@@ -28,6 +35,7 @@ from palisade_api.wallets.models import WalletRecord
 # Letters and digits that are not mistaken for each other when read aloud or typed.
 NUMBER_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 NUMBER_LENGTH = 6
+CREATE_PATH = "/v2/checkout/orders"
 
 
 class EmptyCart(Exception):
@@ -157,15 +165,23 @@ def note_created(
 
 @final
 class Checkout:
+    """An order's payment steps; `source` names who drives them on the order's timeline.
+
+    Each step sends its PayPal call once per order: running a step again repeats that call under
+    its first request id, so a step whose answer was lost can be finished later.
+    """
+
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        paypal: PayPalClient,
+        calls: PayPalCalls,
         orders: Orders,
+        source: EventSource,
     ) -> None:
         self._sessions = sessions
-        self._paypal = paypal
+        self._calls = calls
         self._orders = orders
+        self._source: EventSource = source
 
     async def place_order(self, cart_id: UUID) -> Order:
         """Turn the cart into a paid order; a repeat call returns the order already placed.
@@ -178,17 +194,27 @@ class Checkout:
         started = await self._begin(cart_id)
         if isinstance(started, Order):
             return started
+        return await self.create(started.order_id, started.number, started.create_body)
+
+    async def create(
+        self, order_id: UUID, number: str, body: dict[str, JsonValue]
+    ) -> Order:
+        """Create the PayPal order, which authorizes the saved wallet, then capture.
+
+        Raises:
+            CheckoutDeclined: PayPal refused the payment; the cart is open again.
+            CheckoutFailed: PayPal did not answer; the order is `failed`.
+            PayPalError: a refused capture's void was refused too; the order stays `authorized`.
+        """
         try:
-            response = await self._call(
-                started.order_id, "create", "/v2/checkout/orders", started.create_body
-            )
+            response = await self._calls.once(order_id, "create", CREATE_PATH, body)
         except PayPalError as error:
-            raise await self._refused(started, error) from error
+            raise await self._refused(order_id, number, error) from error
         created = CreatedOrder.model_validate(response.body)
         authorization = created.purchase_units[0].payments.authorizations[0]
         if authorization.status != "CREATED":
             await self._transition(
-                started.order_id,
+                order_id,
                 "declined",
                 detail=f"authorization {authorization.status}",
                 cart_status="open",
@@ -196,33 +222,73 @@ class Checkout:
             )
             raise CheckoutDeclined([f"AUTHORIZATION_{authorization.status}"])
         await self._transition(
-            started.order_id, "authorized", apply=note_created(created, authorization)
+            order_id, "authorized", apply=note_created(created, authorization)
         )
+        return await self.capture(order_id, authorization.id)
+
+    async def capture(self, order_id: UUID, authorization_id: str) -> Order:
+        """Capture the whole authorization; a capture that does not complete voids the hold.
+
+        Raises:
+            CheckoutDeclined: the capture did not complete and the hold is voided.
+            PayPalError: the void was refused too; the order stays `authorized`.
+        """
         try:
-            response = await self._call(
-                started.order_id,
+            response = await self._calls.once(
+                order_id,
                 "capture",
-                f"/v2/payments/authorizations/{authorization.id}/capture",
+                f"/v2/payments/authorizations/{authorization_id}/capture",
                 {"final_capture": True},
             )
         except PayPalError as error:
-            raise await self._void(started, authorization.id, error.issues) from error
+            await self.void(order_id, authorization_id, error.issues)
+            raise CheckoutDeclined(error.issues) from error
         capture = Capture.model_validate(response.body)
         if capture.status not in ("COMPLETED", "PENDING"):
-            raise await self._void(
-                started, authorization.id, [f"CAPTURE_{capture.status}"]
-            )
+            issues = [f"CAPTURE_{capture.status}"]
+            await self.void(order_id, authorization_id, issues)
+            raise CheckoutDeclined(issues)
+        await self.captured(order_id, capture)
+        return await self._orders.get_by_id(order_id)
+
+    async def captured(self, order_id: UUID, capture: Capture) -> None:
+        """Record a capture PayPal made; the cart is complete."""
 
         def note_capture(record: OrderRecord) -> None:
             record.capture_id = capture.id
 
         await self._transition(
-            started.order_id,
+            order_id,
             "captured" if capture.status == "COMPLETED" else "capture_pending",
             cart_status="completed",
             apply=note_capture,
         )
-        return await self._orders.get_by_id(started.order_id)
+
+    async def void(
+        self, order_id: UUID, authorization_id: str, issues: list[str]
+    ) -> None:
+        """Release the hold; the cart is open again.
+
+        Raises:
+            PayPalError: PayPal refused the void or did not answer; the order is unchanged.
+        """
+        await self._calls.once(
+            order_id,
+            "void",
+            f"/v2/payments/authorizations/{authorization_id}/void",
+            {},
+        )
+        await self.released(order_id, issues)
+
+    async def released(self, order_id: UUID, issues: list[str]) -> None:
+        """Record a hold that no longer holds funds; the cart is open again."""
+        await self._transition(
+            order_id, "voided", detail=", ".join(issues), cart_status="open"
+        )
+
+    async def give_up(self, order_id: UUID, issue: str) -> None:
+        """Close an order whose outcome PayPal can no longer tell: `failed`, the cart open again."""
+        await self._transition(order_id, "failed", detail=issue, cart_status="open")
 
     async def _begin(self, cart_id: UUID) -> Order | Started:
         """Freeze the cart and write the order before anything is sent to PayPal."""
@@ -314,78 +380,17 @@ class Checkout:
             if taken is None:
                 return number
 
-    async def _call(
-        self, order_id: UUID, action: str, path: str, body: dict[str, JsonValue]
-    ) -> PayPalResponse:
-        """Send one request to PayPal, recorded before it leaves and again when it is answered."""
-        call_id = uuid7()
-        request_id = str(uuid4())
-        async with self._sessions.begin() as session:
-            session.add(
-                PayPalCallRecord(
-                    id=call_id,
-                    order_id=order_id,
-                    action=action,
-                    request_id=request_id,
-                    request_body=body,
-                )
-            )
-        try:
-            response = await self._paypal.post(path, body, request_id=request_id)
-        except PayPalError as error:
-            await self._finish_call(
-                call_id, error.status_code, error.debug_id, error.error.model_dump()
-            )
-            raise
-        await self._finish_call(
-            call_id, response.status_code, response.debug_id, response.body
-        )
-        return response
-
-    async def _finish_call(
-        self,
-        call_id: UUID,
-        status_code: int,
-        debug_id: str | None,
-        response_body: dict[str, JsonValue],
-    ) -> None:
-        async with self._sessions.begin() as session:
-            call = await session.get_one(PayPalCallRecord, call_id)
-            call.status_code = status_code
-            call.debug_id = debug_id
-            call.response_body = response_body
-            # The database's clock, like every other timestamp, so the API host's clock never skews it.
-            call.finished_at = func.now()
-
-    async def _refused(self, started: Started, error: PayPalError) -> Exception:
+    async def _refused(
+        self, order_id: UUID, number: str, error: PayPalError
+    ) -> Exception:
         """Record a create call PayPal refused or never answered; the exception to raise."""
         if error.status_code >= 500:
-            await self._transition(
-                started.order_id, "failed", detail=", ".join(error.issues)
-            )
-            return CheckoutFailed(started.number)
+            await self._transition(order_id, "failed", detail=", ".join(error.issues))
+            return CheckoutFailed(number)
         await self._transition(
-            started.order_id,
-            "declined",
-            detail=", ".join(error.issues),
-            cart_status="open",
+            order_id, "declined", detail=", ".join(error.issues), cart_status="open"
         )
         return CheckoutDeclined(error.issues)
-
-    async def _void(
-        self, started: Started, authorization_id: str, issues: list[str]
-    ) -> Exception:
-        """Release the hold after a capture that did not complete; the exception to raise."""
-        await self._call(
-            started.order_id,
-            "void",
-            f"/v2/payments/authorizations/{authorization_id}/void",
-            {},
-        )
-        await self._transition(
-            started.order_id, "voided", detail=", ".join(issues), cart_status="open"
-        )
-        return CheckoutDeclined(issues)
 
     async def _transition(
         self,
@@ -398,13 +403,16 @@ class Checkout:
     ) -> None:
         async with self._sessions.begin() as session:
             record = await session.get_one(OrderRecord, order_id)
+            # A step run again that changes nothing, such as a create still unanswered, adds no row.
+            if record.status == to_status and cart_status is None and apply is None:
+                return
             session.add(
                 OrderEventRecord(
                     id=uuid7(),
                     order_id=order_id,
                     from_status=record.status,
                     to_status=to_status,
-                    source="api",
+                    source=self._source,
                     detail=detail,
                 )
             )

@@ -7,7 +7,7 @@ import psycopg
 import structlog
 from procrastinate import JobContext, RetryStrategy
 
-from palisade_api.jobs import jobs
+from palisade_api.jobs import context_value, jobs
 from palisade_api.webhooks.store import WebhookEvent, WebhookStore
 
 logger = structlog.stdlib.get_logger(__name__)
@@ -20,33 +20,15 @@ Handler = Callable[[WebhookEvent], Awaitable[None]]
 RETRY = RetryStrategy(max_attempts=5, exponential_wait=4)
 
 
-def webhook_store(context: JobContext) -> WebhookStore:
-    store = _from_context(context, "webhook_store")
-    if not isinstance(store, WebhookStore):
-        raise TypeError(f"webhook_store in the job context is a {type(store).__name__}")
-    return store
-
-
-def webhook_handlers(context: JobContext) -> dict[str, Handler]:
-    handlers = _from_context(context, "webhook_handlers")
-    if not isinstance(handlers, dict):
-        raise TypeError(
-            f"webhook_handlers in the job context is a {type(handlers).__name__}"
-        )
-    return cast("dict[str, Handler]", handlers)
-
-
-def _from_context(context: JobContext, key: str) -> object:
-    # Procrastinate types the context as a bare dict; the lifespan fills it.
-    return cast("dict[str, object]", context.additional_context)[key]
-
-
 @jobs.task(retry=RETRY, pass_context=True)
 async def process_webhook_event(context: JobContext, event_id: str) -> None:
     """Hand one stored event to the handler for its type; a failure is retried with backoff."""
-    store = webhook_store(context)
+    store = context_value(context, "webhook_store", WebhookStore)
     event = await store.get(event_id)
-    handler = webhook_handlers(context).get(event.event_type)
+    handlers = cast(
+        "dict[str, Handler]", context_value(context, "webhook_handlers", dict)
+    )
+    handler = handlers.get(event.event_type)
     if handler is not None:
         await handler(event)
     await store.mark_processed(event_id)

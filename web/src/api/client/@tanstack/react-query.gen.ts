@@ -3,8 +3,8 @@
 import { type DefaultError, queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 
 import { client } from '../client.gen';
-import { cart, checkout, confirmWalletLink, createCart, demoWallet, health, type Options, order, orders, paypalHealth, paypalWebhook, product, products, ready, replayWebhookEvent, setCartLine, setCartWallet, startWalletLink, wallet, webhookEvents } from '../sdk.gen';
-import type { CartData, CartError, CartResponse, CheckoutData, CheckoutError, CheckoutResponse, ConfirmWalletLinkData, ConfirmWalletLinkError, ConfirmWalletLinkResponse, CreateCartData, CreateCartError, CreateCartResponse, DemoWalletData, DemoWalletResponse, HealthData, HealthResponse, OrderData, OrderError, OrderResponse, OrdersData, OrdersResponse, PaypalHealthData, PaypalHealthResponse, PaypalWebhookData, PaypalWebhookError, PaypalWebhookResponse, ProductData, ProductError, ProductResponse, ProductsData, ProductsResponse, ReadyData, ReadyResponse, ReplayWebhookEventData, ReplayWebhookEventError, ReplayWebhookEventResponse, SetCartLineData, SetCartLineError, SetCartLineResponse, SetCartWalletData, SetCartWalletError, SetCartWalletResponse, StartWalletLinkData, StartWalletLinkResponse, WalletData, WalletError, WalletResponse, WebhookEventsData, WebhookEventsResponse } from '../types.gen';
+import { cart, checkout, confirmWalletLink, createCart, demoWallet, health, type Options, order, orders, paypalHealth, paypalWebhook, product, products, ready, replayWebhookEvent, setCartLine, setCartWallet, shipOrder, startWalletLink, wallet, webhookEvents } from '../sdk.gen';
+import type { CartData, CartError, CartResponse, CheckoutData, CheckoutError, CheckoutResponse, ConfirmWalletLinkData, ConfirmWalletLinkError, ConfirmWalletLinkResponse, CreateCartData, CreateCartError, CreateCartResponse, DemoWalletData, DemoWalletResponse, HealthData, HealthResponse, OrderData, OrderError, OrderResponse, OrdersData, OrdersResponse, PaypalHealthData, PaypalHealthResponse, PaypalWebhookData, PaypalWebhookError, PaypalWebhookResponse, ProductData, ProductError, ProductResponse, ProductsData, ProductsResponse, ReadyData, ReadyResponse, ReplayWebhookEventData, ReplayWebhookEventError, ReplayWebhookEventResponse, SetCartLineData, SetCartLineError, SetCartLineResponse, SetCartWalletData, SetCartWalletError, SetCartWalletResponse, ShipOrderData, ShipOrderError, ShipOrderResponse, StartWalletLinkData, StartWalletLinkResponse, WalletData, WalletError, WalletResponse, WebhookEventsData, WebhookEventsResponse } from '../types.gen';
 
 export type QueryKey<TOptions extends Options> = [
     Pick<TOptions, 'baseUrl' | 'body' | 'headers' | 'path' | 'query'> & {
@@ -357,6 +357,28 @@ export const orderOptions = (options: Options<OrderData>) => queryOptions<OrderR
     },
     queryKey: orderQueryKey(options)
 });
+
+/**
+ * Ship Order
+ *
+ * Mark a paid order shipped: its tracking goes onto the PayPal capture.
+ *
+ * A 409 means the order is not captured or already shipped; a 422 means PayPal refused the
+ * tracking; a 502 means PayPal failed to answer.
+ */
+export const shipOrderMutation = (options?: Partial<Options<ShipOrderData>>): UseMutationOptions<ShipOrderResponse, ShipOrderError, Options<ShipOrderData>> => {
+    const mutationOptions: UseMutationOptions<ShipOrderResponse, ShipOrderError, Options<ShipOrderData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await shipOrder({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
 
 export const healthQueryKey = (options?: Options<HealthData>) => createQueryKey('health', options);
 

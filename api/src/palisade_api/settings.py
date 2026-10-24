@@ -16,6 +16,17 @@ class DatabaseSettings(BaseSettings):
     database_url: SecretStr
 
 
+class LogSettings(BaseSettings):
+    """How the process logs, read before the server starts so its own first lines follow it."""
+
+    model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
+        env_ignore_empty=True
+    )
+
+    log_level: LogLevel
+    log_format: LogFormat
+
+
 class Settings(DatabaseSettings):
     """Values the API reads from its environment at startup; a missing or blank one stops the start."""
 
@@ -26,8 +37,6 @@ class Settings(DatabaseSettings):
     public_origin: str
     # The PayPal account whose linked wallet is the shop's default buyer.
     demo_buyer_email: str
-    log_level: LogLevel
-    log_format: LogFormat
     # Startup applies pending migrations only where this is true, so one process owns the schema.
     run_migrations: bool
     # The job worker runs inside this process only where this is true, so a laptop never takes

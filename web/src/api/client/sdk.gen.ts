@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CartData, CartErrors, CartResponses, CheckoutData, CheckoutErrors, CheckoutResponses, ConfirmWalletLinkData, ConfirmWalletLinkErrors, ConfirmWalletLinkResponses, CreateCartData, CreateCartErrors, CreateCartResponses, DemoWalletData, DemoWalletResponses, HealthData, HealthResponses, OrderData, OrderErrors, OrderResponses, OrdersData, OrdersResponses, PaypalHealthData, PaypalHealthResponses, PaypalWebhookData, PaypalWebhookErrors, PaypalWebhookResponses, ProductData, ProductErrors, ProductResponses, ProductsData, ProductsResponses, ReadyData, ReadyErrors, ReadyResponses, ReplayWebhookEventData, ReplayWebhookEventErrors, ReplayWebhookEventResponses, SetCartLineData, SetCartLineErrors, SetCartLineResponses, SetCartWalletData, SetCartWalletErrors, SetCartWalletResponses, StartWalletLinkData, StartWalletLinkResponses, WalletData, WalletErrors, WalletResponses, WebhookEventsData, WebhookEventsResponses } from './types.gen';
+import type { CartData, CartErrors, CartResponses, CheckoutData, CheckoutErrors, CheckoutResponses, ConfirmWalletLinkData, ConfirmWalletLinkErrors, ConfirmWalletLinkResponses, CreateCartData, CreateCartErrors, CreateCartResponses, DemoWalletData, DemoWalletResponses, HealthData, HealthResponses, OrderData, OrderErrors, OrderResponses, OrdersData, OrdersResponses, PaypalHealthData, PaypalHealthResponses, PaypalWebhookData, PaypalWebhookErrors, PaypalWebhookResponses, ProductData, ProductErrors, ProductResponses, ProductsData, ProductsResponses, ReadyData, ReadyErrors, ReadyResponses, ReplayWebhookEventData, ReplayWebhookEventErrors, ReplayWebhookEventResponses, SetCartLineData, SetCartLineErrors, SetCartLineResponses, SetCartWalletData, SetCartWalletErrors, SetCartWalletResponses, ShipOrderData, ShipOrderErrors, ShipOrderResponses, StartWalletLinkData, StartWalletLinkResponses, WalletData, WalletErrors, WalletResponses, WebhookEventsData, WebhookEventsResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -151,6 +151,23 @@ export const orders = <ThrowOnError extends boolean = false>(options?: Options<O
  * Get Order
  */
 export const order = <ThrowOnError extends boolean = false>(options: Options<OrderData, ThrowOnError>): RequestResult<OrderResponses, OrderErrors, ThrowOnError> => (options.client ?? client).get<OrderResponses, OrderErrors, ThrowOnError>({ url: '/api/orders/{number}', ...options });
+
+/**
+ * Ship Order
+ *
+ * Mark a paid order shipped: its tracking goes onto the PayPal capture.
+ *
+ * A 409 means the order is not captured or already shipped; a 422 means PayPal refused the
+ * tracking; a 502 means PayPal failed to answer.
+ */
+export const shipOrder = <ThrowOnError extends boolean = false>(options: Options<ShipOrderData, ThrowOnError>): RequestResult<ShipOrderResponses, ShipOrderErrors, ThrowOnError> => (options.client ?? client).post<ShipOrderResponses, ShipOrderErrors, ThrowOnError>({
+    url: '/api/orders/{number}/shipment',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 /**
  * Health
