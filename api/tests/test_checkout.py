@@ -4,12 +4,22 @@ from uuid import UUID
 
 import httpx2
 import pytest
+from order_fixtures import (
+    CAPTURE_PATH,
+    CREATE_PATH,
+    VOID_PATH,
+    cart_status,
+    cart_with_shoes,
+    created_order,
+    declined,
+)
 from paypal_stub import PayPalStub, json_answer, timeout
 from pydantic import BaseModel, JsonValue, TypeAdapter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from palisade_api.main import app
+from palisade_api.orders.calls import PayPalCalls
 from palisade_api.orders.checkout import Checkout
 from palisade_api.orders.models import OrderRecord
 from palisade_api.orders.router import orders as orders_dependency
@@ -23,9 +33,6 @@ from palisade_api.shop.router import checkout as checkout_dependency
 
 pytestmark = pytest.mark.anyio
 
-CREATE_PATH = "/v2/checkout/orders"
-CAPTURE_PATH = "/v2/payments/authorizations/AUTH-1/capture"
-VOID_PATH = "/v2/payments/authorizations/AUTH-1/void"
 NUMBER = re.compile(r"^RR-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$")
 ORDERS = TypeAdapter(list[OrderSummary])
 
@@ -76,41 +83,6 @@ async def orders_for(
     ]
 
 
-def created_order() -> dict[str, object]:
-    return {
-        "id": "PP-ORDER-1",
-        "status": "COMPLETED",
-        "payer": {"email_address": "buyer@palisade.test"},
-        "purchase_units": [
-            {
-                "payments": {
-                    "authorizations": [
-                        {
-                            "id": "AUTH-1",
-                            "status": "CREATED",
-                            "expiration_time": "2026-11-21T10:00:00Z",
-                        }
-                    ]
-                }
-            }
-        ],
-    }
-
-
-def declined() -> dict[str, object]:
-    return {
-        "name": "UNPROCESSABLE_ENTITY",
-        "message": "The requested action could not be performed.",
-        "debug_id": "debug-declined",
-        "details": [
-            {
-                "issue": "INSTRUMENT_DECLINED",
-                "description": "The instrument was declined.",
-            }
-        ],
-    }
-
-
 @pytest.fixture
 def paypal() -> PayPalStub:
     stub = PayPalStub()
@@ -128,9 +100,8 @@ def shop(
 ) -> Iterator[Checkout]:
     http = paypal.client()
     orders = Orders(sessions)
-    checkout = Checkout(
-        sessions, PayPalClient(http, PayPalAuth(http, "id", "secret")), orders
-    )
+    calls = PayPalCalls(sessions, PayPalClient(http, PayPalAuth(http, "id", "secret")))
+    checkout = Checkout(sessions, calls, orders, source="api")
     carts = Carts(sessions)
     app.dependency_overrides[carts_dependency] = lambda: carts
     app.dependency_overrides[checkout_dependency] = lambda: checkout
@@ -139,28 +110,8 @@ def shop(
     app.dependency_overrides.clear()
 
 
-async def cart_with_shoes(client: httpx2.AsyncClient, wallet_id: UUID) -> Cart:
-    response = await client.post("/api/shop/carts", json={"wallet_id": str(wallet_id)})
-    cart = Cart.model_validate_json(response.content)
-    await client.put(
-        f"/api/shop/carts/{cart.id}/lines",
-        json={"product_id": "nike-free-rn-flyknit", "size": "10", "quantity": 1},
-    )
-    await client.put(
-        f"/api/shop/carts/{cart.id}/lines",
-        json={"product_id": "hoka-mach-x-2", "size": "9.5", "quantity": 2},
-    )
-    return cart
-
-
 async def checkout(client: httpx2.AsyncClient, cart_id: UUID) -> httpx2.Response:
     return await client.post(f"/api/shop/carts/{cart_id}/checkout")
-
-
-async def cart_status(client: httpx2.AsyncClient, cart_id: UUID) -> str:
-    return Cart.model_validate_json(
-        (await client.get(f"/api/shop/carts/{cart_id}")).content
-    ).status
 
 
 @pytest.mark.usefixtures("shop")

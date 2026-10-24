@@ -14,11 +14,14 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from palisade_api.database import create_engine
 from palisade_api.jobs import run_worker
-from palisade_api.logging import RequestLogMiddleware, configure_logging
+from palisade_api.logging import RequestLogMiddleware
 from palisade_api.migrate import upgrade_to_head
 from palisade_api.orders import router as orders_router
 from palisade_api.orders import webhooks as order_webhooks
+from palisade_api.orders.calls import PayPalCalls
 from palisade_api.orders.checkout import Checkout
+from palisade_api.orders.repair import Repairs
+from palisade_api.orders.shipping import Shipments
 from palisade_api.orders.store import Orders
 from palisade_api.paypal import router as paypal
 from palisade_api.paypal.auth import SANDBOX_BASE_URL, PayPalAuth
@@ -51,13 +54,13 @@ class State(TypedDict):
     wallets: Wallets
     checkout: Checkout
     orders: Orders
+    shipments: Shipments
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[State]:
     # pydantic-settings fills the fields from the environment; pyright only sees the synthesized constructor.
     settings = Settings()  # pyright: ignore[reportCallIssue]
-    configure_logging(settings.log_level, settings.log_format)
     if settings.run_migrations:
         # Alembic's environment drives a sync engine, so it runs off the event loop.
         await asyncio.to_thread(upgrade_to_head)
@@ -85,15 +88,25 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[State]:
                 settings.demo_buyer_email,
             )
             orders = Orders(sessions)
+            calls = PayPalCalls(sessions, paypal_client)
             if settings.run_worker:
                 handlers = {
                     **order_webhooks.handlers(sessions),
                     **wallet_webhooks.handlers(wallets),
                 }
+                repairs = Repairs(
+                    sessions,
+                    Checkout(sessions, calls, orders, source="repair"),
+                    paypal_client,
+                )
                 await stack.enter_async_context(
                     run_worker(
                         database_url,
-                        {"webhook_store": store, "webhook_handlers": handlers},
+                        {
+                            "webhook_store": store,
+                            "webhook_handlers": handlers,
+                            "repairs": repairs,
+                        },
                     )
                 )
             yield State(
@@ -106,8 +119,9 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[State]:
                 catalog=Catalog(sessions),
                 carts=Carts(sessions),
                 wallets=wallets,
-                checkout=Checkout(sessions, paypal_client, orders),
+                checkout=Checkout(sessions, calls, orders, source="api"),
                 orders=orders,
+                shipments=Shipments(sessions, calls, orders),
             )
     finally:
         await engine.dispose()

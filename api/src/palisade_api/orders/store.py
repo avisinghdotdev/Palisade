@@ -9,11 +9,13 @@ from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import joinedload, selectinload
 
+from palisade_api.orders.calls import CallAction
 from palisade_api.orders.models import (
     OrderEventRecord,
     OrderLineRecord,
     OrderRecord,
     PayPalCallRecord,
+    ShipmentRecord,
 )
 from palisade_api.shop.catalog import Money, money
 
@@ -33,6 +35,9 @@ OrderStatus = Literal[
 ORDER_STATUS = TypeAdapter(OrderStatus)
 Channel = Literal["human", "agent"]
 CHANNEL = TypeAdapter(Channel)
+EventSource = Literal["api", "webhook", "repair"]
+# The carriers the shop ships with; PayPal's sandbox accepted both on 2026-10-24.
+Carrier = Literal["USPS", "UPS"]
 # The PayPal payment events an order's timeline records.
 PaymentEvent = Literal[
     "PAYMENT.AUTHORIZATION.CREATED",
@@ -60,23 +65,30 @@ class OrderLine(BaseModel):
 class OrderEvent(BaseModel):
     from_status: OrderStatus | None
     to_status: OrderStatus
-    source: Literal["api", "webhook"]
+    source: EventSource
     webhook_event_id: str | None
-    # PayPal's issue codes on a checkout row; the PayPal event type on a webhook row.
+    # PayPal's issue codes on a checkout or repair row; the PayPal event type on a webhook row.
     detail: str | None
     at: datetime
 
     @computed_field
     @property
     def paypal_event(self) -> PaymentEvent | None:
-        """The PayPal event a webhook row records; None on a checkout row."""
-        if self.source == "api":
+        """The PayPal event a webhook row records; None on a checkout or repair row."""
+        if self.source != "webhook":
             return None
         return PAYMENT_EVENT.validate_python(self.detail)
 
 
+class Shipment(BaseModel):
+    carrier: Carrier
+    tracking_number: str
+    paypal_tracker_id: str
+    shipped_at: datetime
+
+
 class PayPalCall(BaseModel):
-    action: Literal["create", "capture", "void"]
+    action: CallAction
     request_id: str
     status_code: int | None
     debug_id: str | None
@@ -115,6 +127,8 @@ class Order(BaseModel):
     lines: list[OrderLine]
     events: list[OrderEvent]
     calls: list[PayPalCall]
+    # None until the merchant marks the order shipped.
+    shipment: Shipment | None
     created_at: datetime
 
 
@@ -141,6 +155,10 @@ def order_event(event: OrderEventRecord) -> OrderEvent:
 
 def paypal_call(call: PayPalCallRecord) -> PayPalCall:
     return PayPalCall.model_validate(call, from_attributes=True)
+
+
+def shipment(record: ShipmentRecord) -> Shipment:
+    return Shipment.model_validate(record, from_attributes=True)
 
 
 def order_summary(record: OrderRecord) -> OrderSummary:
@@ -175,6 +193,7 @@ def order(record: OrderRecord) -> Order:
         lines=[order_line(line) for line in record.lines],
         events=[order_event(event) for event in record.events],
         calls=[paypal_call(call) for call in record.calls],
+        shipment=None if record.shipment is None else shipment(record.shipment),
         created_at=record.created_at,
     )
 
@@ -182,6 +201,7 @@ def order(record: OrderRecord) -> Order:
 def with_details(statement: Select[OrderRecord]) -> Select[OrderRecord]:
     return statement.options(
         joinedload(OrderRecord.wallet),
+        joinedload(OrderRecord.shipment),
         selectinload(OrderRecord.lines),
         selectinload(OrderRecord.events),
         selectinload(OrderRecord.calls),

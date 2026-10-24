@@ -11,7 +11,8 @@ COPY api api
 
 FROM source AS dev-server
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev --package palisade-api
-CMD ["/app/.venv/bin/uvicorn", "palisade_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "api/src"]
+# The same start as the served image; Compose restarts the container when the source changes.
+CMD ["/app/.venv/bin/python", "-m", "palisade_api.serve"]
 
 FROM source AS build
 RUN --mount=type=cache,target=/root/.cache/uv \
@@ -21,4 +22,4 @@ FROM python:3.14.8-alpine AS serve
 RUN adduser -D -H -u 10001 api
 COPY --from=build /app/.venv /app/.venv
 USER 10001
-CMD ["/app/.venv/bin/uvicorn", "palisade_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["/app/.venv/bin/python", "-m", "palisade_api.serve"]
