@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LoaderCircle, Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router";
@@ -6,7 +6,10 @@ import { useNavigate } from "react-router";
 import type { Cart, Wallet } from "@/api/client";
 
 import { checkout } from "@/api/client";
-import { productsOptions } from "@/api/client/@tanstack/react-query.gen";
+import {
+  orderQueryKey,
+  productsOptions,
+} from "@/api/client/@tanstack/react-query.gen";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -26,6 +29,7 @@ export function CartSheet({ wallet }: { wallet: undefined | Wallet }) {
   const { setCartId } = useShopper();
   const { cart, setLine } = useCart(wallet?.id);
   const products = useQuery(productsOptions());
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [problem, setProblem] = useState<null | string>(null);
@@ -39,6 +43,11 @@ export function CartSheet({ wallet }: { wallet: undefined | Wallet }) {
       return placed.data;
     },
     onSuccess: (order) => {
+      // The checkout answers with the whole order, so the receipt opens without asking again.
+      queryClient.setQueryData(
+        orderQueryKey({ path: { number: order.number } }),
+        order,
+      );
       setCartId(null);
       setOpen(false);
       void navigate(`/shop/orders/${order.number}`);

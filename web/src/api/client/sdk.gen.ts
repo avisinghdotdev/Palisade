@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CartData, CartErrors, CartResponses, CheckoutData, CheckoutErrors, CheckoutResponses, ConfirmWalletLinkData, ConfirmWalletLinkErrors, ConfirmWalletLinkResponses, CreateCartData, CreateCartErrors, CreateCartResponses, DemoWalletData, DemoWalletResponses, HealthData, HealthResponses, OrderData, OrderErrors, OrderResponses, OrdersData, OrdersResponses, PaypalHealthData, PaypalHealthResponses, PaypalWebhookData, PaypalWebhookErrors, PaypalWebhookResponses, ProductData, ProductErrors, ProductResponses, ProductsData, ProductsResponses, ReplayWebhookEventData, ReplayWebhookEventErrors, ReplayWebhookEventResponses, SetCartLineData, SetCartLineErrors, SetCartLineResponses, SetCartWalletData, SetCartWalletErrors, SetCartWalletResponses, StartWalletLinkData, StartWalletLinkResponses, WalletData, WalletErrors, WalletResponses, WebhookEventsData, WebhookEventsResponses } from './types.gen';
+import type { CartData, CartErrors, CartResponses, CheckoutData, CheckoutErrors, CheckoutResponses, ConfirmWalletLinkData, ConfirmWalletLinkErrors, ConfirmWalletLinkResponses, CreateCartData, CreateCartErrors, CreateCartResponses, DemoWalletData, DemoWalletResponses, HealthData, HealthResponses, OrderData, OrderErrors, OrderResponses, OrdersData, OrdersResponses, PaypalHealthData, PaypalHealthResponses, PaypalWebhookData, PaypalWebhookErrors, PaypalWebhookResponses, ProductData, ProductErrors, ProductResponses, ProductsData, ProductsResponses, ReadyData, ReadyErrors, ReadyResponses, ReplayWebhookEventData, ReplayWebhookEventErrors, ReplayWebhookEventResponses, SetCartLineData, SetCartLineErrors, SetCartLineResponses, SetCartWalletData, SetCartWalletErrors, SetCartWalletResponses, StartWalletLinkData, StartWalletLinkResponses, WalletData, WalletErrors, WalletResponses, WebhookEventsData, WebhookEventsResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -119,6 +119,9 @@ export const startWalletLink = <ThrowOnError extends boolean = false>(options?: 
  * Confirm Wallet Link
  *
  * Finish saving the wallet once the buyer has returned from PayPal.
+ *
+ * A 422 means PayPal refused the setup token (unknown, unapproved, or already used); a 502
+ * means PayPal failed to answer.
  */
 export const confirmWalletLink = <ThrowOnError extends boolean = false>(options: Options<ConfirmWalletLinkData, ThrowOnError>): RequestResult<ConfirmWalletLinkResponses, ConfirmWalletLinkErrors, ThrowOnError> => (options.client ?? client).post<ConfirmWalletLinkResponses, ConfirmWalletLinkErrors, ThrowOnError>({
     url: '/api/shop/wallets/confirm',
@@ -151,5 +154,16 @@ export const order = <ThrowOnError extends boolean = false>(options: Options<Ord
 
 /**
  * Health
+ *
+ * What every platform probe calls: the process answers.
+ *
+ * It reads nothing, so a database outage neither restarts the replica nor takes it out of rotation.
  */
 export const health = <ThrowOnError extends boolean = false>(options?: Options<HealthData, ThrowOnError>): RequestResult<HealthResponses, unknown, ThrowOnError> => (options?.client ?? client).get<HealthResponses, unknown, ThrowOnError>({ url: '/api/health', ...options });
+
+/**
+ * Ready
+ *
+ * Whether this replica reaches its database; the release workflow checks it after a deploy.
+ */
+export const ready = <ThrowOnError extends boolean = false>(options?: Options<ReadyData, ThrowOnError>): RequestResult<ReadyResponses, ReadyErrors, ThrowOnError> => (options?.client ?? client).get<ReadyResponses, ReadyErrors, ThrowOnError>({ url: '/api/ready', ...options });

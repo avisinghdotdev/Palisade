@@ -1,10 +1,23 @@
 import {
-  AllCommunityModule,
+  CellStyleModule,
+  ClientSideRowModelModule,
   ModuleRegistry,
+  RowStyleModule,
   themeQuartz,
+  TooltipModule,
+  ValidationModule,
 } from "ag-grid-community";
 
-ModuleRegistry.registerModules([AllCommunityModule]);
+// Only the features the console's grids use beyond AG Grid's core, which keeps the rest out of
+// the bundle. The validation module names a missing one in the browser console, so it loads in
+// development only.
+ModuleRegistry.registerModules([
+  CellStyleModule,
+  ClientSideRowModelModule,
+  RowStyleModule,
+  TooltipModule,
+  ...(import.meta.env.DEV ? [ValidationModule] : []),
+]);
 
 /** The console's grids read the surrounding theme's variables, so they match the page they sit in. */
 export const gridTheme = themeQuartz.withParams({

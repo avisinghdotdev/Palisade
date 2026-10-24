@@ -141,7 +141,7 @@ export default function Home() {
           <Link
             className="rounded-xl focus-visible:outline-2"
             target="_blank"
-            to="/merchant"
+            to="/console"
           >
             <Card className="theme-shop h-full transition-colors hover:bg-accent/60">
               <CardHeader>

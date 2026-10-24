@@ -189,6 +189,32 @@ async def test_a_repeated_link_refreshes_the_same_wallet(
 
 
 @pytest.mark.usefixtures("service")
+async def test_a_setup_token_paypal_refuses_is_a_422(
+    paypal: PayPalStub, client: httpx2.AsyncClient
+) -> None:
+    paypal.on(
+        "POST",
+        "/v3/vault/payment-tokens",
+        json_answer(
+            404,
+            {
+                "name": "RESOURCE_NOT_FOUND",
+                "details": [{"issue": "TOKEN_NOT_FOUND"}],
+            },
+        ),
+    )
+
+    response = await client.post(
+        "/api/shop/wallets/confirm", json={"setup_token_id": "ST-UNKNOWN"}
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": "PayPal could not save the wallet: TOKEN_NOT_FOUND"
+    }
+
+
+@pytest.mark.usefixtures("service")
 async def test_an_unknown_wallet_is_a_404(client: httpx2.AsyncClient) -> None:
     response = await client.get(f"/api/shop/wallets/{uuid4()}")
 

@@ -12,15 +12,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useCart } from "@/hooks/use-cart";
 import { formatMoney } from "@/money";
 
 export function ProductTile({
   product,
   walletId,
+  photoSizes,
+  eager,
 }: {
   product: Product;
   walletId: string | undefined;
+  photoSizes: string;
+  eager: boolean;
 }) {
   const { cart, setLine } = useCart(walletId);
   const [size, setSize] = useState<null | string>(null);
@@ -60,7 +65,7 @@ export function ProductTile({
 
   return (
     <article className="flex h-full flex-col @container">
-      <ProductLightbox product={product} />
+      <ProductLightbox eager={eager} product={product} sizes={photoSizes} />
       <div className="mt-3 flex flex-1 flex-col">
         <p className="text-xs font-semibold tracking-wide text-primary uppercase">
           {product.brand}
@@ -112,5 +117,32 @@ export function ProductTile({
         </div>
       </div>
     </article>
+  );
+}
+
+/** A tile's shape while the catalog loads: each bar sits in a line box of the text it stands for. */
+export function ProductTileSkeleton() {
+  return (
+    <div aria-hidden className="flex h-full flex-col @container">
+      <Skeleton className="aspect-square w-full" />
+      <div className="mt-3 flex flex-1 flex-col">
+        <div className="flex h-4 items-center">
+          <Skeleton className="h-3 w-14" />
+        </div>
+        <div className="mt-0.5 flex h-6 items-center">
+          <Skeleton className="h-4 w-3/4" />
+        </div>
+        <div className="flex h-5 items-center">
+          <Skeleton className="h-3.5 w-12" />
+        </div>
+        <div className="mt-1.5 flex h-6 items-center">
+          <Skeleton className="h-4 w-20" />
+        </div>
+        <div className="mt-auto flex flex-col gap-2 pt-2 @[13.5rem]:flex-row">
+          <Skeleton className="h-7 w-full @[13.5rem]:flex-1" />
+          <Skeleton className="h-7 w-full @[13.5rem]:w-24" />
+        </div>
+      </div>
+    </div>
   );
 }

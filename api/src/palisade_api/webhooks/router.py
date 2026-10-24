@@ -1,6 +1,6 @@
-import logging
 from typing import Annotated
 
+import structlog
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel
 
@@ -12,7 +12,7 @@ from palisade_api.webhooks.store import (
 )
 from palisade_api.webhooks.verification import Transmission, WebhookVerifier
 
-logger = logging.getLogger(__name__)
+logger = structlog.stdlib.get_logger(__name__)
 
 router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
 
@@ -65,8 +65,13 @@ async def receive_paypal_webhook(
         )
     event = WebhookEvent.model_validate_json(raw_event)
     job_id = await store.add(event)
-    outcome = "already stored" if job_id is None else f"queued as job {job_id}"
-    logger.info("paypal webhook %s %s %s", event.event_type, event.id, outcome)
+    logger.info(
+        "paypal_webhook_received",
+        event_id=event.id,
+        event_type=event.event_type,
+        repeat_delivery=job_id is None,
+        job_id=job_id,
+    )
 
 
 @router.get("/events", operation_id="webhook_events")

@@ -9,10 +9,6 @@ import { pageTitle } from "@/page-title";
 
 import type { Route } from "./+types/credits";
 
-export const links: Route.LinksFunction = () => [
-  { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
-];
-
 export const meta: Route.MetaFunction = () => [
   { title: pageTitle("Photo Credits", "Shop") },
 ];

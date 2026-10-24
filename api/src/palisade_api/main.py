@@ -2,12 +2,15 @@ import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import AsyncExitStack, asynccontextmanager
 from importlib.metadata import version
-from typing import Literal, TypedDict
+from typing import Annotated, Literal, TypedDict
 
 import httpx2
-from fastapi import FastAPI
+import structlog
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from palisade_api.database import create_engine
 from palisade_api.jobs import run_worker
@@ -32,8 +35,14 @@ from palisade_api.webhooks.store import WebhookStore
 from palisade_api.webhooks.tasks import enqueue_processing
 from palisade_api.webhooks.verification import WebhookVerifier
 
+# A hung connection fails within this and is logged, instead of holding the caller.
+READY_TIMEOUT_SECONDS = 2
+
+logger = structlog.stdlib.get_logger(__name__)
+
 
 class State(TypedDict):
+    engine: AsyncEngine
     paypal_auth: PayPalAuth
     webhook_verifier: WebhookVerifier
     webhook_store: WebhookStore
@@ -88,6 +97,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[State]:
                     )
                 )
             yield State(
+                engine=engine,
                 paypal_auth=auth,
                 webhook_verifier=WebhookVerifier(
                     paypal_client, settings.paypal_webhook_id
@@ -117,6 +127,41 @@ class Health(BaseModel):
     version: str
 
 
+class Readiness(BaseModel):
+    status: Literal["ready"]
+
+
 @app.get("/api/health", operation_id="health")
 def health() -> Health:
+    """What every platform probe calls: the process answers.
+
+    It reads nothing, so a database outage neither restarts the replica nor takes it out of rotation.
+    """
     return Health(status="ok", version=app.version)
+
+
+def database(request: Request) -> AsyncEngine:
+    # Starlette types lifespan state as Any; the lifespan above puts the engine here.
+    engine: AsyncEngine = request.state.engine  # pyright: ignore[reportAny]
+    return engine
+
+
+@app.get(
+    "/api/ready",
+    operation_id="ready",
+    responses={503: {"description": "The database did not answer in time."}},
+)
+async def ready(engine: Annotated[AsyncEngine, Depends(database)]) -> Readiness:
+    """Whether this replica reaches its database; the release workflow checks it after a deploy."""
+    try:
+        async with (
+            asyncio.timeout(READY_TIMEOUT_SECONDS),
+            engine.connect() as connection,
+        ):
+            await connection.execute(text("SELECT 1"))
+    except (DBAPIError, TimeoutError) as error:
+        logger.warning("database_unreachable", exc_info=error)
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "The database did not answer in time."
+        ) from error
+    return Readiness(status="ready")

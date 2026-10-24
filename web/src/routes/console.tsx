@@ -8,12 +8,6 @@ import { ShopHeader } from "@/components/shop-header";
 import { ShopLogo } from "@/components/shop-logo";
 import { SurfaceLink } from "@/components/surface-link";
 
-import type { Route } from "./+types/console";
-
-export const links: Route.LinksFunction = () => [
-  { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
-];
-
 /** The merchant's side of Palisade: one header and page list around every console page. */
 export default function Console() {
   return (
@@ -30,7 +24,7 @@ export default function Console() {
             </span>
           </>
         }
-        to="/merchant"
+        to="/console"
       >
         <PalisadeBadge>Powered by Palisade</PalisadeBadge>
         <SurfaceLink icon={<ShopLogo />} to="/shop">

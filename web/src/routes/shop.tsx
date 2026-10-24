@@ -9,21 +9,29 @@ import { BuyerMenu } from "@/components/buyer-menu";
 import { CartSheet } from "@/components/cart-sheet";
 import { ConsoleLogo } from "@/components/console-logo";
 import { PalisadeBadge } from "@/components/palisade-badge";
-import { ProductTile } from "@/components/product-tile";
+import { ProductTile, ProductTileSkeleton } from "@/components/product-tile";
 import { ShopHeader } from "@/components/shop-header";
 import { SurfaceLink } from "@/components/surface-link";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useBuyer } from "@/hooks/use-buyer";
 import { useHydrated } from "@/hooks/use-hydrated";
 
 import type { Route } from "./+types/shop";
 
-export const links: Route.LinksFunction = () => [
-  { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
-];
-
 // The filter's display order; a category missing here cannot be filtered to.
 const CATEGORIES = ["Road", "Tempo", "Trail", "Stability"];
+// While the catalog loads: two rows of tiles on a wide screen, and the brand count it carries
+// today, so the filter rail keeps its height when the brands arrive.
+const PLACEHOLDER_TILES = 8;
+const PLACEHOLDER_BRANDS = 6;
+// The first row on the widest grid is in view on arrival, so its photos skip lazy loading.
+const EAGER_TILES = 5;
+const GRID =
+  "grid grid-cols-2 gap-x-4 gap-y-8 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5";
+// A tile's width in GRID's columns, rounded up so a browser never picks a copy too small.
+const PHOTO_SIZES =
+  "(min-width: 1536px) 20vw, (min-width: 1280px) 25vw, (min-width: 768px) 34vw, 50vw";
 
 interface Sort {
   id: string;
@@ -46,6 +54,17 @@ const SORTS: Sort[] = [
   },
 ];
 
+// The catalog request starts with the page instead of after the scripts, and the query's own
+// request picks up the answer. crossOrigin "anonymous" matches fetch's same-origin credentials.
+export const links: Route.LinksFunction = () => [
+  {
+    rel: "preload",
+    href: "/api/shop/products",
+    as: "fetch",
+    crossOrigin: "anonymous",
+  },
+];
+
 export const meta: Route.MetaFunction = () => [
   { title: "Shop" },
   {
@@ -65,18 +84,23 @@ function pick(options: string[], value: null | string): null | string {
   return value !== null && options.includes(value) ? value : null;
 }
 
+/** A filter's choices; while the catalog loads, counts and unknown options are placeholders. */
 function FilterGroup({
   id,
   label,
   options,
   selected,
   onSelect,
+  loading,
+  placeholders,
 }: {
   id: string;
   label: string;
   options: FilterOption[];
   selected: null | string;
   onSelect: (value: null | string) => void;
+  loading: boolean;
+  placeholders: number;
 }) {
   return (
     <div aria-labelledby={id} role="radiogroup">
@@ -96,7 +120,7 @@ function FilterGroup({
           All
         </Button>
         {options.map(({ value, count }) => {
-          const unavailable = count === 0 && selected !== value;
+          const unavailable = !loading && count === 0 && selected !== value;
           return (
             <Button
               aria-checked={selected === value}
@@ -111,10 +135,18 @@ function FilterGroup({
               variant={selected === value ? "default" : "outline"}
             >
               {value}
-              <span className="font-normal text-current/70">{count}</span>
+              {loading ? (
+                <Skeleton className="h-3 w-2" />
+              ) : (
+                <span className="font-normal text-current/70">{count}</span>
+              )}
             </Button>
           );
         })}
+        {loading &&
+          Array.from({ length: placeholders }, (_, index) => (
+            <Skeleton className="h-7 w-20" key={index} />
+          ))}
       </div>
     </div>
   );
@@ -175,7 +207,7 @@ export default function Shop() {
         <PalisadeBadge>Protected by Palisade</PalisadeBadge>
         <BuyerMenu />
         <CartSheet wallet={buyer.wallet} />
-        <SurfaceLink icon={<ConsoleLogo />} to="/merchant">
+        <SurfaceLink icon={<ConsoleLogo />} to="/console">
           Merchant Console
         </SurfaceLink>
         <AboutDialog title="About Ridgeline Running">
@@ -242,25 +274,35 @@ export default function Shop() {
             <FilterGroup
               id="filter-category"
               label="Category"
+              loading={products.isPending}
               onSelect={(value) => {
                 setParam("category", value);
               }}
               options={categories}
+              placeholders={0}
               selected={category}
             />
             <FilterGroup
               id="filter-brand"
               label="Brand"
+              loading={products.isPending}
               onSelect={(value) => {
                 setParam("brand", value);
               }}
               options={brands}
+              placeholders={PLACEHOLDER_BRANDS}
               selected={brand}
             />
           </aside>
-          <section aria-label="Products">
+          <section aria-busy={products.isPending} aria-label="Products">
             {products.isPending && (
-              <p className="text-sm text-muted-foreground">Loading…</p>
+              <ul className={GRID}>
+                {Array.from({ length: PLACEHOLDER_TILES }, (_, index) => (
+                  <li key={index}>
+                    <ProductTileSkeleton />
+                  </li>
+                ))}
+              </ul>
             )}
             {products.isError && (
               <p className="flex items-center gap-3 text-sm">
@@ -282,10 +324,12 @@ export default function Shop() {
               </p>
             )}
             {shown.length > 0 && (
-              <ul className="grid grid-cols-2 gap-x-4 gap-y-8 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-                {shown.map((product) => (
+              <ul className={GRID}>
+                {shown.map((product, index) => (
                   <li key={product.id}>
                     <ProductTile
+                      eager={index < EAGER_TILES}
+                      photoSizes={PHOTO_SIZES}
                       product={product}
                       walletId={buyer.wallet?.id}
                     />

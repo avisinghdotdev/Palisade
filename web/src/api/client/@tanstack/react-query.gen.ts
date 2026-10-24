@@ -3,8 +3,8 @@
 import { type DefaultError, queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 
 import { client } from '../client.gen';
-import { cart, checkout, confirmWalletLink, createCart, demoWallet, health, type Options, order, orders, paypalHealth, paypalWebhook, product, products, replayWebhookEvent, setCartLine, setCartWallet, startWalletLink, wallet, webhookEvents } from '../sdk.gen';
-import type { CartData, CartError, CartResponse, CheckoutData, CheckoutError, CheckoutResponse, ConfirmWalletLinkData, ConfirmWalletLinkError, ConfirmWalletLinkResponse, CreateCartData, CreateCartError, CreateCartResponse, DemoWalletData, DemoWalletResponse, HealthData, HealthResponse, OrderData, OrderError, OrderResponse, OrdersData, OrdersResponse, PaypalHealthData, PaypalHealthResponse, PaypalWebhookData, PaypalWebhookError, PaypalWebhookResponse, ProductData, ProductError, ProductResponse, ProductsData, ProductsResponse, ReplayWebhookEventData, ReplayWebhookEventError, ReplayWebhookEventResponse, SetCartLineData, SetCartLineError, SetCartLineResponse, SetCartWalletData, SetCartWalletError, SetCartWalletResponse, StartWalletLinkData, StartWalletLinkResponse, WalletData, WalletError, WalletResponse, WebhookEventsData, WebhookEventsResponse } from '../types.gen';
+import { cart, checkout, confirmWalletLink, createCart, demoWallet, health, type Options, order, orders, paypalHealth, paypalWebhook, product, products, ready, replayWebhookEvent, setCartLine, setCartWallet, startWalletLink, wallet, webhookEvents } from '../sdk.gen';
+import type { CartData, CartError, CartResponse, CheckoutData, CheckoutError, CheckoutResponse, ConfirmWalletLinkData, ConfirmWalletLinkError, ConfirmWalletLinkResponse, CreateCartData, CreateCartError, CreateCartResponse, DemoWalletData, DemoWalletResponse, HealthData, HealthResponse, OrderData, OrderError, OrderResponse, OrdersData, OrdersResponse, PaypalHealthData, PaypalHealthResponse, PaypalWebhookData, PaypalWebhookError, PaypalWebhookResponse, ProductData, ProductError, ProductResponse, ProductsData, ProductsResponse, ReadyData, ReadyResponse, ReplayWebhookEventData, ReplayWebhookEventError, ReplayWebhookEventResponse, SetCartLineData, SetCartLineError, SetCartLineResponse, SetCartWalletData, SetCartWalletError, SetCartWalletResponse, StartWalletLinkData, StartWalletLinkResponse, WalletData, WalletError, WalletResponse, WebhookEventsData, WebhookEventsResponse } from '../types.gen';
 
 export type QueryKey<TOptions extends Options> = [
     Pick<TOptions, 'baseUrl' | 'body' | 'headers' | 'path' | 'query'> & {
@@ -268,6 +268,9 @@ export const startWalletLinkMutation = (options?: Partial<Options<StartWalletLin
  * Confirm Wallet Link
  *
  * Finish saving the wallet once the buyer has returned from PayPal.
+ *
+ * A 422 means PayPal refused the setup token (unknown, unapproved, or already used); a 502
+ * means PayPal failed to answer.
  */
 export const confirmWalletLinkMutation = (options?: Partial<Options<ConfirmWalletLinkData>>): UseMutationOptions<ConfirmWalletLinkResponse, ConfirmWalletLinkError, Options<ConfirmWalletLinkData>> => {
     const mutationOptions: UseMutationOptions<ConfirmWalletLinkResponse, ConfirmWalletLinkError, Options<ConfirmWalletLinkData>> = {
@@ -359,6 +362,10 @@ export const healthQueryKey = (options?: Options<HealthData>) => createQueryKey(
 
 /**
  * Health
+ *
+ * What every platform probe calls: the process answers.
+ *
+ * It reads nothing, so a database outage neither restarts the replica nor takes it out of rotation.
  */
 export const healthOptions = (options?: Options<HealthData>) => queryOptions<HealthResponse, DefaultError, HealthResponse, ReturnType<typeof healthQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -371,4 +378,24 @@ export const healthOptions = (options?: Options<HealthData>) => queryOptions<Hea
         return data;
     },
     queryKey: healthQueryKey(options)
+});
+
+export const readyQueryKey = (options?: Options<ReadyData>) => createQueryKey('ready', options);
+
+/**
+ * Ready
+ *
+ * Whether this replica reaches its database; the release workflow checks it after a deploy.
+ */
+export const readyOptions = (options?: Options<ReadyData>) => queryOptions<ReadyResponse, DefaultError, ReadyResponse, ReturnType<typeof readyQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await ready({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: readyQueryKey(options)
 });

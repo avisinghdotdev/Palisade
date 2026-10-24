@@ -5,15 +5,15 @@ import { useHydrated } from "@/hooks/use-hydrated";
 /** Each page and the paths that belong to it: an order's own page sits under Orders. */
 const PAGES = [
   {
-    to: "/merchant",
+    to: "/console",
     label: "Orders",
     owns: (path: string) =>
-      path === "/merchant" || path.startsWith("/merchant/orders/"),
+      path === "/console" || path.startsWith("/console/orders/"),
   },
   {
-    to: "/merchant/activity",
+    to: "/console/activity",
     label: "Activity",
-    owns: (path: string) => path.startsWith("/merchant/activity"),
+    owns: (path: string) => path.startsWith("/console/activity"),
   },
 ];
 

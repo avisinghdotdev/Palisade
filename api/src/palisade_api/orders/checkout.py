@@ -250,8 +250,16 @@ class Checkout:
             wallet = await session.get(WalletRecord, cart.wallet_id)
             if wallet is None or wallet.status != "active":
                 raise WalletUnavailable(cart.wallet_id)
+            products = {
+                product.id: product
+                for product in await session.scalars(
+                    select(ProductRecord).where(
+                        ProductRecord.id.in_({line.product_id for line in cart.lines})
+                    )
+                )
+            }
             for line in cart.lines:
-                product = await session.get(ProductRecord, line.product_id)
+                product = products.get(line.product_id)
                 if (
                     product is None
                     or product.price_cents != line.unit_price_cents
