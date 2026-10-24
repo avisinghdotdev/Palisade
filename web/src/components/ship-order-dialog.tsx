@@ -65,8 +65,8 @@ export function ShipOrderDialog({ number }: { number: string }) {
         <DialogHeader>
           <DialogTitle>Mark Order {number} as Shipped</DialogTitle>
           <DialogDescription>
-            Palisade adds this tracking to the PayPal capture, so a dispute
-            about delivery has proof to file.
+            The tracking goes onto this order&apos;s PayPal capture, so a
+            dispute about delivery has proof to file.
           </DialogDescription>
         </DialogHeader>
         <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 rounded-lg border bg-secondary/50 px-4 py-3 text-sm">
