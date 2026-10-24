@@ -38,6 +38,8 @@ FIELD_ORDER = (
 # id outside this shape is replaced, never truncated: two attacker-chosen values must not
 # collapse into one id.
 ID_SHAPE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+# The platform probes this every second, so only a failed answer gets a line.
+PROBE_PATH = "/api/health"
 
 
 def configure_logging(
@@ -46,7 +48,7 @@ def configure_logging(
     """Send structlog and stdlib records through one handler on `stream`, stdout by default.
 
     Uvicorn's server records are rerouted to that handler. Its access log is dropped because the
-    `api_request` event already covers every request.
+    `api_request` event already covers every request. httpx2's per-call lines are dropped too.
     """
     shared_processors: list[Processor] = [
         structlog.contextvars.merge_contextvars,
@@ -85,6 +87,9 @@ def configure_logging(
     access_logger = logging.getLogger("uvicorn.access")
     access_logger.handlers.clear()
     access_logger.propagate = False
+    # httpx2 logs a call before its caller binds the debug id, so the line carries the previous
+    # call's id; the PayPal client's own `paypal_call` event replaces it.
+    logging.getLogger("httpx2").setLevel(logging.WARNING)
 
 
 def _order_fields(_logger: object, _method: str, event_dict: EventDict) -> EventDict:
@@ -109,7 +114,7 @@ def _renderers(log_format: LogFormat) -> list[Processor]:
 
 @final
 class RequestLogMiddleware:
-    """Pure ASGI middleware that emits one `api_request` event per request.
+    """Pure ASGI middleware that emits one `api_request` event per request, bar passing probes.
 
     It must be the outermost middleware: Starlette's `BaseHTTPMiddleware` (what
     `@app.middleware("http")` creates) breaks context-variable propagation for anything inside it.
@@ -151,6 +156,8 @@ class RequestLogMiddleware:
                 "api_request", **_event_fields(request, status_code, start, "error")
             )
             raise
+        if status_code < 400 and request.url.path == PROBE_PATH:
+            return
         self.logger.info(
             "api_request",
             **_event_fields(request, status_code, start, _outcome(status_code)),

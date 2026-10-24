@@ -16,10 +16,6 @@ import {
 
 import type { Route } from "./+types/shop-wallet";
 
-export const links: Route.LinksFunction = () => [
-  { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
-];
-
 export const meta: Route.MetaFunction = () => [
   { title: pageTitle("Saving PayPal Wallet", "Shop") },
 ];

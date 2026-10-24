@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Palisade API",
-    "version": "0.7.0"
+    "version": "0.8.0"
   },
   "paths": {
     "/api/paypal/health": {
@@ -497,7 +497,7 @@
           "wallets"
         ],
         "summary": "Confirm Wallet Link",
-        "description": "Finish saving the wallet once the buyer has returned from PayPal.",
+        "description": "Finish saving the wallet once the buyer has returned from PayPal.\n\nA 422 means PayPal refused the setup token (unknown, unapproved, or already used); a 502\nmeans PayPal failed to answer.",
         "operationId": "confirm_wallet_link",
         "requestBody": {
           "content": {
@@ -611,7 +611,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/Order"
+                    "$ref": "#/components/schemas/OrderSummary"
                   },
                   "type": "array",
                   "title": "Response Orders"
@@ -667,6 +667,7 @@
     "/api/health": {
       "get": {
         "summary": "Health",
+        "description": "What every platform probe calls: the process answers.\n\nIt reads nothing, so a database outage neither restarts the replica nor takes it out of rotation.",
         "operationId": "health",
         "responses": {
           "200": {
@@ -678,6 +679,28 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/ready": {
+      "get": {
+        "summary": "Ready",
+        "description": "Whether this replica reaches its database; the release workflow checks it after a deploy.",
+        "operationId": "ready",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Readiness"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database did not answer in time."
           }
         }
       }
@@ -1133,6 +1156,28 @@
             "type": "string",
             "format": "date-time",
             "title": "At"
+          },
+          "paypal_event": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "PAYMENT.AUTHORIZATION.CREATED",
+                  "PAYMENT.AUTHORIZATION.VOIDED",
+                  "PAYMENT.CAPTURE.PENDING",
+                  "PAYMENT.CAPTURE.COMPLETED",
+                  "PAYMENT.CAPTURE.DECLINED",
+                  "PAYMENT.CAPTURE.REFUNDED",
+                  "PAYMENT.CAPTURE.REVERSED"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paypal Event",
+            "description": "The PayPal event a webhook row records; None on a checkout row.",
+            "readOnly": true
           }
         },
         "type": "object",
@@ -1142,7 +1187,8 @@
           "source",
           "webhook_event_id",
           "detail",
-          "at"
+          "at",
+          "paypal_event"
         ],
         "title": "OrderEvent"
       },
@@ -1186,6 +1232,78 @@
           "line_total"
         ],
         "title": "OrderLine"
+      },
+      "OrderSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "number": {
+            "type": "string",
+            "title": "Number"
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "human",
+              "agent"
+            ],
+            "title": "Channel"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "creating",
+              "declined",
+              "failed",
+              "authorized",
+              "capture_pending",
+              "captured",
+              "voided",
+              "refunded",
+              "reversed"
+            ],
+            "title": "Status"
+          },
+          "total": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "capture_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capture Id"
+          },
+          "wallet_email": {
+            "type": "string",
+            "title": "Wallet Email"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "number",
+          "channel",
+          "status",
+          "total",
+          "capture_id",
+          "wallet_email",
+          "created_at"
+        ],
+        "title": "OrderSummary",
+        "description": "An order as the console's list shows it, without its lines, events, and PayPal calls."
       },
       "PayPalCall": {
         "properties": {
@@ -1376,6 +1494,20 @@
           "job_id"
         ],
         "title": "QueuedJob"
+      },
+      "Readiness": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "ready",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "Readiness"
       },
       "ReceivedEvent": {
         "properties": {

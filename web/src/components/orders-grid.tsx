@@ -7,7 +7,7 @@ import type {
 import { AgGridReact, type CustomCellRendererProps } from "ag-grid-react";
 import { Link, useNavigate } from "react-router";
 
-import type { Order } from "@/api/client";
+import type { OrderSummary } from "@/api/client";
 
 import { Channel } from "@/components/channel";
 import { CopyButton } from "@/components/copy-button";
@@ -17,10 +17,10 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 import { formatAmount, formatUtc } from "@/money";
 
 function orderPath(number: string): string {
-  return `/merchant/orders/${number}`;
+  return `/console/orders/${number}`;
 }
 
-function NumberCell({ data }: CustomCellRendererProps<Order>) {
+function NumberCell({ data }: CustomCellRendererProps<OrderSummary>) {
   return data ? (
     <Link
       className="font-medium text-primary underline-offset-2 hover:underline"
@@ -31,15 +31,15 @@ function NumberCell({ data }: CustomCellRendererProps<Order>) {
   ) : null;
 }
 
-function StatusCell({ data }: CustomCellRendererProps<Order>) {
+function StatusCell({ data }: CustomCellRendererProps<OrderSummary>) {
   return data ? <OrderStatus status={data.status} /> : null;
 }
 
-function ChannelCell({ data }: CustomCellRendererProps<Order>) {
+function ChannelCell({ data }: CustomCellRendererProps<OrderSummary>) {
   return data ? <Channel channel={data.channel} /> : null;
 }
 
-function CaptureCell({ data }: CustomCellRendererProps<Order>) {
+function CaptureCell({ data }: CustomCellRendererProps<OrderSummary>) {
   if (!data?.capture_id)
     return <span className="text-muted-foreground">None</span>;
   return (
@@ -51,7 +51,7 @@ function CaptureCell({ data }: CustomCellRendererProps<Order>) {
 }
 
 /** On a phone the order number scrolls with the row, and the buyer and capture wait for the order page. */
-function columns(wide: boolean): ColDef<Order>[] {
+function columns(wide: boolean): ColDef<OrderSummary>[] {
   return [
     {
       headerName: "Order",
@@ -115,7 +115,7 @@ export function OrdersGrid({
   loading,
   failed,
 }: {
-  orders: Order[];
+  orders: OrderSummary[];
   loading: boolean;
   failed: boolean;
 }) {
@@ -123,7 +123,7 @@ export function OrdersGrid({
   const wide = useMediaQuery("(min-width: 768px)");
   const layout = gridLayout(orders.length);
 
-  const open = (event: RowClickedEvent<Order>) => {
+  const open = (event: RowClickedEvent<OrderSummary>) => {
     // A click on the number link or a copy button is handled by that control.
     const target = event.event?.target;
     if (target instanceof Element && target.closest("a, button")) return;
@@ -131,7 +131,7 @@ export function OrdersGrid({
   };
 
   // Enter on any cell of a row opens its order, so the grid works from the keyboard.
-  const openFromKeyboard = (event: CellKeyDownEvent<Order>) => {
+  const openFromKeyboard = (event: CellKeyDownEvent<OrderSummary>) => {
     const key = event.event;
     if (key instanceof KeyboardEvent && key.key === "Enter" && event.data) {
       void navigate(orderPath(event.data.number));
@@ -140,7 +140,7 @@ export function OrdersGrid({
 
   return (
     <div className={layout.className}>
-      <AgGridReact<Order>
+      <AgGridReact<OrderSummary>
         columnDefs={columns(wide)}
         defaultColDef={{ resizable: true, sortable: true }}
         domLayout={layout.domLayout}

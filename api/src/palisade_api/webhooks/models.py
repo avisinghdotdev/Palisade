@@ -17,7 +17,7 @@ class WebhookEventRecord(Base):
     event_type: Mapped[str] = mapped_column(Text)
     payload: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     received_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+        DateTime(timezone=True), server_default=func.now(), index=True
     )
     # Set by the job that processed the event; null until it has run through.
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

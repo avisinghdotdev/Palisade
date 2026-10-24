@@ -166,6 +166,35 @@ module apiApp 'br/public:avm/res/app/container-app:0.23.0' = {
         image: '${registryLoginServer}/${workload}/api:${imageTag}'
         resources: { cpu: json('0.25'), memory: '0.5Gi' }
         env: concat(apiEnvironment, apiSecretEnvironment)
+        // No probe reads the database: a database outage must neither restart the only replica nor
+        // take it out of rotation. The app answers about 2.5 s after the container starts, so the
+        // first startup check passes and a slow start still gets 20 s. Readiness runs every second,
+        // so a woken replica takes traffic as soon as it can. Failure counts stay within the
+        // documented maximum of 10.
+        probes: [
+          {
+            type: 'Startup'
+            httpGet: { path: '/api/health', port: 8000 }
+            initialDelaySeconds: 3
+            periodSeconds: 2
+            timeoutSeconds: 2
+            failureThreshold: 10
+          }
+          {
+            type: 'Liveness'
+            httpGet: { path: '/api/health', port: 8000 }
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          }
+          {
+            type: 'Readiness'
+            httpGet: { path: '/api/health', port: 8000 }
+            periodSeconds: 1
+            timeoutSeconds: 1
+            failureThreshold: 10
+          }
+        ]
       }
     ]
   }
@@ -206,6 +235,32 @@ module webApp 'br/public:avm/res/app/container-app:0.23.0' = {
         image: '${registryLoginServer}/${workload}/web:${imageTag}'
         resources: { cpu: json('0.25'), memory: '0.5Gi' }
         env: [{ name: 'API_UPSTREAM', value: apiApp.outputs.name }]
+        // nginx answers within a second of starting; /health is its own location without access
+        // logs. Liveness and readiness match the api's.
+        probes: [
+          {
+            type: 'Startup'
+            httpGet: { path: '/health', port: 8080 }
+            initialDelaySeconds: 1
+            periodSeconds: 1
+            timeoutSeconds: 1
+            failureThreshold: 10
+          }
+          {
+            type: 'Liveness'
+            httpGet: { path: '/health', port: 8080 }
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          }
+          {
+            type: 'Readiness'
+            httpGet: { path: '/health', port: 8080 }
+            periodSeconds: 1
+            timeoutSeconds: 1
+            failureThreshold: 10
+          }
+        ]
       }
     ]
   }

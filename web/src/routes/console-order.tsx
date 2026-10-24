@@ -11,7 +11,7 @@ import { OrderLines } from "@/components/order-lines";
 import { OrderStatus } from "@/components/order-status";
 import { Button } from "@/components/ui/button";
 import { formatAmount, formatUtc } from "@/money";
-import { EVENT_LABELS } from "@/order-labels";
+import { EVENT_LABELS, WEBHOOK_LABELS } from "@/order-labels";
 import { pageTitle } from "@/page-title";
 import { errorDetail } from "@/shopper";
 
@@ -73,7 +73,11 @@ function Timeline({ events }: { events: Order["events"] }) {
             className="absolute top-1.5 -left-[5px] size-2.5 rounded-full border-2 border-card bg-primary ring-1 ring-primary/30"
           />
           <p className="flex flex-wrap items-baseline gap-x-3">
-            <span className="font-medium">{EVENT_LABELS[event.to_status]}</span>
+            <span className="font-medium">
+              {event.paypal_event === null
+                ? EVENT_LABELS[event.to_status]
+                : WEBHOOK_LABELS[event.paypal_event]}
+            </span>
             <time
               className="text-sm text-muted-foreground tabular-nums"
               dateTime={event.at}
@@ -164,7 +168,7 @@ export default function ConsoleOrder({ params }: Route.ComponentProps) {
       <nav aria-label="Breadcrumb">
         <ol className="flex items-center gap-1 text-sm text-muted-foreground">
           <li>
-            <Link className="hover:text-foreground" to="/merchant">
+            <Link className="hover:text-foreground" to="/console">
               Orders
             </Link>
           </li>
@@ -199,7 +203,7 @@ export default function ConsoleOrder({ params }: Route.ComponentProps) {
               Try Again
             </Button>
             <Button asChild>
-              <Link to="/merchant">See All Orders</Link>
+              <Link to="/console">See All Orders</Link>
             </Button>
           </div>
         </div>

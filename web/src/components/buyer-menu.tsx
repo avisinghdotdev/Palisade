@@ -1,5 +1,11 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, LoaderCircle } from "lucide-react";
+import {
+  ChevronDown,
+  CircleAlert,
+  Info,
+  Link2,
+  LoaderCircle,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { setCartWallet, startWalletLink } from "@/api/client";
@@ -131,19 +137,29 @@ export function BuyerMenu() {
               <LoaderCircle aria-hidden className="motion-safe:animate-spin" />
               <span role="status">Opening PayPal…</span>
             </>
-          ) : walletId === null ? (
-            "Link My Own Sandbox PayPal…"
           ) : (
-            "Link a Different Sandbox PayPal…"
+            <>
+              <Link2 aria-hidden />
+              {walletId === null
+                ? "Link My Own Sandbox PayPal…"
+                : "Link a Different Sandbox PayPal…"}
+            </>
           )}
         </DropdownMenuItem>
+        {/* A note under its own rule, so it does not read as part of the link above. */}
+        <DropdownMenuSeparator />
         {problem === null ? (
-          <p className="px-2 pt-1 pb-2 text-xs text-muted-foreground">
+          <p className="flex gap-1.5 px-1.5 py-1 text-xs text-muted-foreground">
+            <Info aria-hidden className="mt-px size-3.5 shrink-0" />
             Approve once on the PayPal sandbox. Later orders pay without leaving
             the shop.
           </p>
         ) : (
-          <p className="px-2 pt-1 pb-2 text-xs text-destructive" role="alert">
+          <p
+            className="flex gap-1.5 px-1.5 py-1 text-xs text-destructive"
+            role="alert"
+          >
+            <CircleAlert aria-hidden className="mt-px size-3.5 shrink-0" />
             {problem}
           </p>
         )}

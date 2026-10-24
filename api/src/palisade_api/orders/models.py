@@ -30,14 +30,15 @@ class OrderRecord(Base):
     # The value sent as PayPal's custom_id: the mandate id and hash on an agent order.
     custom_id: Mapped[str | None] = mapped_column(Text)
     paypal_order_id: Mapped[str | None] = mapped_column(Text)
-    authorization_id: Mapped[str | None] = mapped_column(Text)
+    # Payment webhooks find their order by one of these two ids.
+    authorization_id: Mapped[str | None] = mapped_column(Text, index=True)
     authorization_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )
-    capture_id: Mapped[str | None] = mapped_column(Text)
+    capture_id: Mapped[str | None] = mapped_column(Text, index=True)
     payer_email: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+        DateTime(timezone=True), server_default=func.now(), index=True
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -60,7 +61,7 @@ class OrderLineRecord(Base):
     __tablename__: str = "order_lines"
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
-    order_id: Mapped[UUID] = mapped_column(ForeignKey("orders.id"))
+    order_id: Mapped[UUID] = mapped_column(ForeignKey("orders.id"), index=True)
     position: Mapped[int] = mapped_column(Integer)
     product_id: Mapped[str] = mapped_column(ForeignKey("products.id"))
     size: Mapped[str] = mapped_column(Text)
@@ -76,7 +77,7 @@ class PayPalCallRecord(Base):
     __tablename__: str = "paypal_calls"
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
-    order_id: Mapped[UUID] = mapped_column(ForeignKey("orders.id"))
+    order_id: Mapped[UUID] = mapped_column(ForeignKey("orders.id"), index=True)
     # "create", "capture", or "void".
     action: Mapped[str] = mapped_column(Text)
     # The PayPal-Request-Id sent; a repeat with the same id is answered with the same result.
@@ -97,13 +98,14 @@ class OrderEventRecord(Base):
     __tablename__: str = "order_events"
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
-    order_id: Mapped[UUID] = mapped_column(ForeignKey("orders.id"))
+    order_id: Mapped[UUID] = mapped_column(ForeignKey("orders.id"), index=True)
     from_status: Mapped[str | None] = mapped_column(Text)
     to_status: Mapped[str] = mapped_column(Text)
     # "api" for the checkout itself, "webhook" for a PayPal event.
     source: Mapped[str] = mapped_column(Text)
+    # Unique, so a replayed or retried webhook can never add a second row.
     webhook_event_id: Mapped[str | None] = mapped_column(
-        ForeignKey("webhook_events.id")
+        ForeignKey("webhook_events.id"), unique=True
     )
     detail: Mapped[str | None] = mapped_column(Text)
     at: Mapped[datetime] = mapped_column(

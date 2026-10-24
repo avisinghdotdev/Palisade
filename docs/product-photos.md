@@ -3,7 +3,9 @@
 Ridgeline Running is a fictional retailer; the shoes in its catalog are real models from Nike,
 Adidas, Hoka, Brooks, New Balance, and Asics. The photos are Unsplash pictures of those shoes,
 used under the [Unsplash License](https://unsplash.com/license), downloaded on 2026-10-21 from the
-Unsplash image CDN at 1,200 pixels wide and stored in `web/public/products/`. Brand names and
+Unsplash image CDN at 1,200 pixels wide and stored in `web/public/products/`. The shop's tiles
+load 480 and 960 pixel WebP copies of each photo (quality 90, made with sharp); the enlarged
+view shows the original. Brand names and
 logos belong to their owners; nothing here was taken from a brand's own site. The same credits
 are seeded with the products and shown on the shop's `/credits` page.
 

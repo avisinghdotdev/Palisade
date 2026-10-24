@@ -81,10 +81,35 @@ async def test_a_completed_capture_settles_a_pending_order(
     settled = await Orders(sessions).get_by_id(order_id)
     assert settled.status == "captured"
     [recorded] = settled.events
-    assert (recorded.source, recorded.from_status, recorded.webhook_event_id) == (
-        "webhook",
-        "capture_pending",
-        completed.id,
+    assert (
+        recorded.source,
+        recorded.from_status,
+        recorded.webhook_event_id,
+        recorded.paypal_event,
+    ) == ("webhook", "capture_pending", completed.id, "PAYMENT.CAPTURE.COMPLETED")
+
+
+async def test_a_replayed_event_is_recorded_once(
+    sessions: async_sessionmaker[AsyncSession], wallet_id: UUID
+) -> None:
+    order_id = await placed_order(sessions, wallet_id, "captured")
+    order = await Orders(sessions).get_by_id(order_id)
+    created = await event(
+        sessions,
+        "PAYMENT.AUTHORIZATION.CREATED",
+        "authorization",
+        {"id": order.authorization_id},
+    )
+    handler = webhooks.handlers(sessions)["PAYMENT.AUTHORIZATION.CREATED"]
+
+    await handler(created)
+    await handler(created)
+
+    [recorded] = (await Orders(sessions).get_by_id(order_id)).events
+    assert (recorded.from_status, recorded.to_status, recorded.paypal_event) == (
+        "captured",
+        "captured",
+        "PAYMENT.AUTHORIZATION.CREATED",
     )
 
 

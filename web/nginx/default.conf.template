@@ -36,6 +36,12 @@ server {
     proxy_pass http://${API_UPSTREAM};
   }
 
+  # The platform's health probes, every few seconds, so they stay out of the access log.
+  location = /health {
+    access_log off;
+    return 204;
+  }
+
   # A path that names a file is that file or a 404, never the SPA: a stale bundle must fail as missing.
   location ~ \.[A-Za-z0-9]+$ {
     try_files $uri =404;

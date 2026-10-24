@@ -12,8 +12,8 @@ export default [
   route("shop/wallet/:outcome", "routes/shop-wallet.tsx"),
   route("credits", "routes/credits.tsx"),
   layout("routes/console.tsx", [
-    route("merchant", "routes/console-orders.tsx"),
-    route("merchant/activity", "routes/console-activity.tsx"),
-    route("merchant/orders/:number", "routes/console-order.tsx"),
+    route("console", "routes/console-orders.tsx"),
+    route("console/activity", "routes/console-activity.tsx"),
+    route("console/orders/:number", "routes/console-order.tsx"),
   ]),
 ] satisfies RouteConfig;
