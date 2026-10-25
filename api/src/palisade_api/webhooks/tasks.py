@@ -7,7 +7,7 @@ import psycopg
 import structlog
 from procrastinate import JobContext, RetryStrategy
 
-from palisade_api.jobs import context_value, jobs
+from palisade_api.jobs import WEBHOOKS_QUEUE, context_value, jobs
 from palisade_api.webhooks.store import WebhookEvent, WebhookStore
 
 logger = structlog.stdlib.get_logger(__name__)
@@ -20,7 +20,7 @@ Handler = Callable[[WebhookEvent], Awaitable[None]]
 RETRY = RetryStrategy(max_attempts=5, exponential_wait=4)
 
 
-@jobs.task(retry=RETRY, pass_context=True)
+@jobs.task(queue=WEBHOOKS_QUEUE, retry=RETRY, pass_context=True)
 async def process_webhook_event(context: JobContext, event_id: str) -> None:
     """Hand one stored event to the handler for its type; a failure is retried with backoff."""
     store = context_value(context, "webhook_store", WebhookStore)

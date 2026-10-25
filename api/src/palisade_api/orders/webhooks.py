@@ -1,5 +1,6 @@
 """Payment events from PayPal, matched to orders by their authorization or capture id."""
 
+from dataclasses import dataclass
 from functools import partial
 from typing import Literal
 from uuid import uuid7
@@ -10,26 +11,48 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from palisade_api.orders.models import OrderEventRecord, OrderRecord
-from palisade_api.orders.store import OrderStatus, PaymentEvent
+from palisade_api.orders.store import ORDER_STATUS, OrderStatus, PaymentEvent
 from palisade_api.webhooks.store import WebhookEvent
 from palisade_api.webhooks.tasks import Handler
 
 Kind = Literal["authorization", "capture"]
 
-# What each event says about the order; None records the event without changing the status.
-EVENTS: dict[PaymentEvent, tuple[Kind, OrderStatus | None]] = {
-    "PAYMENT.AUTHORIZATION.CREATED": ("authorization", None),
-    "PAYMENT.AUTHORIZATION.VOIDED": ("authorization", "voided"),
-    "PAYMENT.CAPTURE.PENDING": ("capture", "capture_pending"),
-    "PAYMENT.CAPTURE.COMPLETED": ("capture", "captured"),
-    "PAYMENT.CAPTURE.DECLINED": ("capture", "declined"),
-    "PAYMENT.CAPTURE.REFUNDED": ("capture", "refunded"),
-    "PAYMENT.CAPTURE.REVERSED": ("capture", "reversed"),
+
+@dataclass(frozen=True)
+class Effect:
+    """What an event says about its order: the status it sets, and from which statuses only.
+
+    PayPal does not promise delivery order, so a late "capture pending" after the capture
+    completed, or a void after a refund, is recorded on the timeline without moving the status.
+    """
+
+    kind: Kind
+    to_status: OrderStatus | None = None
+    from_statuses: frozenset[OrderStatus] = frozenset()
+
+    def moves(self, status: OrderStatus) -> bool:
+        return self.to_status is not None and status in self.from_statuses
+
+
+EVENTS: dict[PaymentEvent, Effect] = {
+    "PAYMENT.AUTHORIZATION.CREATED": Effect("authorization"),
+    "PAYMENT.AUTHORIZATION.VOIDED": Effect(
+        "authorization", "voided", frozenset({"authorized"})
+    ),
+    "PAYMENT.CAPTURE.PENDING": Effect(
+        "capture", "capture_pending", frozenset({"authorized"})
+    ),
+    "PAYMENT.CAPTURE.COMPLETED": Effect(
+        "capture", "captured", frozenset({"authorized", "capture_pending"})
+    ),
+    "PAYMENT.CAPTURE.DECLINED": Effect(
+        "capture", "declined", frozenset({"authorized", "capture_pending"})
+    ),
+    "PAYMENT.CAPTURE.REFUNDED": Effect(
+        "capture", "refunded", frozenset({"captured", "capture_pending"})
+    ),
+    "PAYMENT.CAPTURE.REVERSED": Effect("capture", "reversed", frozenset({"captured"})),
 }
-# Statuses no later event moves an order out of.
-TERMINAL: frozenset[OrderStatus] = frozenset(
-    {"declined", "failed", "voided", "refunded", "reversed"}
-)
 
 logger = structlog.stdlib.get_logger(__name__)
 
@@ -59,15 +82,12 @@ def resource_id(event: WebhookEvent, kind: Kind) -> str:
 
 
 async def apply(
-    sessions: async_sessionmaker[AsyncSession],
-    kind: Kind,
-    to_status: OrderStatus | None,
-    event: WebhookEvent,
+    sessions: async_sessionmaker[AsyncSession], effect: Effect, event: WebhookEvent
 ) -> None:
-    paypal_id = resource_id(event, kind)
+    paypal_id = resource_id(event, effect.kind)
     column = (
         OrderRecord.authorization_id
-        if kind == "authorization"
+        if effect.kind == "authorization"
         else OrderRecord.capture_id
     )
     async with sessions.begin() as session:
@@ -92,13 +112,9 @@ async def apply(
                 order_number=record.number,
             )
             return
-        from_status = record.status
-        if (
-            to_status is not None
-            and to_status != record.status
-            and record.status not in TERMINAL
-        ):
-            record.status = to_status
+        from_status = ORDER_STATUS.validate_python(record.status)
+        if effect.moves(from_status) and effect.to_status is not None:
+            record.status = effect.to_status
         session.add(
             OrderEventRecord(
                 id=uuid7(),
@@ -121,6 +137,6 @@ async def apply(
 
 def handlers(sessions: async_sessionmaker[AsyncSession]) -> dict[str, Handler]:
     return {
-        event_type: partial(apply, sessions, kind, to_status)
-        for event_type, (kind, to_status) in EVENTS.items()
+        event_type: partial(apply, sessions, effect)
+        for event_type, effect in EVENTS.items()
     }

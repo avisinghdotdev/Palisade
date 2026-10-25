@@ -169,8 +169,9 @@ module apiApp 'br/public:avm/res/app/container-app:0.23.0' = {
         // No probe reads the database: a database outage must neither restart the only replica nor
         // take it out of rotation. The app answers about 2.5 s after the container starts, so the
         // first startup check passes and a slow start still gets 20 s. Readiness runs every second,
-        // so a woken replica takes traffic as soon as it can. Failure counts stay within the
-        // documented maximum of 10.
+        // so a woken replica takes traffic as soon as it can; its answer gets 2 s, because a quarter
+        // CPU verifying webhooks timed out the 1 s it had. Failure counts stay within the documented
+        // maximum of 10.
         probes: [
           {
             type: 'Startup'
@@ -191,7 +192,7 @@ module apiApp 'br/public:avm/res/app/container-app:0.23.0' = {
             type: 'Readiness'
             httpGet: { path: '/api/health', port: 8000 }
             periodSeconds: 1
-            timeoutSeconds: 1
+            timeoutSeconds: 2
             failureThreshold: 10
           }
         ]

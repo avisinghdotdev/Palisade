@@ -19,6 +19,11 @@ export const meta: Route.MetaFunction = ({ params }) => [
   { title: pageTitle(`Receipt ${params.number}`, "Shop") },
 ];
 
+// Statuses the checkout or its repair job moves on from within minutes; until then the page
+// asks again by itself, so a shopper who reloaded early sees the outcome arrive.
+const SETTLING = new Set<Order["status"]>(["creating", "authorized", "failed"]);
+const SETTLING_REFETCH_MS = 5_000;
+
 const HEADLINES: Record<Order["status"], { title: string; detail: string }> = {
   captured: {
     title: "Your Order is Placed",
@@ -43,7 +48,7 @@ const HEADLINES: Record<Order["status"], { title: string; detail: string }> = {
   failed: {
     title: "We Could Not Confirm Your Payment",
     detail:
-      "PayPal did not answer in time. The shop asks PayPal again within minutes; reload this page to see the outcome.",
+      "PayPal did not answer in time. The shop asks PayPal again within minutes, and this page follows.",
   },
   voided: {
     title: "Your Payment was Released",
@@ -64,6 +69,10 @@ export default function ShopOrder({ params }: Route.ComponentProps) {
   const order = useQuery({
     ...orderOptions({ path: { number: params.number } }),
     retry: false,
+    refetchInterval: (query) =>
+      query.state.data !== undefined && SETTLING.has(query.state.data.status)
+        ? SETTLING_REFETCH_MS
+        : false,
   });
 
   return (

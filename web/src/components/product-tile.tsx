@@ -15,6 +15,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCart } from "@/hooks/use-cart";
 import { formatMoney } from "@/money";
+import { errorDetail } from "@/shopper";
 
 export function ProductTile({
   product,
@@ -115,6 +116,11 @@ export function ProductTile({
             )}
           </Button>
         </div>
+        {setLine.isError && (
+          <p className="mt-2 text-xs text-destructive" role="alert">
+            {errorDetail(setLine.error)}
+          </p>
+        )}
       </div>
     </article>
   );

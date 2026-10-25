@@ -6,16 +6,17 @@ export type ClientOptions = {
 
 /**
  * Cart
+ *
+ * A cart as the shop reads it.
+ *
+ * The wallet it pays with stays server-side: a cart id reached through an order's page must
+ * not hand out a wallet that another cart could charge.
  */
 export type Cart = {
     /**
      * Id
      */
     id: string;
-    /**
-     * Wallet Id
-     */
-    wallet_id: string;
     /**
      * Status
      */
