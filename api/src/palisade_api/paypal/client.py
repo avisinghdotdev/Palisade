@@ -60,6 +60,11 @@ class PayPalError(Exception):
         return [detail.issue for detail in self.error.details] or [self.error.name]
 
 
+def no_answer(message: str) -> ErrorBody:
+    """The error body of a call PayPal never answered; its callers treat it as a 5xx."""
+    return ErrorBody(name="NO_ANSWER", message=message)
+
+
 def _error_body(response: httpx2.Response) -> ErrorBody:
     try:
         return ErrorBody.model_validate_json(response.content)
@@ -88,18 +93,14 @@ class PayPalClient:
             response = await self._send("POST", path, json=body, headers=headers)
             if response is None:
                 raise PayPalError(
-                    504,
-                    None,
-                    ErrorBody(name="TIMEOUT", message=f"POST {path} timed out twice"),
+                    504, None, no_answer(f"POST {path} got no answer twice")
                 )
         return self._result(response)
 
     async def get(self, path: str) -> PayPalResponse:
         response = await self._send("GET", path, json=None, headers={})
         if response is None:
-            raise PayPalError(
-                504, None, ErrorBody(name="TIMEOUT", message=f"GET {path} timed out")
-            )
+            raise PayPalError(504, None, no_answer(f"GET {path} got no answer"))
         return self._result(response)
 
     async def post_json(self, path: str, body: bytes) -> httpx2.Response:
@@ -125,18 +126,26 @@ class PayPalClient:
         json: dict[str, JsonValue] | None,
         headers: dict[str, str],
     ) -> httpx2.Response | None:
-        """One attempt; None when the request timed out."""
-        token = await self._auth.token()
-        started = perf_counter()
+        """One attempt; None when PayPal could not be reached or did not answer in time.
+
+        The token call is inside the attempt: a network failure there is the same outage.
+        """
         try:
+            token = await self._auth.token()
+            started = perf_counter()
             response = await self._http.request(
                 method,
                 path,
                 json=json,
                 headers={"Authorization": f"Bearer {token.value}", **headers},
             )
-        except httpx2.TimeoutException:
-            logger.warning("paypal_timeout", method=method, path=path)
+        except httpx2.TransportError as error:
+            logger.warning(
+                "paypal_unreachable",
+                method=method,
+                path=path,
+                error=type(error).__name__,
+            )
             return None
         self._record(method, path, response, started)
         return response

@@ -13,7 +13,7 @@ from order_fixtures import (
     created_order,
     declined,
 )
-from paypal_stub import PayPalStub, json_answer, timeout
+from paypal_stub import PayPalStub, json_answer, timeout, unreachable
 from pydantic import BaseModel, JsonValue, TypeAdapter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -247,6 +247,70 @@ async def test_a_create_that_never_answers_leaves_the_order_failed(
     again = await checkout(client, cart.id)
     assert again.status_code == 200
     assert Order.model_validate_json(again.content).status == "failed"
+
+
+@pytest.mark.usefixtures("shop")
+async def test_paypal_out_of_reach_leaves_the_order_failed(
+    paypal: PayPalStub, client: httpx2.AsyncClient, wallet_id: UUID
+) -> None:
+    paypal.on("POST", CREATE_PATH, unreachable)
+    cart = await cart_with_shoes(client, wallet_id)
+
+    response = await checkout(client, cart.id)
+
+    assert response.status_code == 502
+    assert len(paypal.sent("POST", CREATE_PATH)) == 2
+    assert await cart_status(client, cart.id) == "checking_out"
+    again = Order.model_validate_json((await checkout(client, cart.id)).content)
+    assert (again.status, again.events[-1].detail) == ("failed", "NO_ANSWER")
+
+
+@pytest.mark.usefixtures("shop")
+async def test_an_order_waiting_on_the_payer_is_declined(
+    paypal: PayPalStub,
+    client: httpx2.AsyncClient,
+    wallet_id: UUID,
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    waiting = {
+        "id": "PP-ORDER-2",
+        "status": "PAYER_ACTION_REQUIRED",
+        "purchase_units": [{"reference_id": "default"}],
+    }
+    paypal.on("POST", CREATE_PATH, json_answer(201, waiting))
+    cart = await cart_with_shoes(client, wallet_id)
+
+    response = await checkout(client, cart.id)
+
+    assert response.status_code == 402
+    assert "ORDER_PAYER_ACTION_REQUIRED" in response.json()["detail"]
+    assert await cart_status(client, cart.id) == "open"
+    [order] = await orders_for(client, sessions, cart.id)
+    assert (order.status, order.paypal_order_id, order.authorization_id) == (
+        "declined",
+        "PP-ORDER-2",
+        None,
+    )
+
+
+@pytest.mark.usefixtures("shop")
+async def test_a_hold_paypal_will_neither_capture_nor_release_is_left_for_repair(
+    paypal: PayPalStub,
+    client: httpx2.AsyncClient,
+    wallet_id: UUID,
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    paypal.on("POST", CAPTURE_PATH, json_answer(422, declined()))
+    paypal.on("POST", VOID_PATH, json_answer(422, declined()))
+    cart = await cart_with_shoes(client, wallet_id)
+
+    response = await checkout(client, cart.id)
+
+    assert response.status_code == 502
+    assert "outcome is unknown" in response.json()["detail"]
+    [order] = await orders_for(client, sessions, cart.id)
+    assert order.status == "authorized"
+    assert await cart_status(client, cart.id) == "checking_out"
 
 
 @pytest.mark.usefixtures("shop")

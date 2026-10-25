@@ -63,6 +63,8 @@ export function CartSheet({ wallet }: { wallet: undefined | Wallet }) {
   const count = cart?.lines.reduce((sum, line) => sum + line.quantity, 0) ?? 0;
   const busy = setLine.isPending || pay.isPending;
   const empty = cart === undefined || cart.lines.length === 0;
+  const shownProblem =
+    problem ?? (setLine.isError ? errorDetail(setLine.error) : null);
 
   return (
     <Sheet
@@ -222,9 +224,9 @@ export function CartSheet({ wallet }: { wallet: undefined | Wallet }) {
               </span>
             </span>
           </div>
-          {problem !== null && (
+          {shownProblem !== null && (
             <p className="text-sm text-destructive" role="alert">
-              {problem}
+              {shownProblem}
             </p>
           )}
           <Button

@@ -22,7 +22,7 @@ export const meta: Route.MetaFunction = () => [
 
 /** Where PayPal sends the buyer back after approving, or cancelling, the wallet link. */
 export default function ShopWallet({ params }: Route.ComponentProps) {
-  const { cartId, setWalletId, setPaysWithDemo } = useShopper();
+  const { cartId, setWalletId, setPaysWithDemo, setCartId } = useShopper();
   const navigate = useNavigate();
   const [search] = useSearchParams();
   const confirm = useMutation({
@@ -38,11 +38,13 @@ export default function ShopWallet({ params }: Route.ComponentProps) {
       if (!wallet.demo) setWalletId(wallet.id);
       setPaysWithDemo(wallet.demo);
       if (cartId !== null) {
-        await setCartWallet({
+        // The wallet is saved whatever happens to the cart. A cart that cannot follow it, such
+        // as one checked out meanwhile, is left behind rather than left paying with the old wallet.
+        const moved = await setCartWallet({
           path: { cart_id: cartId },
           body: { wallet_id: wallet.id },
-          throwOnError: true,
         });
+        if (moved.error !== undefined) setCartId(null);
       }
       await navigate("/shop", { replace: true });
     },

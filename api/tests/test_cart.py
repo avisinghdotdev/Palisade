@@ -38,18 +38,19 @@ async def set_line(
 
 @pytest.mark.usefixtures("service")
 async def test_a_new_cart_is_open_and_empty(
-    client: httpx2.AsyncClient, wallet_id: UUID
+    client: httpx2.AsyncClient,
+    wallet_id: UUID,
+    sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     cart = await new_cart(client, wallet_id)
 
-    assert (cart.status, cart.lines, cart.total.value, cart.wallet_id) == (
-        "open",
-        [],
-        "0.00",
-        wallet_id,
-    )
+    assert (cart.status, cart.lines, cart.total.value) == ("open", [], "0.00")
     fetched = await client.get(f"/api/shop/carts/{cart.id}")
     assert Cart.model_validate_json(fetched.content) == cart
+    # The wallet a cart charges is kept server-side; the response never names it.
+    assert "wallet_id" not in fetched.json()
+    async with sessions() as session:
+        assert (await session.get_one(CartRecord, cart.id)).wallet_id == wallet_id
 
 
 @pytest.mark.usefixtures("service")

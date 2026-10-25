@@ -27,8 +27,13 @@ class CartLine(BaseModel):
 
 
 class Cart(BaseModel):
+    """A cart as the shop reads it.
+
+    The wallet it pays with stays server-side: a cart id reached through an order's page must
+    not hand out a wallet that another cart could charge.
+    """
+
     id: UUID
-    wallet_id: UUID
     status: CartStatus
     lines: list[CartLine]
     total: Money
@@ -72,7 +77,6 @@ def cart_line(line: CartLineRecord) -> CartLine:
 def cart(record: CartRecord) -> Cart:
     return Cart(
         id=record.id,
-        wallet_id=record.wallet_id,
         status=CART_STATUS.validate_python(record.status),
         lines=[cart_line(line) for line in record.lines],
         total=money(

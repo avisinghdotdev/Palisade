@@ -25,7 +25,7 @@ from palisade_api.orders.models import OrderRecord, PayPalCallRecord
 from palisade_api.orders.repair import LEASE, Repairs
 from palisade_api.orders.store import Order, Orders
 from palisade_api.paypal.auth import PayPalAuth
-from palisade_api.paypal.client import PayPalClient, PayPalError
+from palisade_api.paypal.client import PayPalClient
 from palisade_api.shop.cart import Carts
 from palisade_api.shop.models import CartRecord
 from palisade_api.shop.router import carts as carts_dependency
@@ -139,7 +139,7 @@ async def uncaptured_hold(
     paypal.on("POST", CAPTURE_PATH, timeout)
     paypal.on("POST", VOID_PATH, json_answer(422, declined()))
     cart = await cart_with_shoes(client, wallet_id)
-    with pytest.raises(PayPalError):
+    with pytest.raises(CheckoutFailed):
         await shop.checkout.place_order(cart.id)
     order = await shop.order_of(cart.id)
     assert order.status == "authorized"
@@ -236,6 +236,31 @@ async def test_a_hold_never_captured_is_captured_under_the_first_request_id(
     assert await shop.cart_status(cart_id) == "completed"
     captures = paypal.sent("POST", CAPTURE_PATH)
     assert len({capture.headers["PayPal-Request-Id"] for capture in captures}) == 1
+
+
+async def test_an_order_paypal_describes_unexpectedly_is_left_for_a_person(
+    shop: Shop, paypal: PayPalStub, client: httpx2.AsyncClient, wallet_id: UUID
+) -> None:
+    _, order = await uncaptured_hold(shop, paypal, client, wallet_id)
+    await shop.age(order.id)
+    unknown_hold = {
+        "id": "PP-ORDER-1",
+        "purchase_units": [
+            {
+                "payments": {
+                    "authorizations": [{"id": "AUTH-OTHER", "status": "CREATED"}],
+                    "captures": [],
+                }
+            }
+        ],
+    }
+    paypal.on("GET", ORDER_PATH, json_answer(200, unknown_hold))
+    captures_before = len(paypal.sent("POST", CAPTURE_PATH))
+
+    assert await shop.repair(order.number)
+
+    assert (await shop.orders.get(order.number)).status == "authorized"
+    assert len(paypal.sent("POST", CAPTURE_PATH)) == captures_before
 
 
 async def test_a_hold_near_its_expiry_is_voided(

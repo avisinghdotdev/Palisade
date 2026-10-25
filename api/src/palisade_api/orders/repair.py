@@ -92,6 +92,10 @@ class Repairs:
             logger.info(
                 "order_repair_outcome", order_number=order.number, outcome=str(error)
             )
+        except Exception:
+            # An order PayPal describes in a shape this code does not expect stays stuck, with
+            # its traceback here for a person; it must not stop the orders behind it.
+            logger.exception("order_repair_failed", order_number=order.number)
 
     async def stuck(self) -> list[Stuck]:
         """Orders untouched for a lease: a create with no known outcome, or a hold not captured."""
@@ -158,8 +162,13 @@ class Repairs:
         payments = PayPalOrder.model_validate(response.body).purchase_units[0].payments
         made = [c for c in payments.captures if c.status in ("COMPLETED", "PENDING")]
         authorization = next(
-            a for a in payments.authorizations if a.id == order.authorization_id
+            (a for a in payments.authorizations if a.id == order.authorization_id),
+            None,
         )
+        if authorization is None:
+            raise ValueError(
+                f"PayPal lists no authorization {order.authorization_id} on {order.paypal_order_id}"
+            )
         if made:
             await self._checkout.captured(order.order_id, made[0])
         elif authorization.status in ("VOIDED", "EXPIRED"):

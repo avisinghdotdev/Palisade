@@ -15,6 +15,15 @@ SHUTDOWN_GRACE_SECONDS = 20.0
 
 logger = structlog.stdlib.get_logger(__name__)
 
+# Each feature's tasks sit on their own queue, and the worker listens only to the queues this
+# build knows. During a rolling release the old build's worker still runs for a few seconds; a
+# job it fetched for a task it had never heard of failed for good, because an unknown task is
+# not retried. A task added in a release goes on a new queue listed here, so an older worker
+# never fetches it.
+WEBHOOKS_QUEUE = "webhooks"
+ORDERS_QUEUE = "orders"
+WORKER_QUEUES = (WEBHOOKS_QUEUE, ORDERS_QUEUE)
+
 # Tasks register when their module is imported; the worker imports these before it starts. This
 # connector is never opened: a job is deferred on the caller's own connection, and the worker
 # opens its own connector in `run_worker`.
@@ -57,6 +66,7 @@ async def run_worker(
         async with jobs.open_async():
             worker = asyncio.create_task(
                 jobs.run_worker_async(
+                    queues=WORKER_QUEUES,
                     install_signal_handlers=False,
                     additional_context=context,
                     shutdown_graceful_timeout=SHUTDOWN_GRACE_SECONDS,
