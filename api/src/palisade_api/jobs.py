@@ -66,7 +66,8 @@ async def run_worker(
         async with jobs.open_async():
             worker = asyncio.create_task(
                 jobs.run_worker_async(
-                    queues=WORKER_QUEUES,
+                    # A list: psycopg sends a tuple as a row, not the array the fetch query takes.
+                    queues=list(WORKER_QUEUES),
                     install_signal_handlers=False,
                     additional_context=context,
                     shutdown_graceful_timeout=SHUTDOWN_GRACE_SECONDS,
