@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Palisade API",
-    "version": "0.12.0"
+    "version": "0.13.0"
   },
   "paths": {
     "/api/paypal/health": {
@@ -3326,6 +3326,7 @@
             "enum": [
               "search_products",
               "get_product",
+              "get_cart",
               "set_cart_line",
               "request_mandate",
               "check_mandate",
@@ -3367,6 +3368,7 @@
             "enum": [
               "search_products",
               "get_product",
+              "get_cart",
               "set_cart_line",
               "request_mandate",
               "check_mandate",

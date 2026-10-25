@@ -9,6 +9,7 @@ import {
   ShoppingBag,
   X,
 } from "lucide-react";
+import { type ReactNode } from "react";
 import Markdown from "react-markdown";
 import { Link } from "react-router";
 
@@ -241,6 +242,18 @@ function ToolStep({
   );
 }
 
+/** One thing the agent says, beside its avatar, so every message reads as the agent's. */
+export function AgentRow({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex items-start gap-2.5">
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+        <AgentIcon className="size-5" />
+      </span>
+      <div className="min-w-0 flex-1">{children}</div>
+    </div>
+  );
+}
+
 /** A stable key for each event: a tool call has an id, and a text block is the n-th of its turn. */
 function keyed(events: TurnEvent[]): { key: string; event: TurnEvent }[] {
   let texts = 0;
@@ -284,58 +297,51 @@ export function AssistantTurn({
           {request.text}
         </p>
       )}
-      {(events.length > 0 || streaming) && (
-        <div className="flex items-start gap-2.5">
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-            <AgentIcon className="size-5" />
-          </span>
-          <div className="min-w-0 flex-1 space-y-3">
-            {keyed(events).map(({ key, event }) => {
-              switch (event.type) {
-                case "text":
-                  return (
-                    <div
-                      className="w-fit max-w-full rounded-2xl rounded-tl-sm bg-secondary px-3 py-2 text-sm [&_li+li]:mt-0.5 [&_ol]:mt-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_p+p]:mt-2 [&_strong]:font-semibold [&_ul]:mt-1 [&_ul]:list-disc [&_ul]:pl-5"
-                      key={key}
-                    >
-                      <Markdown
-                        allowedElements={MARKDOWN_ELEMENTS}
-                        unwrapDisallowed
-                      >
-                        {event.text}
-                      </Markdown>
-                    </div>
-                  );
-                case "tool_call":
-                  return (
-                    <ToolStep
-                      awaited={awaited}
-                      call={event}
-                      key={key}
-                      result={results.get(event.id)}
-                      settled={settled}
-                    />
-                  );
-                case "tool_result":
-                  return null;
-              }
-            })}
-            {streaming && events.at(-1)?.type !== "text" && (
-              <p
-                aria-hidden
-                className="flex w-fit gap-1 rounded-2xl rounded-tl-sm bg-secondary px-3 py-3"
-              >
-                {[0, 1, 2].map((dot) => (
-                  <span
-                    className="size-1.5 rounded-full bg-muted-foreground motion-safe:animate-bounce"
-                    key={dot}
-                    style={{ animationDelay: `${String(dot * 150)}ms` }}
-                  />
-                ))}
-              </p>
-            )}
-          </div>
-        </div>
+      {keyed(events).map(({ key, event }) => {
+        switch (event.type) {
+          case "text":
+            return (
+              <AgentRow key={key}>
+                <div className="w-fit max-w-full rounded-2xl rounded-tl-sm bg-secondary px-3 py-2 text-sm [&_li+li]:mt-0.5 [&_ol]:mt-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_p+p]:mt-2 [&_strong]:font-semibold [&_ul]:mt-1 [&_ul]:list-disc [&_ul]:pl-5">
+                  <Markdown
+                    allowedElements={MARKDOWN_ELEMENTS}
+                    unwrapDisallowed
+                  >
+                    {event.text}
+                  </Markdown>
+                </div>
+              </AgentRow>
+            );
+          case "tool_call":
+            return (
+              <div className="pl-10.5" key={key}>
+                <ToolStep
+                  awaited={awaited}
+                  call={event}
+                  result={results.get(event.id)}
+                  settled={settled}
+                />
+              </div>
+            );
+          case "tool_result":
+            return null;
+        }
+      })}
+      {streaming && events.at(-1)?.type !== "text" && (
+        <AgentRow>
+          <p
+            aria-hidden
+            className="flex w-fit gap-1 rounded-2xl rounded-tl-sm bg-secondary px-3 py-3"
+          >
+            {[0, 1, 2].map((dot) => (
+              <span
+                className="size-1.5 rounded-full bg-muted-foreground motion-safe:animate-bounce"
+                key={dot}
+                style={{ animationDelay: `${String(dot * 150)}ms` }}
+              />
+            ))}
+          </p>
+        </AgentRow>
       )}
     </li>
   );

@@ -1089,7 +1089,7 @@ export type ToolCallEvent = {
     /**
      * Tool
      */
-    tool: 'search_products' | 'get_product' | 'set_cart_line' | 'request_mandate' | 'check_mandate' | 'checkout' | 'get_order';
+    tool: 'search_products' | 'get_product' | 'get_cart' | 'set_cart_line' | 'request_mandate' | 'check_mandate' | 'checkout' | 'get_order';
     /**
      * Input
      */
@@ -1113,7 +1113,7 @@ export type ToolResultEvent = {
     /**
      * Tool
      */
-    tool: 'search_products' | 'get_product' | 'set_cart_line' | 'request_mandate' | 'check_mandate' | 'checkout' | 'get_order';
+    tool: 'search_products' | 'get_product' | 'get_cart' | 'set_cart_line' | 'request_mandate' | 'check_mandate' | 'checkout' | 'get_order';
     /**
      * Ok
      */

@@ -8,6 +8,7 @@ import pytest
 from agent_fixtures import AGENT, ORIGIN, allow, seed, signed
 from order_fixtures import CAPTURE_PATH, CREATE_PATH, cart_with_shoes, created_order
 from paypal_stub import PayPalStub, json_answer
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from palisade_api.activity.store import Activities
@@ -23,7 +24,8 @@ from palisade_api.orders.checkout import Checkout
 from palisade_api.orders.store import Orders
 from palisade_api.paypal.auth import PayPalAuth
 from palisade_api.paypal.client import PayPalClient
-from palisade_api.policy.engine import Policies, Rules
+from palisade_api.policy.engine import MERCHANT_RULES, Policies, Rules
+from palisade_api.policy.models import PolicyRecord
 from palisade_api.shop.cart import Carts
 from palisade_api.shop.router import carts as carts_dependency
 from palisade_api.shop.router import checkout as checkout_dependency
@@ -217,6 +219,28 @@ def test_a_public_key_follows_its_seed() -> None:
     assert len(base64.b64decode(first)) == 32
     with pytest.raises(ValueError, match="32 bytes"):
         private_key(base64.b64encode(b"short").decode())
+
+
+async def test_the_merchant_rules_become_the_policy_in_force(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    policies = Policies(sessions)
+    merchant = Rules.model_validate(MERCHANT_RULES).hash()
+    await policies.ensure_current()
+    async with sessions() as session:
+        assert (await policies.current(session)).hash == merchant
+        rows = await session.scalar(select(func.count(PolicyRecord.id)))
+        assert rows is not None
+    await policies.ensure_current()
+    await allow(sessions, per_order_cap_cents=99)
+    async with sessions() as session:
+        assert (await policies.current(session)).hash != merchant
+
+    await policies.ensure_current()
+
+    async with sessions() as session:
+        assert (await policies.current(session)).hash == merchant
+        assert await session.scalar(select(func.count(PolicyRecord.id))) == rows + 2
 
 
 def test_the_policy_hash_ignores_field_order() -> None:

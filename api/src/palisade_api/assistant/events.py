@@ -14,6 +14,7 @@ from palisade_api.shop.catalog import Money
 ToolName = Literal[
     "search_products",
     "get_product",
+    "get_cart",
     "set_cart_line",
     "request_mandate",
     "check_mandate",
