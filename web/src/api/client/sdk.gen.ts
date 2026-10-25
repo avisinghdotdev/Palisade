@@ -105,6 +105,9 @@ export const setCartWallet = <ThrowOnError extends boolean = false>(options: Opt
  * Place Order
  *
  * Pay for the cart from its wallet; calling again returns the order already placed.
+ *
+ * A request signed by a registered agent places an agent order under the merchant's policy;
+ * a 403 names the rules it breaks. An unsigned request is the buyer's own.
  */
 export const checkout = <ThrowOnError extends boolean = false>(options: Options<CheckoutData, ThrowOnError>): RequestResult<CheckoutResponses, CheckoutErrors, ThrowOnError> => (options.client ?? client).post<CheckoutResponses, CheckoutErrors, ThrowOnError>({ url: '/api/shop/carts/{cart_id}/checkout', ...options });
 

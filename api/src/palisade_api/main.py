@@ -12,6 +12,8 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
+from palisade_api.agents.registry import Agents, BuiltinAgent
+from palisade_api.agents.signatures import AgentSignatures
 from palisade_api.database import create_engine
 from palisade_api.jobs import run_worker
 from palisade_api.logging import RequestLogMiddleware
@@ -26,6 +28,7 @@ from palisade_api.orders.store import Orders
 from palisade_api.paypal import router as paypal
 from palisade_api.paypal.auth import SANDBOX_BASE_URL, PayPalAuth
 from palisade_api.paypal.client import PayPalClient
+from palisade_api.policy.engine import Policies
 from palisade_api.settings import Settings
 from palisade_api.shop import router as shop
 from palisade_api.shop.cart import Carts
@@ -55,6 +58,7 @@ class State(TypedDict):
     checkout: Checkout
     orders: Orders
     shipments: Shipments
+    agent_signatures: AgentSignatures
 
 
 @asynccontextmanager
@@ -68,7 +72,26 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[State]:
     engine = create_engine(database_url)
     sessions = async_sessionmaker(engine)
     store = WebhookStore(sessions, enqueue_processing)
+    agents = Agents(sessions)
+    policies = Policies(sessions)
     try:
+        # The registry and the policy follow the settings, so every process that starts with
+        # the same seeds agrees on them; a changed seed is logged as a rotation.
+        await agents.register(
+            BuiltinAgent(
+                "palisade-shopper",
+                "Palisade Shopper",
+                settings.shopper_agent_key.get_secret_value(),
+            )
+        )
+        await agents.register(
+            BuiltinAgent(
+                "palisade-mcp",
+                "Palisade MCP",
+                settings.mcp_agent_key.get_secret_value(),
+            )
+        )
+        await policies.ensure_default()
         async with AsyncExitStack() as stack:
             http = await stack.enter_async_context(
                 httpx2.AsyncClient(
@@ -96,7 +119,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[State]:
                 }
                 repairs = Repairs(
                     sessions,
-                    Checkout(sessions, calls, orders, source="repair"),
+                    Checkout(sessions, calls, orders, policies, source="repair"),
                     paypal_client,
                 )
                 await stack.enter_async_context(
@@ -119,9 +142,12 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[State]:
                 catalog=Catalog(sessions),
                 carts=Carts(sessions),
                 wallets=wallets,
-                checkout=Checkout(sessions, calls, orders, source="api"),
+                checkout=Checkout(sessions, calls, orders, policies, source="api"),
                 orders=orders,
                 shipments=Shipments(sessions, calls, orders),
+                agent_signatures=AgentSignatures(
+                    sessions, agents, settings.public_origin
+                ),
             )
     finally:
         await engine.dispose()

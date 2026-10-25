@@ -37,6 +37,10 @@ class Settings(DatabaseSettings):
     public_origin: str
     # The PayPal account whose linked wallet is the shop's default buyer.
     demo_buyer_email: str
+    # Ed25519 seeds (base64 of 32 bytes) of the two agents Palisade runs; their public keys go
+    # into the agent registry at startup.
+    shopper_agent_key: SecretStr
+    mcp_agent_key: SecretStr
     # Startup applies pending migrations only where this is true, so one process owns the schema.
     run_migrations: bool
     # The job worker runs inside this process only where this is true, so a laptop never takes

@@ -48,8 +48,9 @@ class CartRecord(Base):
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # UUIDv7 ids sort in creation order and never tie, which `created_at` does inside one transaction.
     lines: Mapped[list[CartLineRecord]] = relationship(
-        cascade="all, delete-orphan", order_by="CartLineRecord.created_at"
+        cascade="all, delete-orphan", order_by="CartLineRecord.id"
     )
 
 

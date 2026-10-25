@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
+from palisade_api.agents.registry import Agent
 from palisade_api.orders.calls import PayPalCalls
 from palisade_api.orders.models import (
     OrderEventRecord,
@@ -27,6 +28,7 @@ from palisade_api.orders.store import (
     order,
 )
 from palisade_api.paypal.client import PayPalError
+from palisade_api.policy.engine import Policies, PolicyRefused, Purchase, evaluate
 from palisade_api.shop.cart import CartNotOpen, CartStatus, UnknownCart
 from palisade_api.shop.catalog import money
 from palisade_api.shop.models import CartLineRecord, CartRecord, ProductRecord
@@ -185,22 +187,27 @@ class Checkout:
         sessions: async_sessionmaker[AsyncSession],
         calls: PayPalCalls,
         orders: Orders,
+        policies: Policies,
         source: EventSource,
     ) -> None:
         self._sessions = sessions
         self._calls = calls
         self._orders = orders
+        self._policies = policies
         self._source: EventSource = source
 
-    async def place_order(self, cart_id: UUID) -> Order:
+    async def place_order(self, cart_id: UUID, agent: Agent | None) -> Order:
         """Turn the cart into a paid order; a repeat call returns the order already placed.
+
+        `agent` is the signed agent checking out, or None for the buyer's own browser.
 
         Raises:
             UnknownCart, EmptyCart, CartChanged, WalletUnavailable: nothing was sent to PayPal.
+            PolicyRefused: the merchant's policy refuses the agent's purchase; the cart is open.
             CheckoutDeclined: PayPal refused the payment; the cart is open again.
             CheckoutFailed: PayPal did not answer; the order stays with status `failed`.
         """
-        started = await self._begin(cart_id)
+        started = await self._begin(cart_id, agent)
         if isinstance(started, Order):
             return started
         return await self.create(started.order_id, started.number, started.create_body)
@@ -307,7 +314,7 @@ class Checkout:
         """Close an order whose outcome PayPal can no longer tell: `failed`, the cart open again."""
         await self._transition(order_id, "failed", detail=issue, cart_status="open")
 
-    async def _begin(self, cart_id: UUID) -> Order | Started:
+    async def _begin(self, cart_id: UUID, agent: Agent | None) -> Order | Started:
         """Freeze the cart and write the order before anything is sent to PayPal."""
         async with self._sessions.begin() as session:
             cart = await session.get(
@@ -352,12 +359,33 @@ class Checkout:
             total_cents = sum(
                 line.unit_price_cents * line.quantity for line in cart.lines
             )
+            policy_hash = None
+            if agent is not None:
+                policy = await self._policies.current(session)
+                reasons = evaluate(
+                    policy,
+                    Purchase(
+                        agent_id=agent.id,
+                        total_cents=total_cents,
+                        categories={
+                            products[line.product_id].category for line in cart.lines
+                        },
+                        spent_cents_today=await self._policies.spent_today(
+                            session, agent.id
+                        ),
+                    ),
+                )
+                if reasons:
+                    raise PolicyRefused(reasons)
+                policy_hash = policy.hash
             record = OrderRecord(
                 id=uuid7(),
                 number=await self._unused_number(session),
                 cart_id=cart.id,
                 wallet_id=wallet.id,
-                channel="human",
+                channel="human" if agent is None else "agent",
+                agent_id=None if agent is None else agent.id,
+                policy_hash=policy_hash,
                 status="creating",
                 currency="USD",
                 total_cents=total_cents,

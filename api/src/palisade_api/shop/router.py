@@ -4,6 +4,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
+from palisade_api.agents.registry import Agent
+from palisade_api.agents.signatures import caller
 from palisade_api.orders.checkout import (
     CartChanged,
     Checkout,
@@ -13,6 +15,7 @@ from palisade_api.orders.checkout import (
     WalletUnavailable,
 )
 from palisade_api.orders.store import Order
+from palisade_api.policy.engine import PolicyRefused
 from palisade_api.shop.cart import (
     Cart,
     CartNotOpen,
@@ -112,15 +115,23 @@ async def set_cart_wallet(
 
 @router.post("/carts/{cart_id}/checkout", operation_id="checkout")
 async def place_order(
-    cart_id: UUID, service: Annotated[Checkout, Depends(checkout)]
+    cart_id: UUID,
+    service: Annotated[Checkout, Depends(checkout)],
+    agent: Annotated[Agent | None, Depends(caller)],
 ) -> Order:
-    """Pay for the cart from its wallet; calling again returns the order already placed."""
+    """Pay for the cart from its wallet; calling again returns the order already placed.
+
+    A request signed by a registered agent places an agent order under the merchant's policy;
+    a 403 names the rules it breaks. An unsigned request is the buyer's own.
+    """
     try:
-        return await service.place_order(cart_id)
+        return await service.place_order(cart_id, agent)
     except UnknownCart as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
     except (CartNotOpen, EmptyCart, CartChanged, WalletUnavailable) as error:
         raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
+    except PolicyRefused as error:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, str(error)) from error
     except CheckoutDeclined as error:
         raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, str(error)) from error
     except CheckoutFailed as error:
