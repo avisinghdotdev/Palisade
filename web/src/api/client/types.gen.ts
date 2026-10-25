@@ -5,6 +5,20 @@ export type ClientOptions = {
 };
 
 /**
+ * Agent
+ */
+export type Agent = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Name
+     */
+    name: string;
+};
+
+/**
  * Cart
  *
  * A cart as the shop reads it.
@@ -174,6 +188,11 @@ export type Order = {
      * Channel
      */
     channel: 'human' | 'agent';
+    agent: Agent | null;
+    /**
+     * Policy Hash
+     */
+    policy_hash: string | null;
     /**
      * Status
      */
@@ -624,6 +643,11 @@ export type OrderWritable = {
      * Channel
      */
     channel: 'human' | 'agent';
+    agent: Agent | null;
+    /**
+     * Policy Hash
+     */
+    policy_hash: string | null;
     /**
      * Status
      */

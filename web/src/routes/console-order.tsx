@@ -304,7 +304,9 @@ export default function ConsoleOrder({ params }: Route.ComponentProps) {
               {formatAmount(order.data.total.value)}{" "}
               {order.data.total.currency_code}, placed{" "}
               {formatUtc(order.data.created_at)} by {order.data.wallet_email}
-              {order.data.wallet_demo && " (the demo buyer)"}.
+              {order.data.wallet_demo && " (the demo buyer)"}
+              {order.data.agent !== null && ` through ${order.data.agent.name}`}
+              .
             </p>
           </header>
           <div className="mt-8 grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_22rem]">
@@ -332,6 +334,29 @@ export default function ConsoleOrder({ params }: Route.ComponentProps) {
               </section>
             </div>
             <div className="space-y-6 lg:sticky lg:top-6">
+              {order.data.agent !== null && (
+                <aside
+                  aria-labelledby="agent"
+                  className="rounded-xl border bg-card px-5 py-4"
+                >
+                  <h2 className="py-1 text-base font-semibold" id="agent">
+                    Agent
+                  </h2>
+                  <dl className="mt-1 divide-y">
+                    <PayPalId
+                      label="Agent"
+                      mono={false}
+                      note={`Signed every request as ${order.data.agent.id}.`}
+                      value={order.data.agent.name}
+                    />
+                    <PayPalId
+                      label="Policy Hash"
+                      note="The merchant's rules this order passed, as the mandate records them."
+                      value={order.data.policy_hash}
+                    />
+                  </dl>
+                </aside>
+              )}
               <aside
                 aria-labelledby="paypal"
                 className="rounded-xl border bg-card px-5 py-4"

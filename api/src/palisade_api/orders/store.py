@@ -9,6 +9,7 @@ from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import joinedload, selectinload
 
+from palisade_api.agents.registry import Agent
 from palisade_api.orders.calls import CallAction
 from palisade_api.orders.models import (
     OrderEventRecord,
@@ -114,6 +115,9 @@ class Order(BaseModel):
     number: str
     cart_id: UUID
     channel: Channel
+    # The signed agent and the policy hash on an agent order; None on a human order.
+    agent: Agent | None
+    policy_hash: str | None
     status: OrderStatus
     total: Money
     custom_id: str | None
@@ -180,6 +184,10 @@ def order(record: OrderRecord) -> Order:
         number=record.number,
         cart_id=record.cart_id,
         channel=CHANNEL.validate_python(record.channel),
+        agent=None
+        if record.agent is None
+        else Agent(id=record.agent.id, name=record.agent.name),
+        policy_hash=record.policy_hash,
         status=ORDER_STATUS.validate_python(record.status),
         total=money(record.total_cents),
         custom_id=record.custom_id,
@@ -201,6 +209,7 @@ def order(record: OrderRecord) -> Order:
 def with_details(statement: Select[OrderRecord]) -> Select[OrderRecord]:
     return statement.options(
         joinedload(OrderRecord.wallet),
+        joinedload(OrderRecord.agent),
         joinedload(OrderRecord.shipment),
         selectinload(OrderRecord.lines),
         selectinload(OrderRecord.events),

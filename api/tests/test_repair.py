@@ -26,6 +26,7 @@ from palisade_api.orders.repair import LEASE, Repairs
 from palisade_api.orders.store import Order, Orders
 from palisade_api.paypal.auth import PayPalAuth
 from palisade_api.paypal.client import PayPalClient
+from palisade_api.policy.engine import Policies
 from palisade_api.shop.cart import Carts
 from palisade_api.shop.models import CartRecord
 from palisade_api.shop.router import carts as carts_dependency
@@ -44,11 +45,14 @@ class Shop:
         client = PayPalClient(http, PayPalAuth(http, "id", "secret"))
         calls = PayPalCalls(sessions, client)
         orders = Orders(sessions)
+        policies = Policies(sessions)
         self.sessions = sessions
         self.orders = orders
-        self.checkout = Checkout(sessions, calls, orders, source="api")
+        self.checkout = Checkout(sessions, calls, orders, policies, source="api")
         self.repairs = Repairs(
-            sessions, Checkout(sessions, calls, orders, source="repair"), client
+            sessions,
+            Checkout(sessions, calls, orders, policies, source="repair"),
+            client,
         )
 
     async def order_of(self, cart_id: UUID) -> Order:
@@ -128,7 +132,7 @@ async def unanswered_create(
     paypal.on("POST", CREATE_PATH, timeout)
     cart = await cart_with_shoes(client, wallet_id)
     with pytest.raises(CheckoutFailed):
-        await shop.checkout.place_order(cart.id)
+        await shop.checkout.place_order(cart.id, None)
     return cart.id, await shop.order_of(cart.id)
 
 
@@ -140,7 +144,7 @@ async def uncaptured_hold(
     paypal.on("POST", VOID_PATH, json_answer(422, declined()))
     cart = await cart_with_shoes(client, wallet_id)
     with pytest.raises(CheckoutFailed):
-        await shop.checkout.place_order(cart.id)
+        await shop.checkout.place_order(cart.id, None)
     order = await shop.order_of(cart.id)
     assert order.status == "authorized"
     return cart.id, order

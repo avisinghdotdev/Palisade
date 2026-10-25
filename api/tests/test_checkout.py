@@ -18,6 +18,7 @@ from pydantic import BaseModel, JsonValue, TypeAdapter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from palisade_api.agents.signatures import caller
 from palisade_api.main import app
 from palisade_api.orders.calls import PayPalCalls
 from palisade_api.orders.checkout import Checkout
@@ -26,6 +27,7 @@ from palisade_api.orders.router import orders as orders_dependency
 from palisade_api.orders.store import Order, Orders, OrderSummary
 from palisade_api.paypal.auth import PayPalAuth
 from palisade_api.paypal.client import PayPalClient
+from palisade_api.policy.engine import Policies
 from palisade_api.shop.cart import Cart, Carts
 from palisade_api.shop.models import ProductRecord
 from palisade_api.shop.router import carts as carts_dependency
@@ -101,11 +103,12 @@ def shop(
     http = paypal.client()
     orders = Orders(sessions)
     calls = PayPalCalls(sessions, PayPalClient(http, PayPalAuth(http, "id", "secret")))
-    checkout = Checkout(sessions, calls, orders, source="api")
+    checkout = Checkout(sessions, calls, orders, Policies(sessions), source="api")
     carts = Carts(sessions)
     app.dependency_overrides[carts_dependency] = lambda: carts
     app.dependency_overrides[checkout_dependency] = lambda: checkout
     app.dependency_overrides[orders_dependency] = lambda: orders
+    app.dependency_overrides[caller] = lambda: None
     yield checkout
     app.dependency_overrides.clear()
 
@@ -130,6 +133,7 @@ async def test_a_cart_is_authorized_captured_and_recorded(
         "human",
         "500.00",
     )
+    assert (order.agent, order.policy_hash) == (None, None)
     assert (order.paypal_order_id, order.authorization_id, order.capture_id) == (
         "PP-ORDER-1",
         "AUTH-1",

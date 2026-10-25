@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from palisade_api.agents.signatures import caller
 from palisade_api.main import app
 from palisade_api.orders.calls import PayPalCalls
 from palisade_api.orders.checkout import Checkout
@@ -26,6 +27,7 @@ from palisade_api.orders.shipping import Shipments
 from palisade_api.orders.store import Order, Orders
 from palisade_api.paypal.auth import PayPalAuth
 from palisade_api.paypal.client import PayPalClient
+from palisade_api.policy.engine import Policies
 from palisade_api.shop.cart import Carts
 from palisade_api.shop.router import carts as carts_dependency
 from palisade_api.shop.router import checkout as checkout_dependency
@@ -79,9 +81,10 @@ def shop(
     orders = Orders(sessions)
     app.dependency_overrides[carts_dependency] = lambda: Carts(sessions)
     app.dependency_overrides[checkout_dependency] = lambda: Checkout(
-        sessions, calls, orders, source="api"
+        sessions, calls, orders, Policies(sessions), source="api"
     )
     app.dependency_overrides[orders_dependency] = lambda: orders
+    app.dependency_overrides[caller] = lambda: None
     app.dependency_overrides[shipments_dependency] = lambda: Shipments(
         sessions, calls, orders
     )

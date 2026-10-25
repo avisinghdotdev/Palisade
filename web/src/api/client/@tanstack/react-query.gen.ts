@@ -230,6 +230,9 @@ export const setCartWalletMutation = (options?: Partial<Options<SetCartWalletDat
  * Place Order
  *
  * Pay for the cart from its wallet; calling again returns the order already placed.
+ *
+ * A request signed by a registered agent places an agent order under the merchant's policy;
+ * a 403 names the rules it breaks. An unsigned request is the buyer's own.
  */
 export const checkoutMutation = (options?: Partial<Options<CheckoutData>>): UseMutationOptions<CheckoutResponse, CheckoutError, Options<CheckoutData>> => {
     const mutationOptions: UseMutationOptions<CheckoutResponse, CheckoutError, Options<CheckoutData>> = {
