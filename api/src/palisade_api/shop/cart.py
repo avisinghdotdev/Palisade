@@ -39,12 +39,16 @@ class Cart(BaseModel):
     total: Money
 
 
+# The most pairs of one shoe in one size an order may hold.
+MAX_PER_LINE = 5
+
+
 class LineChange(BaseModel):
     """A product in a size and the quantity wanted; 0 removes the line."""
 
     product_id: str
     size: str
-    quantity: int = Field(ge=0, le=20)
+    quantity: int = Field(ge=0, le=MAX_PER_LINE)
 
 
 class UnknownCart(LookupError):

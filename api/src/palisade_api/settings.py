@@ -41,6 +41,10 @@ class Settings(DatabaseSettings):
     # into the agent registry at startup.
     shopper_agent_key: SecretStr
     mcp_agent_key: SecretStr
+    # Ed25519 seeds of the key Palisade signs mandate tokens with, and of the demo signer that
+    # approves a mandate in place of a buyer's passkey.
+    mandate_issuer_key: SecretStr
+    demo_signer_key: SecretStr
     # Startup applies pending migrations only where this is true, so one process owns the schema.
     run_migrations: bool
     # The job worker runs inside this process only where this is true, so a laptop never takes

@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CartData, CartErrors, CartResponses, CheckoutData, CheckoutErrors, CheckoutResponses, ConfirmWalletLinkData, ConfirmWalletLinkErrors, ConfirmWalletLinkResponses, CreateCartData, CreateCartErrors, CreateCartResponses, DemoWalletData, DemoWalletResponses, HealthData, HealthResponses, OrderData, OrderErrors, OrderResponses, OrdersData, OrdersResponses, PaypalHealthData, PaypalHealthResponses, PaypalWebhookData, PaypalWebhookErrors, PaypalWebhookResponses, ProductData, ProductErrors, ProductResponses, ProductsData, ProductsResponses, ReadyData, ReadyErrors, ReadyResponses, ReplayWebhookEventData, ReplayWebhookEventErrors, ReplayWebhookEventResponses, SetCartLineData, SetCartLineErrors, SetCartLineResponses, SetCartWalletData, SetCartWalletErrors, SetCartWalletResponses, ShipOrderData, ShipOrderErrors, ShipOrderResponses, StartWalletLinkData, StartWalletLinkResponses, WalletData, WalletErrors, WalletResponses, WebhookEventsData, WebhookEventsResponses } from './types.gen';
+import type { ApproveMandateData, ApproveMandateErrors, ApproveMandateResponses, CartData, CartErrors, CartResponses, CheckoutData, CheckoutErrors, CheckoutResponses, ConfirmWalletLinkData, ConfirmWalletLinkErrors, ConfirmWalletLinkResponses, CreateCartData, CreateCartErrors, CreateCartResponses, CreateMandateData, CreateMandateErrors, CreateMandateResponses, DeclineMandateData, DeclineMandateErrors, DeclineMandateResponses, DemoWalletData, DemoWalletResponses, HealthData, HealthResponses, MandateData, MandateErrors, MandatePasskeyOptionsData, MandatePasskeyOptionsErrors, MandatePasskeyOptionsResponses, MandateResponses, OrderData, OrderErrors, OrderResponses, OrdersData, OrdersResponses, PaypalHealthData, PaypalHealthResponses, PaypalWebhookData, PaypalWebhookErrors, PaypalWebhookResponses, ProductData, ProductErrors, ProductResponses, ProductsData, ProductsResponses, ReadyData, ReadyErrors, ReadyResponses, RegisterPasskeyData, RegisterPasskeyErrors, RegisterPasskeyResponses, ReplayWebhookEventData, ReplayWebhookEventErrors, ReplayWebhookEventResponses, SetCartLineData, SetCartLineErrors, SetCartLineResponses, SetCartWalletData, SetCartWalletErrors, SetCartWalletResponses, ShipOrderData, ShipOrderErrors, ShipOrderResponses, StartPasskeyRegistrationData, StartPasskeyRegistrationResponses, StartWalletLinkData, StartWalletLinkResponses, WalletData, WalletErrors, WalletResponses, WebhookEventsData, WebhookEventsResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -106,10 +106,17 @@ export const setCartWallet = <ThrowOnError extends boolean = false>(options: Opt
  *
  * Pay for the cart from its wallet; calling again returns the order already placed.
  *
- * A request signed by a registered agent places an agent order under the merchant's policy;
- * a 403 names the rules it breaks. An unsigned request is the buyer's own.
+ * A request signed by a registered agent places an agent order under the buyer's mandate and
+ * the merchant's policy; a 403 names what refused it. An unsigned request is the buyer's own.
  */
-export const checkout = <ThrowOnError extends boolean = false>(options: Options<CheckoutData, ThrowOnError>): RequestResult<CheckoutResponses, CheckoutErrors, ThrowOnError> => (options.client ?? client).post<CheckoutResponses, CheckoutErrors, ThrowOnError>({ url: '/api/shop/carts/{cart_id}/checkout', ...options });
+export const checkout = <ThrowOnError extends boolean = false>(options: Options<CheckoutData, ThrowOnError>): RequestResult<CheckoutResponses, CheckoutErrors, ThrowOnError> => (options.client ?? client).post<CheckoutResponses, CheckoutErrors, ThrowOnError>({
+    url: '/api/shop/carts/{cart_id}/checkout',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 /**
  * Start Wallet Link
@@ -165,6 +172,74 @@ export const order = <ThrowOnError extends boolean = false>(options: Options<Ord
  */
 export const shipOrder = <ThrowOnError extends boolean = false>(options: Options<ShipOrderData, ThrowOnError>): RequestResult<ShipOrderResponses, ShipOrderErrors, ThrowOnError> => (options.client ?? client).post<ShipOrderResponses, ShipOrderErrors, ThrowOnError>({
     url: '/api/orders/{number}/shipment',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Create Mandate
+ *
+ * An agent asks the buyer for a mandate; the answer holds the consent page's path.
+ *
+ * Only a signed agent request may ask; a 404 names a wallet or cart that cannot be used.
+ */
+export const createMandate = <ThrowOnError extends boolean = false>(options: Options<CreateMandateData, ThrowOnError>): RequestResult<CreateMandateResponses, CreateMandateErrors, ThrowOnError> => (options.client ?? client).post<CreateMandateResponses, CreateMandateErrors, ThrowOnError>({
+    url: '/api/mandates',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Get Mandate
+ */
+export const mandate = <ThrowOnError extends boolean = false>(options: Options<MandateData, ThrowOnError>): RequestResult<MandateResponses, MandateErrors, ThrowOnError> => (options.client ?? client).get<MandateResponses, MandateErrors, ThrowOnError>({ url: '/api/mandates/{mandate_id}', ...options });
+
+/**
+ * Mandate Passkey Options
+ *
+ * The browser options that make the given passkey sign this mandate.
+ */
+export const mandatePasskeyOptions = <ThrowOnError extends boolean = false>(options: Options<MandatePasskeyOptionsData, ThrowOnError>): RequestResult<MandatePasskeyOptionsResponses, MandatePasskeyOptionsErrors, ThrowOnError> => (options.client ?? client).get<MandatePasskeyOptionsResponses, MandatePasskeyOptionsErrors, ThrowOnError>({ url: '/api/mandates/{mandate_id}/passkey-options', ...options });
+
+/**
+ * Approve Mandate
+ *
+ * The buyer signs the mandate with a passkey or the demo signer (simulated).
+ */
+export const approveMandate = <ThrowOnError extends boolean = false>(options: Options<ApproveMandateData, ThrowOnError>): RequestResult<ApproveMandateResponses, ApproveMandateErrors, ThrowOnError> => (options.client ?? client).post<ApproveMandateResponses, ApproveMandateErrors, ThrowOnError>({
+    url: '/api/mandates/{mandate_id}/approval',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Decline Mandate
+ */
+export const declineMandate = <ThrowOnError extends boolean = false>(options: Options<DeclineMandateData, ThrowOnError>): RequestResult<DeclineMandateResponses, DeclineMandateErrors, ThrowOnError> => (options.client ?? client).post<DeclineMandateResponses, DeclineMandateErrors, ThrowOnError>({ url: '/api/mandates/{mandate_id}/decline', ...options });
+
+/**
+ * Start Passkey Registration
+ *
+ * A challenge and the options for `navigator.credentials.create()`.
+ */
+export const startPasskeyRegistration = <ThrowOnError extends boolean = false>(options?: Options<StartPasskeyRegistrationData, ThrowOnError>): RequestResult<StartPasskeyRegistrationResponses, unknown, ThrowOnError> => (options?.client ?? client).post<StartPasskeyRegistrationResponses, unknown, ThrowOnError>({ url: '/api/passkeys/registration', ...options });
+
+/**
+ * Register Passkey
+ *
+ * Keep the passkey the browser created; its id signs mandates from now on.
+ */
+export const registerPasskey = <ThrowOnError extends boolean = false>(options: Options<RegisterPasskeyData, ThrowOnError>): RequestResult<RegisterPasskeyResponses, RegisterPasskeyErrors, ThrowOnError> => (options.client ?? client).post<RegisterPasskeyResponses, RegisterPasskeyErrors, ThrowOnError>({
+    url: '/api/passkeys',
     ...options,
     headers: {
         'Content-Type': 'application/json',

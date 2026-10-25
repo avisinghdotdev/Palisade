@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from palisade_api.agents.registry import Agent
 from palisade_api.agents.signatures import caller
+from palisade_api.mandates.service import MandateRefused
 from palisade_api.orders.checkout import (
     CartChanged,
     Checkout,
@@ -48,6 +49,12 @@ def checkout(request: Request) -> Checkout:
 
 class CartWallet(BaseModel):
     wallet_id: UUID
+
+
+class CheckoutRequest(BaseModel):
+    """What an agent sends with a checkout: the buyer-signed mandate that covers it."""
+
+    mandate_id: UUID
 
 
 @router.get("/products", operation_id="products")
@@ -118,19 +125,22 @@ async def place_order(
     cart_id: UUID,
     service: Annotated[Checkout, Depends(checkout)],
     agent: Annotated[Agent | None, Depends(caller)],
+    body: CheckoutRequest | None = None,
 ) -> Order:
     """Pay for the cart from its wallet; calling again returns the order already placed.
 
-    A request signed by a registered agent places an agent order under the merchant's policy;
-    a 403 names the rules it breaks. An unsigned request is the buyer's own.
+    A request signed by a registered agent places an agent order under the buyer's mandate and
+    the merchant's policy; a 403 names what refused it. An unsigned request is the buyer's own.
     """
     try:
-        return await service.place_order(cart_id, agent)
+        return await service.place_order(
+            cart_id, agent, None if body is None else body.mandate_id
+        )
     except UnknownCart as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
     except (CartNotOpen, EmptyCart, CartChanged, WalletUnavailable) as error:
         raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
-    except PolicyRefused as error:
+    except (PolicyRefused, MandateRefused) as error:
         raise HTTPException(status.HTTP_403_FORBIDDEN, str(error)) from error
     except CheckoutDeclined as error:
         raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, str(error)) from error

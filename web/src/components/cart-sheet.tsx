@@ -20,7 +20,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import { useCart } from "@/hooks/use-cart";
+import { MAX_PER_LINE, MAX_PER_LINE_NOTE, useCart } from "@/hooks/use-cart";
 import { formatAmount } from "@/money";
 import { errorDetail, useShopper } from "@/shopper";
 
@@ -182,7 +182,7 @@ export function CartSheet({ wallet }: { wallet: undefined | Wallet }) {
                       </span>
                       <Button
                         aria-label={`One more ${line.name}, size ${line.size}`}
-                        disabled={busy || line.quantity >= 20}
+                        disabled={busy || line.quantity >= MAX_PER_LINE}
                         onClick={() => {
                           setLine.mutate({
                             ...line,
@@ -208,6 +208,11 @@ export function CartSheet({ wallet }: { wallet: undefined | Wallet }) {
                         Remove
                       </Button>
                     </div>
+                    {line.quantity >= MAX_PER_LINE && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {MAX_PER_LINE_NOTE}
+                      </p>
+                    )}
                   </div>
                 </li>
               ))}

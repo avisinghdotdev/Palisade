@@ -357,6 +357,52 @@ export default function ConsoleOrder({ params }: Route.ComponentProps) {
                   </dl>
                 </aside>
               )}
+              {order.data.mandate !== null && (
+                <aside
+                  aria-labelledby="mandate"
+                  className="rounded-xl border bg-card px-5 py-4"
+                >
+                  <h2 className="py-1 text-base font-semibold" id="mandate">
+                    Mandate
+                  </h2>
+                  <dl className="mt-1 divide-y">
+                    <PayPalId
+                      label="Mandate ID"
+                      note={
+                        order.data.mandate.kind === "cart"
+                          ? "The buyer approved this exact cart."
+                          : `The buyer allowed up to ${formatAmount(order.data.mandate.cap.value)} without checking back.`
+                      }
+                      value={order.data.mandate.id}
+                    />
+                    <PayPalId
+                      label="Signed By"
+                      mono={false}
+                      note={
+                        order.data.mandate.signed_at === null
+                          ? undefined
+                          : `Signed ${formatUtc(order.data.mandate.signed_at)}.`
+                      }
+                      value={
+                        order.data.mandate.signed_by === "passkey"
+                          ? "The buyer's passkey"
+                          : "Demo signer (simulated)"
+                      }
+                    />
+                    <PayPalId
+                      label="Token Hash"
+                      note={
+                        order.data.custom_id?.endsWith(
+                          order.data.mandate.token_hash,
+                        )
+                          ? "Matches the custom ID PayPal holds on the order."
+                          : "Does not match the custom ID on the order."
+                      }
+                      value={order.data.mandate.token_hash}
+                    />
+                  </dl>
+                </aside>
+              )}
               <aside
                 aria-labelledby="paypal"
                 className="rounded-xl border bg-card px-5 py-4"

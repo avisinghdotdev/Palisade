@@ -3,6 +3,7 @@ from uuid import UUID
 
 import httpx2
 import pytest
+from agent_fixtures import mandates_for
 from order_fixtures import (
     CAPTURE_PATH,
     CREATE_PATH,
@@ -81,7 +82,12 @@ def shop(
     orders = Orders(sessions)
     app.dependency_overrides[carts_dependency] = lambda: Carts(sessions)
     app.dependency_overrides[checkout_dependency] = lambda: Checkout(
-        sessions, calls, orders, Policies(sessions), source="api"
+        sessions,
+        calls,
+        orders,
+        Policies(sessions),
+        mandates_for(sessions),
+        source="api",
     )
     app.dependency_overrides[orders_dependency] = lambda: orders
     app.dependency_overrides[caller] = lambda: None

@@ -137,6 +137,14 @@ export function Receipt({ order }: { order: Order }) {
                 Palisade
               </span>
             </p>
+            {order.mandate !== null && (
+              <p className="mt-1 text-center text-xs text-stone-500">
+                Mandate {order.mandate.id.slice(0, 8)}, signed with{" "}
+                {order.mandate.signed_by === "passkey"
+                  ? "a passkey"
+                  : "the demo signer (simulated)"}
+              </p>
+            )}
           </>
         )}
       </article>

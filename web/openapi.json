@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Palisade API",
-    "version": "0.10.0"
+    "version": "0.11.0"
   },
   "paths": {
     "/api/paypal/health": {
@@ -431,7 +431,7 @@
           "shop"
         ],
         "summary": "Place Order",
-        "description": "Pay for the cart from its wallet; calling again returns the order already placed.\n\nA request signed by a registered agent places an agent order under the merchant's policy;\na 403 names the rules it breaks. An unsigned request is the buyer's own.",
+        "description": "Pay for the cart from its wallet; calling again returns the order already placed.\n\nA request signed by a registered agent places an agent order under the buyer's mandate and\nthe merchant's policy; a 403 names what refused it. An unsigned request is the buyer's own.",
         "operationId": "checkout",
         "parameters": [
           {
@@ -445,6 +445,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/CheckoutRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -717,6 +734,310 @@
         }
       }
     },
+    "/api/mandates": {
+      "post": {
+        "tags": [
+          "mandates"
+        ],
+        "summary": "Create Mandate",
+        "description": "An agent asks the buyer for a mandate; the answer holds the consent page's path.\n\nOnly a signed agent request may ask; a 404 names a wallet or cart that cannot be used.",
+        "operationId": "create_mandate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MandateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Mandate"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mandates/{mandate_id}": {
+      "get": {
+        "tags": [
+          "mandates"
+        ],
+        "summary": "Get Mandate",
+        "operationId": "mandate",
+        "parameters": [
+          {
+            "name": "mandate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Mandate Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Mandate"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mandates/{mandate_id}/passkey-options": {
+      "get": {
+        "tags": [
+          "mandates"
+        ],
+        "summary": "Mandate Passkey Options",
+        "description": "The browser options that make the given passkey sign this mandate.",
+        "operationId": "mandate_passkey_options",
+        "parameters": [
+          {
+            "name": "mandate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Mandate Id"
+            }
+          },
+          {
+            "name": "passkey_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Passkey Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/components/schemas/JsonValue"
+                  },
+                  "title": "Response Mandate Passkey Options"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mandates/{mandate_id}/approval": {
+      "post": {
+        "tags": [
+          "mandates"
+        ],
+        "summary": "Approve Mandate",
+        "description": "The buyer signs the mandate with a passkey or the demo signer (simulated).",
+        "operationId": "approve_mandate",
+        "parameters": [
+          {
+            "name": "mandate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Mandate Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Approval"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Mandate"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mandates/{mandate_id}/decline": {
+      "post": {
+        "tags": [
+          "mandates"
+        ],
+        "summary": "Decline Mandate",
+        "operationId": "decline_mandate",
+        "parameters": [
+          {
+            "name": "mandate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Mandate Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Mandate"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/passkeys/registration": {
+      "post": {
+        "tags": [
+          "mandates"
+        ],
+        "summary": "Start Passkey Registration",
+        "description": "A challenge and the options for `navigator.credentials.create()`.",
+        "operationId": "start_passkey_registration",
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationStart"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/passkeys": {
+      "post": {
+        "tags": [
+          "mandates"
+        ],
+        "summary": "Register Passkey",
+        "description": "Keep the passkey the browser created; its id signs mandates from now on.",
+        "operationId": "register_passkey",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Registration"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Passkey"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "summary": "Health",
@@ -778,6 +1099,49 @@
           "name"
         ],
         "title": "Agent"
+      },
+      "Approval": {
+        "properties": {
+          "signed_by": {
+            "type": "string",
+            "enum": [
+              "passkey",
+              "demo_signer"
+            ],
+            "title": "Signed By"
+          },
+          "passkey_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Passkey Id"
+          },
+          "credential": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential"
+          }
+        },
+        "type": "object",
+        "required": [
+          "signed_by"
+        ],
+        "title": "Approval"
       },
       "Cart": {
         "properties": {
@@ -871,6 +1235,21 @@
         ],
         "title": "CartWallet"
       },
+      "CheckoutRequest": {
+        "properties": {
+          "mandate_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Mandate Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mandate_id"
+        ],
+        "title": "CheckoutRequest",
+        "description": "What an agent sends with a checkout: the buyer-signed mandate that covers it."
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -916,7 +1295,7 @@
           },
           "quantity": {
             "type": "integer",
-            "maximum": 20.0,
+            "maximum": 5.0,
             "minimum": 0.0,
             "title": "Quantity"
           }
@@ -961,6 +1340,283 @@
         ],
         "title": "LinkStart",
         "description": "Where to send the buyer to approve the link, and the token to confirm with afterwards."
+      },
+      "Mandate": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "intent",
+              "cart"
+            ],
+            "title": "Kind"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "signed",
+              "declined",
+              "expired"
+            ],
+            "title": "Status"
+          },
+          "agent": {
+            "$ref": "#/components/schemas/Agent"
+          },
+          "wallet_email": {
+            "type": "string",
+            "title": "Wallet Email"
+          },
+          "cap": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Categories"
+          },
+          "cart_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cart Id"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/MandateLine"
+            },
+            "type": "array",
+            "title": "Lines"
+          },
+          "policy_hash": {
+            "type": "string",
+            "title": "Policy Hash"
+          },
+          "token_hash": {
+            "type": "string",
+            "title": "Token Hash"
+          },
+          "signed_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "passkey",
+                  "demo_signer"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signed By"
+          },
+          "signed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signed At"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          },
+          "spent": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "consent_path": {
+            "type": "string",
+            "title": "Consent Path"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "agent",
+          "wallet_email",
+          "cap",
+          "categories",
+          "cart_id",
+          "lines",
+          "policy_hash",
+          "token_hash",
+          "signed_by",
+          "signed_at",
+          "expires_at",
+          "spent",
+          "consent_path",
+          "created_at"
+        ],
+        "title": "Mandate"
+      },
+      "MandateLine": {
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "title": "Product Id"
+          },
+          "size": {
+            "type": "string",
+            "title": "Size"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "unit_price": {
+            "$ref": "#/components/schemas/Money"
+          }
+        },
+        "type": "object",
+        "required": [
+          "product_id",
+          "size",
+          "quantity",
+          "name",
+          "unit_price"
+        ],
+        "title": "MandateLine"
+      },
+      "MandateRequest": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "intent",
+              "cart"
+            ],
+            "title": "Kind"
+          },
+          "wallet_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Wallet Id"
+          },
+          "cap": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Categories"
+          },
+          "cart_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cart Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "wallet_id",
+          "cap"
+        ],
+        "title": "MandateRequest",
+        "description": "What an agent asks the buyer to allow."
+      },
+      "MandateSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "intent",
+              "cart"
+            ],
+            "title": "Kind"
+          },
+          "signed_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "passkey",
+                  "demo_signer"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signed By"
+          },
+          "signed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signed At"
+          },
+          "cap": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "token_hash": {
+            "type": "string",
+            "title": "Token Hash"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "signed_by",
+          "signed_at",
+          "cap",
+          "token_hash"
+        ],
+        "title": "MandateSummary",
+        "description": "The mandate as an order carries it."
       },
       "Money": {
         "properties": {
@@ -1026,6 +1682,16 @@
               }
             ],
             "title": "Policy Hash"
+          },
+          "mandate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MandateSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "status": {
             "type": "string",
@@ -1165,6 +1831,7 @@
           "channel",
           "agent",
           "policy_hash",
+          "mandate",
           "status",
           "total",
           "custom_id",
@@ -1406,6 +2073,20 @@
         "title": "OrderSummary",
         "description": "An order as the console's list shows it, without its lines, events, and PayPal calls."
       },
+      "Passkey": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "Passkey"
+      },
       "PayPalCall": {
         "properties": {
           "action": {
@@ -1641,6 +2322,49 @@
           "processed_at"
         ],
         "title": "ReceivedEvent"
+      },
+      "Registration": {
+        "properties": {
+          "challenge": {
+            "type": "string",
+            "title": "Challenge"
+          },
+          "credential": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Credential"
+          }
+        },
+        "type": "object",
+        "required": [
+          "challenge",
+          "credential"
+        ],
+        "title": "Registration"
+      },
+      "RegistrationStart": {
+        "properties": {
+          "challenge": {
+            "type": "string",
+            "title": "Challenge"
+          },
+          "options": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Options"
+          }
+        },
+        "type": "object",
+        "required": [
+          "challenge",
+          "options"
+        ],
+        "title": "RegistrationStart",
+        "description": "What the browser's `navigator.credentials.create()` needs, and the challenge to return."
       },
       "Shipment": {
         "properties": {

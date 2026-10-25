@@ -2,6 +2,11 @@
 
 from palisade_api.agents.models import AgentNonceRecord, AgentRecord
 from palisade_api.database import Base
+from palisade_api.mandates.models import (
+    MandateRecord,
+    PasskeyChallengeRecord,
+    PasskeyRecord,
+)
 from palisade_api.orders.models import (
     OrderEventRecord,
     OrderLineRecord,
@@ -20,9 +25,12 @@ __all__ = [
     "Base",
     "CartLineRecord",
     "CartRecord",
+    "MandateRecord",
     "OrderEventRecord",
     "OrderLineRecord",
     "OrderRecord",
+    "PasskeyChallengeRecord",
+    "PasskeyRecord",
     "PayPalCallRecord",
     "PolicyRecord",
     "ProductRecord",

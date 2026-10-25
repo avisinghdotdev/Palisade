@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useCart } from "@/hooks/use-cart";
+import { MAX_PER_LINE, MAX_PER_LINE_NOTE, useCart } from "@/hooks/use-cart";
 import { formatMoney } from "@/money";
 import { errorDetail } from "@/shopper";
 
@@ -32,6 +32,7 @@ export function ProductTile({
   const [size, setSize] = useState<null | string>(null);
   const [sizesOpen, setSizesOpen] = useState(false);
   const [added, setAdded] = useState(false);
+  const [atLimit, setAtLimit] = useState(false);
 
   useEffect(() => {
     if (!added) return;
@@ -54,6 +55,11 @@ export function ProductTile({
       setSizesOpen(true);
       return;
     }
+    if (inCart >= MAX_PER_LINE) {
+      setAtLimit(true);
+      return;
+    }
+    setAtLimit(false);
     setLine.mutate(
       { product_id: product.id, size, quantity: inCart + 1 },
       {
@@ -116,9 +122,9 @@ export function ProductTile({
             )}
           </Button>
         </div>
-        {setLine.isError && (
+        {(setLine.isError || atLimit) && (
           <p className="mt-2 text-xs text-destructive" role="alert">
-            {errorDetail(setLine.error)}
+            {atLimit ? MAX_PER_LINE_NOTE : errorDetail(setLine.error)}
           </p>
         )}
       </div>

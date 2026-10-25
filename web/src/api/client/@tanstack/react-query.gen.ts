@@ -3,8 +3,8 @@
 import { type DefaultError, queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 
 import { client } from '../client.gen';
-import { cart, checkout, confirmWalletLink, createCart, demoWallet, health, type Options, order, orders, paypalHealth, paypalWebhook, product, products, ready, replayWebhookEvent, setCartLine, setCartWallet, shipOrder, startWalletLink, wallet, webhookEvents } from '../sdk.gen';
-import type { CartData, CartError, CartResponse, CheckoutData, CheckoutError, CheckoutResponse, ConfirmWalletLinkData, ConfirmWalletLinkError, ConfirmWalletLinkResponse, CreateCartData, CreateCartError, CreateCartResponse, DemoWalletData, DemoWalletResponse, HealthData, HealthResponse, OrderData, OrderError, OrderResponse, OrdersData, OrdersResponse, PaypalHealthData, PaypalHealthResponse, PaypalWebhookData, PaypalWebhookError, PaypalWebhookResponse, ProductData, ProductError, ProductResponse, ProductsData, ProductsResponse, ReadyData, ReadyResponse, ReplayWebhookEventData, ReplayWebhookEventError, ReplayWebhookEventResponse, SetCartLineData, SetCartLineError, SetCartLineResponse, SetCartWalletData, SetCartWalletError, SetCartWalletResponse, ShipOrderData, ShipOrderError, ShipOrderResponse, StartWalletLinkData, StartWalletLinkResponse, WalletData, WalletError, WalletResponse, WebhookEventsData, WebhookEventsResponse } from '../types.gen';
+import { approveMandate, cart, checkout, confirmWalletLink, createCart, createMandate, declineMandate, demoWallet, health, mandate, mandatePasskeyOptions, type Options, order, orders, paypalHealth, paypalWebhook, product, products, ready, registerPasskey, replayWebhookEvent, setCartLine, setCartWallet, shipOrder, startPasskeyRegistration, startWalletLink, wallet, webhookEvents } from '../sdk.gen';
+import type { ApproveMandateData, ApproveMandateError, ApproveMandateResponse, CartData, CartError, CartResponse, CheckoutData, CheckoutError, CheckoutResponse, ConfirmWalletLinkData, ConfirmWalletLinkError, ConfirmWalletLinkResponse, CreateCartData, CreateCartError, CreateCartResponse, CreateMandateData, CreateMandateError, CreateMandateResponse, DeclineMandateData, DeclineMandateError, DeclineMandateResponse, DemoWalletData, DemoWalletResponse, HealthData, HealthResponse, MandateData, MandateError, MandatePasskeyOptionsData, MandatePasskeyOptionsError, MandatePasskeyOptionsResponse, MandateResponse, OrderData, OrderError, OrderResponse, OrdersData, OrdersResponse, PaypalHealthData, PaypalHealthResponse, PaypalWebhookData, PaypalWebhookError, PaypalWebhookResponse, ProductData, ProductError, ProductResponse, ProductsData, ProductsResponse, ReadyData, ReadyResponse, RegisterPasskeyData, RegisterPasskeyError, RegisterPasskeyResponse, ReplayWebhookEventData, ReplayWebhookEventError, ReplayWebhookEventResponse, SetCartLineData, SetCartLineError, SetCartLineResponse, SetCartWalletData, SetCartWalletError, SetCartWalletResponse, ShipOrderData, ShipOrderError, ShipOrderResponse, StartPasskeyRegistrationData, StartPasskeyRegistrationResponse, StartWalletLinkData, StartWalletLinkResponse, WalletData, WalletError, WalletResponse, WebhookEventsData, WebhookEventsResponse } from '../types.gen';
 
 export type QueryKey<TOptions extends Options> = [
     Pick<TOptions, 'baseUrl' | 'body' | 'headers' | 'path' | 'query'> & {
@@ -231,8 +231,8 @@ export const setCartWalletMutation = (options?: Partial<Options<SetCartWalletDat
  *
  * Pay for the cart from its wallet; calling again returns the order already placed.
  *
- * A request signed by a registered agent places an agent order under the merchant's policy;
- * a 403 names the rules it breaks. An unsigned request is the buyer's own.
+ * A request signed by a registered agent places an agent order under the buyer's mandate and
+ * the merchant's policy; a 403 names what refused it. An unsigned request is the buyer's own.
  */
 export const checkoutMutation = (options?: Partial<Options<CheckoutData>>): UseMutationOptions<CheckoutResponse, CheckoutError, Options<CheckoutData>> => {
     const mutationOptions: UseMutationOptions<CheckoutResponse, CheckoutError, Options<CheckoutData>> = {
@@ -373,6 +373,139 @@ export const shipOrderMutation = (options?: Partial<Options<ShipOrderData>>): Us
     const mutationOptions: UseMutationOptions<ShipOrderResponse, ShipOrderError, Options<ShipOrderData>> = {
         mutationFn: async (fnOptions) => {
             const { data } = await shipOrder({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Create Mandate
+ *
+ * An agent asks the buyer for a mandate; the answer holds the consent page's path.
+ *
+ * Only a signed agent request may ask; a 404 names a wallet or cart that cannot be used.
+ */
+export const createMandateMutation = (options?: Partial<Options<CreateMandateData>>): UseMutationOptions<CreateMandateResponse, CreateMandateError, Options<CreateMandateData>> => {
+    const mutationOptions: UseMutationOptions<CreateMandateResponse, CreateMandateError, Options<CreateMandateData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await createMandate({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const mandateQueryKey = (options: Options<MandateData>) => createQueryKey('mandate', options);
+
+/**
+ * Get Mandate
+ */
+export const mandateOptions = (options: Options<MandateData>) => queryOptions<MandateResponse, MandateError, MandateResponse, ReturnType<typeof mandateQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await mandate({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: mandateQueryKey(options)
+});
+
+export const mandatePasskeyOptionsQueryKey = (options: Options<MandatePasskeyOptionsData>) => createQueryKey('mandatePasskeyOptions', options);
+
+/**
+ * Mandate Passkey Options
+ *
+ * The browser options that make the given passkey sign this mandate.
+ */
+export const mandatePasskeyOptionsOptions = (options: Options<MandatePasskeyOptionsData>) => queryOptions<MandatePasskeyOptionsResponse, MandatePasskeyOptionsError, MandatePasskeyOptionsResponse, ReturnType<typeof mandatePasskeyOptionsQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await mandatePasskeyOptions({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: mandatePasskeyOptionsQueryKey(options)
+});
+
+/**
+ * Approve Mandate
+ *
+ * The buyer signs the mandate with a passkey or the demo signer (simulated).
+ */
+export const approveMandateMutation = (options?: Partial<Options<ApproveMandateData>>): UseMutationOptions<ApproveMandateResponse, ApproveMandateError, Options<ApproveMandateData>> => {
+    const mutationOptions: UseMutationOptions<ApproveMandateResponse, ApproveMandateError, Options<ApproveMandateData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await approveMandate({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Decline Mandate
+ */
+export const declineMandateMutation = (options?: Partial<Options<DeclineMandateData>>): UseMutationOptions<DeclineMandateResponse, DeclineMandateError, Options<DeclineMandateData>> => {
+    const mutationOptions: UseMutationOptions<DeclineMandateResponse, DeclineMandateError, Options<DeclineMandateData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await declineMandate({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Start Passkey Registration
+ *
+ * A challenge and the options for `navigator.credentials.create()`.
+ */
+export const startPasskeyRegistrationMutation = (options?: Partial<Options<StartPasskeyRegistrationData>>): UseMutationOptions<StartPasskeyRegistrationResponse, DefaultError, Options<StartPasskeyRegistrationData>> => {
+    const mutationOptions: UseMutationOptions<StartPasskeyRegistrationResponse, DefaultError, Options<StartPasskeyRegistrationData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await startPasskeyRegistration({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Register Passkey
+ *
+ * Keep the passkey the browser created; its id signs mandates from now on.
+ */
+export const registerPasskeyMutation = (options?: Partial<Options<RegisterPasskeyData>>): UseMutationOptions<RegisterPasskeyResponse, RegisterPasskeyError, Options<RegisterPasskeyData>> => {
+    const mutationOptions: UseMutationOptions<RegisterPasskeyResponse, RegisterPasskeyError, Options<RegisterPasskeyData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await registerPasskey({
                 ...options,
                 ...fnOptions,
                 throwOnError: true

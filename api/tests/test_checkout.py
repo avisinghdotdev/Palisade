@@ -4,6 +4,7 @@ from uuid import UUID
 
 import httpx2
 import pytest
+from agent_fixtures import mandates_for
 from order_fixtures import (
     CAPTURE_PATH,
     CREATE_PATH,
@@ -103,7 +104,14 @@ def shop(
     http = paypal.client()
     orders = Orders(sessions)
     calls = PayPalCalls(sessions, PayPalClient(http, PayPalAuth(http, "id", "secret")))
-    checkout = Checkout(sessions, calls, orders, Policies(sessions), source="api")
+    checkout = Checkout(
+        sessions,
+        calls,
+        orders,
+        Policies(sessions),
+        mandates_for(sessions),
+        source="api",
+    )
     carts = Carts(sessions)
     app.dependency_overrides[carts_dependency] = lambda: carts
     app.dependency_overrides[checkout_dependency] = lambda: checkout
