@@ -10,6 +10,7 @@ from order_fixtures import CAPTURE_PATH, CREATE_PATH, cart_with_shoes, created_o
 from paypal_stub import PayPalStub, json_answer
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from palisade_api.activity.store import Activities
 from palisade_api.agents.keys import encode_public_key, private_key
 from palisade_api.agents.registry import Agents, BuiltinAgent
 from palisade_api.agents.signatures import AgentSignatures, agent_signatures
@@ -55,16 +56,17 @@ def shop(
     calls = PayPalCalls(sessions, PayPalClient(http, PayPalAuth(http, "id", "secret")))
     agents = Agents(sessions)
     policies = Policies(sessions)
+    activities = Activities(sessions)
     passkeys = Passkeys(sessions, ORIGIN)
     mandates = Mandates(
-        sessions, MandateTokens(seed()), passkeys, policies, seed(), ORIGIN
+        sessions, MandateTokens(seed()), passkeys, policies, activities, seed(), ORIGIN
     )
     app.dependency_overrides[carts_dependency] = lambda: Carts(sessions)
     app.dependency_overrides[checkout_dependency] = lambda: Checkout(
-        sessions, calls, Orders(sessions), policies, mandates, source="api"
+        sessions, calls, Orders(sessions), policies, mandates, activities, source="api"
     )
     app.dependency_overrides[agent_signatures] = lambda: AgentSignatures(
-        sessions, agents, ORIGIN
+        sessions, agents, activities, ORIGIN
     )
     yield
     app.dependency_overrides.clear()
@@ -189,6 +191,20 @@ async def test_policy_refusals_name_the_rules_broken(
     cart_id = path.split("/")[4]
     cart = await client.get(f"/api/shop/carts/{cart_id}")
     assert cart.json()["status"] == "open"
+
+
+async def test_a_registered_agent_follows_its_name_and_seed(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    agents = Agents(sessions)
+    first_seed = seed()
+    await agents.register(BuiltinAgent(AGENT, "First Name", first_seed))
+
+    await agents.register(BuiltinAgent(AGENT, "Second Name", seed()))
+
+    assert (await agents.get(AGENT)).name == "Second Name"
+    keys = await agents.public_keys()
+    assert keys[AGENT] != encode_public_key(private_key(first_seed).public_key())
 
 
 def test_a_public_key_follows_its_seed() -> None:

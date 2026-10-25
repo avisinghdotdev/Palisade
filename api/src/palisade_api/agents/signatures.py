@@ -21,9 +21,11 @@ from http_message_signatures.signatures import HTTPMessageVerifier
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from palisade_api.activity.store import Activities
 from palisade_api.agents.keys import public_key
 from palisade_api.agents.models import AgentNonceRecord
 from palisade_api.agents.registry import Agent, Agents
+from palisade_api.logging import route_template
 
 # A signature older than this is refused, so a captured request cannot be replayed later.
 MAX_AGE = timedelta(minutes=5)
@@ -79,14 +81,19 @@ class AgentSignatures:
         self,
         sessions: async_sessionmaker[AsyncSession],
         agents: Agents,
+        activities: Activities,
         public_origin: str,
     ) -> None:
         self._sessions = sessions
         self._agents = agents
+        self._activities = activities
         self._public_origin = public_origin
 
     async def verify(self, request: Request, body: bytes) -> Agent | None:
         """The agent that signed the request; None for an unsigned, human request.
+
+        Every signed request that reaches here lands in the activity log, accepted or refused,
+        under its route template: the real path would publish ids that only their owner holds.
 
         Raises:
             UnsignedAgentRequest: the request names an agent but carries no signature.
@@ -96,6 +103,19 @@ class AgentSignatures:
             if AGENT_HEADER in request.headers:
                 raise UnsignedAgentRequest
             return None
+        try:
+            agent = await self._verify(request, body)
+        except InvalidAgentSignature as error:
+            await self._activities.record(
+                "signature_refused",
+                reason=error.reason,
+                method=request.method,
+                route=route_template(request),
+            )
+            raise
+        return agent
+
+    async def _verify(self, request: Request, body: bytes) -> Agent:
         message = SignedMessage(
             method=request.method,
             url=self._public_origin
@@ -124,10 +144,11 @@ class AgentSignatures:
         if result.nonce is None:
             raise InvalidAgentSignature("a nonce is required")
         agent_id = str(result.parameters["keyid"])
-        await self._record_nonce(agent_id, result.nonce)
+        await self._accept(agent_id, result.nonce, request)
         return await self._agents.get(agent_id)
 
-    async def _record_nonce(self, agent_id: str, nonce: str) -> None:
+    async def _accept(self, agent_id: str, nonce: str, request: Request) -> None:
+        """Spend the nonce and log the accepted request in one transaction."""
         statement = (
             insert(AgentNonceRecord)
             .values(agent_id=agent_id, nonce=nonce)
@@ -137,6 +158,13 @@ class AgentSignatures:
         async with self._sessions.begin() as session:
             if (await session.execute(statement)).scalar_one_or_none() is None:
                 raise InvalidAgentSignature("the nonce was already used")
+            self._activities.add(
+                session,
+                "signature_accepted",
+                agent_id=agent_id,
+                method=request.method,
+                route=route_template(request),
+            )
 
 
 def agent_signatures(request: Request) -> AgentSignatures:

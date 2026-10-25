@@ -71,7 +71,7 @@ export default function ShopWallet({ params }: Route.ComponentProps) {
         {confirm.isError ? (
           <section className="w-full max-w-sm rounded-xl border bg-card p-8 text-center shadow-sm">
             <h1 className="text-lg font-semibold tracking-tight">
-              Wallet Not Linked
+              Wallet not Linked
             </h1>
             <p className="mt-2 text-sm text-destructive" role="alert">
               {confirm.error instanceof LinkStartedElsewhere

@@ -6,14 +6,24 @@ from typing import Annotated, Literal, TypedDict
 
 import httpx2
 import structlog
+from anthropic import AsyncAnthropic
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
+from palisade_api.activity import router as activity_router
+from palisade_api.activity.store import Activities
+from palisade_api.agents.client import AgentHttp, AgentSigner
 from palisade_api.agents.registry import Agents, BuiltinAgent
 from palisade_api.agents.signatures import AgentSignatures
+from palisade_api.assistant import router as assistant_router
+from palisade_api.assistant.access import ChatAccess
+from palisade_api.assistant.local import LocalApp
+from palisade_api.assistant.model import ClaudeModel
+from palisade_api.assistant.prompt import SYSTEM_PROMPT
+from palisade_api.assistant.service import Assistant
 from palisade_api.database import create_engine
 from palisade_api.jobs import run_worker
 from palisade_api.logging import RequestLogMiddleware
@@ -47,6 +57,7 @@ from palisade_api.webhooks.verification import WebhookVerifier
 
 # A hung connection fails within this and is logged, instead of holding the caller.
 READY_TIMEOUT_SECONDS = 2
+SHOPPER_AGENT = "palisade-shopper"
 
 logger = structlog.stdlib.get_logger(__name__)
 
@@ -65,10 +76,13 @@ class State(TypedDict):
     agent_signatures: AgentSignatures
     mandates: Mandates
     passkeys: Passkeys
+    activities: Activities
+    chat_access: ChatAccess
+    assistant: Assistant
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI) -> AsyncGenerator[State]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[State]:
     # pydantic-settings fills the fields from the environment; pyright only sees the synthesized constructor.
     settings = Settings()  # pyright: ignore[reportCallIssue]
     if settings.run_migrations:
@@ -80,13 +94,14 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[State]:
     store = WebhookStore(sessions, enqueue_processing)
     agents = Agents(sessions)
     policies = Policies(sessions)
+    activities = Activities(sessions)
     try:
         # The registry and the policy follow the settings, so every process that starts with
         # the same seeds agrees on them; a changed seed is logged as a rotation.
         await agents.register(
             BuiltinAgent(
-                "palisade-shopper",
-                "Palisade Shopper",
+                SHOPPER_AGENT,
+                "Ridgeline Assistant",
                 settings.shopper_agent_key.get_secret_value(),
             )
         )
@@ -124,6 +139,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[State]:
                 MandateTokens(settings.mandate_issuer_key.get_secret_value()),
                 passkeys,
                 policies,
+                activities,
                 settings.demo_signer_key.get_secret_value(),
                 settings.public_origin,
             )
@@ -135,7 +151,13 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[State]:
                 repairs = Repairs(
                     sessions,
                     Checkout(
-                        sessions, calls, orders, policies, mandates, source="repair"
+                        sessions,
+                        calls,
+                        orders,
+                        policies,
+                        mandates,
+                        activities,
+                        source="repair",
                     ),
                     paypal_client,
                 )
@@ -149,7 +171,22 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[State]:
                         },
                     )
                 )
-            yield State(
+            # The agent's tools call this same app in-process; they find the state below in
+            # their scope, filled in once it exists.
+            local_state: dict[str, object] = {}
+            shop_http = await stack.enter_async_context(
+                httpx2.AsyncClient(
+                    transport=httpx2.ASGITransport(
+                        app=LocalApp(app, local_state), raise_app_exceptions=False
+                    ),
+                    base_url=settings.public_origin,
+                    timeout=httpx2.Timeout(60.0),
+                )
+            )
+            claude = await stack.enter_async_context(
+                AsyncAnthropic(api_key=settings.anthropic_api_key.get_secret_value())
+            )
+            state = State(
                 engine=engine,
                 paypal_auth=auth,
                 webhook_verifier=WebhookVerifier(
@@ -160,16 +197,39 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[State]:
                 carts=Carts(sessions),
                 wallets=wallets,
                 checkout=Checkout(
-                    sessions, calls, orders, policies, mandates, source="api"
+                    sessions,
+                    calls,
+                    orders,
+                    policies,
+                    mandates,
+                    activities,
+                    source="api",
                 ),
                 orders=orders,
                 shipments=Shipments(sessions, calls, orders),
                 agent_signatures=AgentSignatures(
-                    sessions, agents, settings.public_origin
+                    sessions, agents, activities, settings.public_origin
                 ),
                 mandates=mandates,
                 passkeys=passkeys,
+                activities=activities,
+                chat_access=ChatAccess(settings.chat_access_key.get_secret_value()),
+                assistant=Assistant(
+                    sessions,
+                    ClaudeModel(claude, SYSTEM_PROMPT),
+                    AgentHttp(
+                        shop_http,
+                        AgentSigner(
+                            SHOPPER_AGENT, settings.shopper_agent_key.get_secret_value()
+                        ),
+                    ),
+                    mandates,
+                    activities,
+                    SHOPPER_AGENT,
+                ),
             )
+            local_state.update(state)
+            yield state
     finally:
         await engine.dispose()
 
@@ -182,6 +242,8 @@ app.include_router(shop.router)
 app.include_router(wallets_router.router)
 app.include_router(orders_router.router)
 app.include_router(mandates_router.router)
+app.include_router(activity_router.router)
+app.include_router(assistant_router.router)
 
 
 class Health(BaseModel):

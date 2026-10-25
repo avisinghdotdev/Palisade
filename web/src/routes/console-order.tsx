@@ -1,10 +1,19 @@
 import { useQuery } from "@tanstack/react-query";
-import { ChevronRight, Truck } from "lucide-react";
+import { ChevronRight, Signature, Truck } from "lucide-react";
 import { Link } from "react-router";
 
-import type { Order } from "@/api/client";
+import type { Activity, Order } from "@/api/client";
 
-import { orderOptions } from "@/api/client/@tanstack/react-query.gen";
+import {
+  ACTIVITY_LABELS,
+  activityDetail,
+  activitySource,
+} from "@/activity-labels";
+import {
+  orderActivityOptions,
+  orderOptions,
+} from "@/api/client/@tanstack/react-query.gen";
+import { AgentIcon } from "@/components/agent-icon";
 import { Channel } from "@/components/channel";
 import { CopyButton } from "@/components/copy-button";
 import { OrderLines } from "@/components/order-lines";
@@ -34,20 +43,33 @@ interface Entry {
   label: string;
   source: string;
   detail: null | string;
+  // PayPal's codes and ids read better in a fixed-width face; the agent's words do not.
+  code: boolean;
 }
 
-/** The order's events and its shipment, in the order they happened. */
-function timeline(order: Order): Entry[] {
-  const entries: Entry[] = order.events.map((event) => ({
-    key: `${event.at}/${event.to_status}/${event.webhook_event_id ?? event.source}`,
-    at: event.at,
-    label:
-      event.paypal_event === null
-        ? EVENT_LABELS[event.to_status]
-        : WEBHOOK_LABELS[event.paypal_event],
-    source: SOURCES[event.source],
-    detail: event.detail,
+/** The agent's side, the order's own events, and its shipment, in the order they happened. */
+function timeline(order: Order, activity: Activity[]): Entry[] {
+  const entries: Entry[] = activity.map((row) => ({
+    key: row.id,
+    at: row.at,
+    label: ACTIVITY_LABELS[row.kind],
+    source: activitySource(row),
+    detail: activityDetail(row),
+    code: false,
   }));
+  entries.push(
+    ...order.events.map((event) => ({
+      key: `${event.at}/${event.to_status}/${event.webhook_event_id ?? event.source}`,
+      at: event.at,
+      label:
+        event.paypal_event === null
+          ? EVENT_LABELS[event.to_status]
+          : WEBHOOK_LABELS[event.paypal_event],
+      source: SOURCES[event.source],
+      detail: event.detail,
+      code: true,
+    })),
+  );
   if (order.shipment !== null) {
     entries.push({
       key: order.shipment.paypal_tracker_id,
@@ -55,6 +77,7 @@ function timeline(order: Order): Entry[] {
       label: "Marked as Shipped",
       source: "Merchant Console",
       detail: `${order.shipment.carrier} ${order.shipment.tracking_number}`,
+      code: true,
     });
   }
   // Stable, so events at the same instant keep the order they were recorded in.
@@ -95,10 +118,10 @@ function PayPalId({
   );
 }
 
-function Timeline({ order }: { order: Order }) {
+function Timeline({ order, activity }: { order: Order; activity: Activity[] }) {
   return (
     <ol className="relative ml-1.5 border-l border-border">
-      {timeline(order).map((entry) => (
+      {timeline(order, activity).map((entry) => (
         <li className="relative pb-6 pl-6 last:pb-0" key={entry.key}>
           <span
             aria-hidden
@@ -115,8 +138,11 @@ function Timeline({ order }: { order: Order }) {
           </p>
           <p className="mt-0.5 text-sm text-muted-foreground">
             {entry.source}
-            {entry.detail !== null && (
-              <span className="font-mono text-xs"> {entry.detail}</span>
+            {entry.detail !== null && entry.detail !== "" && (
+              <span className={entry.code ? "font-mono text-xs" : ""}>
+                {" "}
+                {entry.code ? entry.detail : `· ${entry.detail}`}
+              </span>
             )}
           </p>
         </li>
@@ -239,6 +265,11 @@ export default function ConsoleOrder({ params }: Route.ComponentProps) {
     ...orderOptions({ path: { number: params.number } }),
     retry: false,
   });
+  // The agent's side of the story; a human order has none, and the timeline stands without it.
+  const activity = useQuery({
+    ...orderActivityOptions({ path: { number: params.number } }),
+    enabled: order.isSuccess,
+  });
 
   return (
     <>
@@ -265,7 +296,7 @@ export default function ConsoleOrder({ params }: Route.ComponentProps) {
       {order.isError && (
         <div className="mt-6">
           <h1 className="text-xl font-semibold">
-            Order {params.number} is Not Available
+            Order {params.number} is not Available
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
             {errorDetail(order.error)}
@@ -329,7 +360,7 @@ export default function ConsoleOrder({ params }: Route.ComponentProps) {
                   Timeline
                 </h2>
                 <div className="mt-4">
-                  <Timeline order={order.data} />
+                  <Timeline activity={activity.data ?? []} order={order.data} />
                 </div>
               </section>
             </div>
@@ -339,19 +370,23 @@ export default function ConsoleOrder({ params }: Route.ComponentProps) {
                   aria-labelledby="agent"
                   className="rounded-xl border bg-card px-5 py-4"
                 >
-                  <h2 className="py-1 text-base font-semibold" id="agent">
+                  <h2
+                    className="flex items-center gap-2 py-1 text-base font-semibold"
+                    id="agent"
+                  >
+                    <AgentIcon className="size-4 text-muted-foreground" />
                     Agent
                   </h2>
                   <dl className="mt-1 divide-y">
                     <PayPalId
                       label="Agent"
                       mono={false}
-                      note={`Signed every request as ${order.data.agent.id}.`}
+                      note={`Signed every request as ${order.data.agent.id}; Palisade verified each one.`}
                       value={order.data.agent.name}
                     />
                     <PayPalId
                       label="Policy Hash"
-                      note="The merchant's rules this order passed, as the mandate records them."
+                      note="Ridgeline Running's rules this order passed, as Palisade checked them."
                       value={order.data.policy_hash}
                     />
                   </dl>
@@ -362,7 +397,14 @@ export default function ConsoleOrder({ params }: Route.ComponentProps) {
                   aria-labelledby="mandate"
                   className="rounded-xl border bg-card px-5 py-4"
                 >
-                  <h2 className="py-1 text-base font-semibold" id="mandate">
+                  <h2
+                    className="flex items-center gap-2 py-1 text-base font-semibold"
+                    id="mandate"
+                  >
+                    <Signature
+                      aria-hidden
+                      className="size-4 text-muted-foreground"
+                    />
                     Mandate
                   </h2>
                   <dl className="mt-1 divide-y">

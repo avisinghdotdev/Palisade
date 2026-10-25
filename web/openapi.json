@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Palisade API",
-    "version": "0.11.0"
+    "version": "0.12.0"
   },
   "paths": {
     "/api/paypal/health": {
@@ -1038,6 +1038,345 @@
         }
       }
     },
+    "/api/activity": {
+      "get": {
+        "tags": [
+          "activity"
+        ],
+        "summary": "List Activity",
+        "description": "The agent-side events the store recorded, newest first; `kind` narrows them to one kind.",
+        "operationId": "activity",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "conversation_started",
+                    "shopper_message",
+                    "assistant_tool_call",
+                    "signature_accepted",
+                    "signature_refused",
+                    "mandate_requested",
+                    "mandate_signed",
+                    "mandate_declined",
+                    "mandate_expired",
+                    "policy_refused",
+                    "mandate_refused",
+                    "checkout_accepted"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Activity"
+                  },
+                  "title": "Response Activity"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/orders/{number}/activity": {
+      "get": {
+        "tags": [
+          "activity"
+        ],
+        "summary": "Order Activity",
+        "description": "The agent-side events behind one order, oldest first, from the shopper's request on.",
+        "operationId": "order_activity",
+        "parameters": [
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Activity"
+                  },
+                  "title": "Response Order Activity"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/assistant/access": {
+      "get": {
+        "tags": [
+          "assistant"
+        ],
+        "summary": "Access",
+        "description": "Answers 204 when the access code is right; the chat panel's code screen checks it here.",
+        "operationId": "assistant_access",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "ChatKey": []
+          }
+        ]
+      }
+    },
+    "/api/assistant/conversations": {
+      "post": {
+        "tags": [
+          "assistant"
+        ],
+        "summary": "Create Conversation",
+        "description": "Start a conversation paid from the wallet; a 404 names a wallet or cart that cannot be used.\n\nThe answer carries the conversation's key, handed out this once; reading or continuing the\nconversation needs it.",
+        "operationId": "create_conversation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewConversation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedConversation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ChatKey": []
+          }
+        ]
+      }
+    },
+    "/api/assistant/conversations/{conversation_id}": {
+      "get": {
+        "tags": [
+          "assistant"
+        ],
+        "summary": "Get Conversation",
+        "description": "The conversation, for the holder of its key; a 401 without it.",
+        "operationId": "conversation",
+        "security": [
+          {
+            "ChatKey": []
+          },
+          {
+            "ConversationKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Conversation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conversation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/assistant/conversations/{conversation_id}/messages": {
+      "post": {
+        "tags": [
+          "assistant"
+        ],
+        "summary": "Send Message",
+        "description": "Send the shopper's message, or the outcome of a consent page, and stream the agent's turn.\n\nA 401 means the conversation's key is missing or wrong. A 409 means the agent is still\nanswering the last message, or the mandate named has no answer yet.",
+        "operationId": "send_message",
+        "security": [
+          {
+            "ChatKey": []
+          },
+          {
+            "ConversationKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Conversation Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/ShopperMessage"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MandateOutcome"
+                  }
+                ],
+                "discriminator": {
+                  "propertyName": "type",
+                  "mapping": {
+                    "message": "#/components/schemas/ShopperMessage",
+                    "mandate": "#/components/schemas/MandateOutcome"
+                  }
+                },
+                "title": "Incoming"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The agent's turn as server-sent events, ending with `done` or `error`.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/TextEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ToolCallEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ToolResultEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/DoneEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorEvent"
+                    }
+                  ],
+                  "discriminator": {
+                    "propertyName": "type",
+                    "mapping": {
+                      "text": "#/components/schemas/TextEvent",
+                      "tool_call": "#/components/schemas/ToolCallEvent",
+                      "tool_result": "#/components/schemas/ToolResultEvent",
+                      "done": "#/components/schemas/DoneEvent",
+                      "error": "#/components/schemas/ErrorEvent"
+                    }
+                  },
+                  "title": "Response 200 Send Message"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "summary": "Health",
@@ -1082,6 +1421,103 @@
   },
   "components": {
     "schemas": {
+      "Activity": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "conversation_started",
+              "shopper_message",
+              "assistant_tool_call",
+              "signature_accepted",
+              "signature_refused",
+              "mandate_requested",
+              "mandate_signed",
+              "mandate_declined",
+              "mandate_expired",
+              "policy_refused",
+              "mandate_refused",
+              "checkout_accepted"
+            ],
+            "title": "Kind"
+          },
+          "agent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Agent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mandate_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mandate Id"
+          },
+          "order_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Id"
+          },
+          "order_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Number"
+          },
+          "details": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Details"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "agent",
+          "mandate_id",
+          "order_id",
+          "order_number",
+          "details",
+          "at"
+        ],
+        "title": "Activity",
+        "description": "An activity row as the console reads it.\n\nThe conversation it belongs to stays server-side: a conversation id plus the shared chat\ncode would open another shopper's chat. Mandate and order ids are safe to show, because\nneither can be acted on without a signature or a signed mandate."
+      },
       "Agent": {
         "properties": {
           "id": {
@@ -1180,6 +1616,24 @@
         "title": "Cart",
         "description": "A cart as the shop reads it.\n\nThe wallet it pays with stays server-side: a cart id reached through an order's page must\nnot hand out a wallet that another cart could charge."
       },
+      "CartAttachment": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "cart",
+            "title": "Type"
+          },
+          "cart": {
+            "$ref": "#/components/schemas/CartSummary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "cart"
+        ],
+        "title": "CartAttachment"
+      },
       "CartLine": {
         "properties": {
           "product_id": {
@@ -1221,6 +1675,39 @@
         ],
         "title": "CartLine"
       },
+      "CartSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "checking_out",
+              "completed"
+            ],
+            "title": "Status"
+          },
+          "items": {
+            "type": "integer",
+            "title": "Items"
+          },
+          "total": {
+            "$ref": "#/components/schemas/Money"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "items",
+          "total"
+        ],
+        "title": "CartSummary"
+      },
       "CartWallet": {
         "properties": {
           "wallet_id": {
@@ -1249,6 +1736,155 @@
         ],
         "title": "CheckoutRequest",
         "description": "What an agent sends with a checkout: the buyer-signed mandate that covers it."
+      },
+      "Conversation": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "cart_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cart Id"
+          },
+          "busy": {
+            "type": "boolean",
+            "title": "Busy"
+          },
+          "turns": {
+            "items": {
+              "$ref": "#/components/schemas/Turn"
+            },
+            "type": "array",
+            "title": "Turns"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "cart_id",
+          "busy",
+          "turns",
+          "created_at"
+        ],
+        "title": "Conversation"
+      },
+      "CreatedConversation": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "cart_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cart Id"
+          },
+          "busy": {
+            "type": "boolean",
+            "title": "Busy"
+          },
+          "turns": {
+            "items": {
+              "$ref": "#/components/schemas/Turn"
+            },
+            "type": "array",
+            "title": "Turns"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "cart_id",
+          "busy",
+          "turns",
+          "created_at",
+          "key"
+        ],
+        "title": "CreatedConversation",
+        "description": "A new conversation with the key that opens it; the key is handed out this once."
+      },
+      "DoneEvent": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "done",
+            "title": "Type"
+          },
+          "turn": {
+            "$ref": "#/components/schemas/Turn"
+          },
+          "cart_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cart Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "turn",
+          "cart_id"
+        ],
+        "title": "DoneEvent",
+        "description": "The turn as stored, and the cart the agent is filling, so the browser can show both."
+      },
+      "ErrorEvent": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "error",
+            "title": "Type"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "detail"
+        ],
+        "title": "ErrorEvent"
       },
       "HTTPValidationError": {
         "properties": {
@@ -1383,18 +2019,6 @@
             "type": "array",
             "title": "Categories"
           },
-          "cart_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cart Id"
-          },
           "lines": {
             "items": {
               "$ref": "#/components/schemas/MandateLine"
@@ -1464,7 +2088,6 @@
           "wallet_email",
           "cap",
           "categories",
-          "cart_id",
           "lines",
           "policy_hash",
           "token_hash",
@@ -1475,7 +2098,75 @@
           "consent_path",
           "created_at"
         ],
-        "title": "Mandate"
+        "title": "Mandate",
+        "description": "A mandate as the consent page and the agent read it.\n\nThe cart it covers stays server-side, as on orders: an open cart's id is all it takes to\nchange it or check it out, and a mandate id is public on the activity feed."
+      },
+      "MandateAttachment": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "mandate",
+            "title": "Type"
+          },
+          "mandate": {
+            "$ref": "#/components/schemas/MandateCard"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "mandate"
+        ],
+        "title": "MandateAttachment"
+      },
+      "MandateCard": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "intent",
+              "cart"
+            ],
+            "title": "Kind"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "signed",
+              "declined",
+              "expired"
+            ],
+            "title": "Status"
+          },
+          "cap": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "consent_path": {
+            "type": "string",
+            "title": "Consent Path"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "cap",
+          "consent_path",
+          "expires_at"
+        ],
+        "title": "MandateCard"
       },
       "MandateLine": {
         "properties": {
@@ -1508,6 +2199,27 @@
           "unit_price"
         ],
         "title": "MandateLine"
+      },
+      "MandateOutcome": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "mandate",
+            "title": "Type"
+          },
+          "mandate_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Mandate Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "mandate_id"
+        ],
+        "title": "MandateOutcome",
+        "description": "The shopper answered a mandate on the consent page; the agent carries on from the answer."
       },
       "MandateRequest": {
         "properties": {
@@ -1637,6 +2349,32 @@
         ],
         "title": "Money",
         "description": "An amount in PayPal's shape, so an order line can carry it unchanged."
+      },
+      "NewConversation": {
+        "properties": {
+          "wallet_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Wallet Id"
+          },
+          "cart_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cart Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "wallet_id"
+        ],
+        "title": "NewConversation"
       },
       "Order": {
         "properties": {
@@ -1849,6 +2587,57 @@
           "created_at"
         ],
         "title": "Order"
+      },
+      "OrderAttachment": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "order",
+            "title": "Type"
+          },
+          "order": {
+            "$ref": "#/components/schemas/OrderCard"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "order"
+        ],
+        "title": "OrderAttachment"
+      },
+      "OrderCard": {
+        "properties": {
+          "number": {
+            "type": "string",
+            "title": "Number"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "creating",
+              "declined",
+              "failed",
+              "authorized",
+              "capture_pending",
+              "captured",
+              "voided",
+              "refunded",
+              "reversed"
+            ],
+            "title": "Status"
+          },
+          "total": {
+            "$ref": "#/components/schemas/Money"
+          }
+        },
+        "type": "object",
+        "required": [
+          "number",
+          "status",
+          "total"
+        ],
+        "title": "OrderCard"
       },
       "OrderEvent": {
         "properties": {
@@ -2265,6 +3054,65 @@
         ],
         "title": "Product"
       },
+      "ProductCard": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "brand": {
+            "type": "string",
+            "title": "Brand"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "price": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "image_path": {
+            "type": "string",
+            "title": "Image Path"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "brand",
+          "name",
+          "category",
+          "price",
+          "image_path"
+        ],
+        "title": "ProductCard"
+      },
+      "ProductsAttachment": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "products",
+            "title": "Type"
+          },
+          "products": {
+            "items": {
+              "$ref": "#/components/schemas/ProductCard"
+            },
+            "type": "array",
+            "title": "Products"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "products"
+        ],
+        "title": "ProductsAttachment"
+      },
       "QueuedJob": {
         "properties": {
           "job_id": {
@@ -2422,6 +3270,255 @@
         ],
         "title": "ShipmentRequest"
       },
+      "ShopperMessage": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "message",
+            "title": "Type"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "text"
+        ],
+        "title": "ShopperMessage"
+      },
+      "TextEvent": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "text",
+            "title": "Type"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "text"
+        ],
+        "title": "TextEvent"
+      },
+      "ToolCallEvent": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "tool_call",
+            "title": "Type"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "tool": {
+            "type": "string",
+            "enum": [
+              "search_products",
+              "get_product",
+              "set_cart_line",
+              "request_mandate",
+              "check_mandate",
+              "checkout",
+              "get_order"
+            ],
+            "title": "Tool"
+          },
+          "input": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Input"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "id",
+          "tool",
+          "input"
+        ],
+        "title": "ToolCallEvent"
+      },
+      "ToolResultEvent": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "tool_result",
+            "title": "Type"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "tool": {
+            "type": "string",
+            "enum": [
+              "search_products",
+              "get_product",
+              "set_cart_line",
+              "request_mandate",
+              "check_mandate",
+              "checkout",
+              "get_order"
+            ],
+            "title": "Tool"
+          },
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "attachment": {
+            "anyOf": [
+              {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/ProductsAttachment"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CartAttachment"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MandateAttachment"
+                  },
+                  {
+                    "$ref": "#/components/schemas/OrderAttachment"
+                  }
+                ],
+                "discriminator": {
+                  "propertyName": "type",
+                  "mapping": {
+                    "cart": "#/components/schemas/CartAttachment",
+                    "mandate": "#/components/schemas/MandateAttachment",
+                    "order": "#/components/schemas/OrderAttachment",
+                    "products": "#/components/schemas/ProductsAttachment"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attachment"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "id",
+          "tool",
+          "ok",
+          "summary",
+          "attachment"
+        ],
+        "title": "ToolResultEvent"
+      },
+      "Turn": {
+        "properties": {
+          "position": {
+            "type": "integer",
+            "title": "Position"
+          },
+          "request": {
+            "$ref": "#/components/schemas/TurnRequest"
+          },
+          "events": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/TextEvent"
+                },
+                {
+                  "$ref": "#/components/schemas/ToolCallEvent"
+                },
+                {
+                  "$ref": "#/components/schemas/ToolResultEvent"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "type",
+                "mapping": {
+                  "text": "#/components/schemas/TextEvent",
+                  "tool_call": "#/components/schemas/ToolCallEvent",
+                  "tool_result": "#/components/schemas/ToolResultEvent"
+                }
+              }
+            },
+            "type": "array",
+            "title": "Events"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Finished At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "position",
+          "request",
+          "events",
+          "created_at",
+          "finished_at"
+        ],
+        "title": "Turn"
+      },
+      "TurnRequest": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "message",
+              "mandate_approved",
+              "mandate_declined",
+              "mandate_expired"
+            ],
+            "title": "Kind"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "mandate_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mandate Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "text"
+        ],
+        "title": "TurnRequest"
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -2557,6 +3654,20 @@
           "resource"
         ],
         "title": "WebhookEvent"
+      }
+    },
+    "securitySchemes": {
+      "ChatKey": {
+        "type": "apiKey",
+        "description": "The access code the chat panel asks for, sent with every chat request.",
+        "in": "header",
+        "name": "X-Chat-Key"
+      },
+      "ConversationKey": {
+        "type": "apiKey",
+        "description": "The key a conversation was created with, sent when reading or continuing it.",
+        "in": "header",
+        "name": "X-Conversation-Key"
       }
     }
   }

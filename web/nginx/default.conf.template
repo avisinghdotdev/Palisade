@@ -36,6 +36,14 @@ server {
     proxy_pass http://${API_UPSTREAM};
   }
 
+  # The agent's replies stream as server-sent events: each event is passed on as it arrives,
+  # and a turn with several tool calls may stay open well past the default minute.
+  location ^~ /api/assistant/ {
+    proxy_pass http://${API_UPSTREAM};
+    proxy_buffering off;
+    proxy_read_timeout 300s;
+  }
+
   # The platform's health probes, every few seconds, so they stay out of the access log.
   location = /health {
     access_log off;

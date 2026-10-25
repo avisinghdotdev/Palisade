@@ -19,6 +19,7 @@ from pydantic import BaseModel, JsonValue, TypeAdapter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from palisade_api.activity.store import Activities
 from palisade_api.agents.signatures import caller
 from palisade_api.main import app
 from palisade_api.orders.calls import PayPalCalls
@@ -110,6 +111,7 @@ def shop(
         orders,
         Policies(sessions),
         mandates_for(sessions),
+        Activities(sessions),
         source="api",
     )
     carts = Carts(sessions)

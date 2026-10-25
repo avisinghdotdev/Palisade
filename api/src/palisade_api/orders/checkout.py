@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
+from palisade_api.activity.store import Activities
 from palisade_api.agents.registry import Agent
 from palisade_api.mandates.service import MandateRefused, Mandates
 from palisade_api.orders.calls import PayPalCalls
@@ -198,6 +199,7 @@ class Checkout:
         orders: Orders,
         policies: Policies,
         mandates: Mandates,
+        activities: Activities,
         source: EventSource,
     ) -> None:
         self._sessions = sessions
@@ -205,6 +207,7 @@ class Checkout:
         self._orders = orders
         self._policies = policies
         self._mandates = mandates
+        self._activities = activities
         self._source: EventSource = source
 
     async def place_order(
@@ -222,9 +225,36 @@ class Checkout:
             CheckoutDeclined: PayPal refused the payment; the cart is open again.
             CheckoutFailed: PayPal did not answer; the order stays with status `failed`.
         """
-        started = await self._begin(cart_id, agent, mandate_id)
+        try:
+            started = await self._begin(cart_id, agent, mandate_id)
+        except (PolicyRefused, MandateRefused) as refusal:
+            if agent is not None:
+                # The id the agent named may be nobody's mandate; the row links only one that
+                # exists and keeps the named id as text either way.
+                known = (
+                    isinstance(refusal, MandateRefused)
+                    and "MANDATE_UNKNOWN" not in refusal.reasons
+                )
+                await self._activities.record(
+                    "policy_refused"
+                    if isinstance(refusal, PolicyRefused)
+                    else "mandate_refused",
+                    agent_id=agent.id,
+                    mandate_id=mandate_id if known else None,
+                    reasons=list(refusal.reasons),
+                    named_mandate=None if mandate_id is None else str(mandate_id),
+                )
+            raise
         if isinstance(started, Order):
             return started
+        if agent is not None:
+            await self._activities.record(
+                "checkout_accepted",
+                agent_id=agent.id,
+                mandate_id=mandate_id,
+                order_id=started.order_id,
+                number=started.number,
+            )
         return await self.create(started.order_id, started.number, started.create_body)
 
     async def create(

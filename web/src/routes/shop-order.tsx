@@ -34,11 +34,11 @@ const HEADLINES: Record<Order["status"], { title: string; detail: string }> = {
     detail: "PayPal is still settling the payment.",
   },
   authorized: {
-    title: "Your Payment is Being Completed",
+    title: "Your Payment is being Completed",
     detail: "PayPal holds the amount; the charge follows shortly.",
   },
   creating: {
-    title: "Your Payment is Being Completed",
+    title: "Your Payment is being Completed",
     detail: "Waiting for PayPal to answer.",
   },
   declined: {
@@ -46,7 +46,7 @@ const HEADLINES: Record<Order["status"], { title: string; detail: string }> = {
     detail: "Nothing was charged. Your cart is still there to try again.",
   },
   failed: {
-    title: "We Could Not Confirm Your Payment",
+    title: "We could not Confirm Your Payment",
     detail:
       "PayPal did not answer in time. The shop asks PayPal again within minutes, and this page follows.",
   },
@@ -94,7 +94,7 @@ export default function ShopOrder({ params }: Route.ComponentProps) {
         {order.isError && (
           <div className="text-center">
             <h1 className="text-xl font-semibold">
-              Receipt {params.number} is Not Available
+              Receipt {params.number} is not Available
             </h1>
             <p className="mt-2 text-sm text-muted-foreground">
               {errorDetail(order.error)}

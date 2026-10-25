@@ -3,8 +3,8 @@
 import { type DefaultError, queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 
 import { client } from '../client.gen';
-import { approveMandate, cart, checkout, confirmWalletLink, createCart, createMandate, declineMandate, demoWallet, health, mandate, mandatePasskeyOptions, type Options, order, orders, paypalHealth, paypalWebhook, product, products, ready, registerPasskey, replayWebhookEvent, setCartLine, setCartWallet, shipOrder, startPasskeyRegistration, startWalletLink, wallet, webhookEvents } from '../sdk.gen';
-import type { ApproveMandateData, ApproveMandateError, ApproveMandateResponse, CartData, CartError, CartResponse, CheckoutData, CheckoutError, CheckoutResponse, ConfirmWalletLinkData, ConfirmWalletLinkError, ConfirmWalletLinkResponse, CreateCartData, CreateCartError, CreateCartResponse, CreateMandateData, CreateMandateError, CreateMandateResponse, DeclineMandateData, DeclineMandateError, DeclineMandateResponse, DemoWalletData, DemoWalletResponse, HealthData, HealthResponse, MandateData, MandateError, MandatePasskeyOptionsData, MandatePasskeyOptionsError, MandatePasskeyOptionsResponse, MandateResponse, OrderData, OrderError, OrderResponse, OrdersData, OrdersResponse, PaypalHealthData, PaypalHealthResponse, PaypalWebhookData, PaypalWebhookError, PaypalWebhookResponse, ProductData, ProductError, ProductResponse, ProductsData, ProductsResponse, ReadyData, ReadyResponse, RegisterPasskeyData, RegisterPasskeyError, RegisterPasskeyResponse, ReplayWebhookEventData, ReplayWebhookEventError, ReplayWebhookEventResponse, SetCartLineData, SetCartLineError, SetCartLineResponse, SetCartWalletData, SetCartWalletError, SetCartWalletResponse, ShipOrderData, ShipOrderError, ShipOrderResponse, StartPasskeyRegistrationData, StartPasskeyRegistrationResponse, StartWalletLinkData, StartWalletLinkResponse, WalletData, WalletError, WalletResponse, WebhookEventsData, WebhookEventsResponse } from '../types.gen';
+import { activity, approveMandate, assistantAccess, cart, checkout, confirmWalletLink, conversation, createCart, createConversation, createMandate, declineMandate, demoWallet, health, mandate, mandatePasskeyOptions, type Options, order, orderActivity, orders, paypalHealth, paypalWebhook, product, products, ready, registerPasskey, replayWebhookEvent, setCartLine, setCartWallet, shipOrder, startPasskeyRegistration, startWalletLink, wallet, webhookEvents } from '../sdk.gen';
+import type { ActivityData, ActivityError, ActivityResponse, ApproveMandateData, ApproveMandateError, ApproveMandateResponse, AssistantAccessData, AssistantAccessResponse, CartData, CartError, CartResponse, CheckoutData, CheckoutError, CheckoutResponse, ConfirmWalletLinkData, ConfirmWalletLinkError, ConfirmWalletLinkResponse, ConversationData, ConversationError, ConversationResponse, CreateCartData, CreateCartError, CreateCartResponse, CreateConversationData, CreateConversationError, CreateConversationResponse, CreateMandateData, CreateMandateError, CreateMandateResponse, DeclineMandateData, DeclineMandateError, DeclineMandateResponse, DemoWalletData, DemoWalletResponse, HealthData, HealthResponse, MandateData, MandateError, MandatePasskeyOptionsData, MandatePasskeyOptionsError, MandatePasskeyOptionsResponse, MandateResponse, OrderActivityData, OrderActivityError, OrderActivityResponse, OrderData, OrderError, OrderResponse, OrdersData, OrdersResponse, PaypalHealthData, PaypalHealthResponse, PaypalWebhookData, PaypalWebhookError, PaypalWebhookResponse, ProductData, ProductError, ProductResponse, ProductsData, ProductsResponse, ReadyData, ReadyResponse, RegisterPasskeyData, RegisterPasskeyError, RegisterPasskeyResponse, ReplayWebhookEventData, ReplayWebhookEventError, ReplayWebhookEventResponse, SetCartLineData, SetCartLineError, SetCartLineResponse, SetCartWalletData, SetCartWalletError, SetCartWalletResponse, ShipOrderData, ShipOrderError, ShipOrderResponse, StartPasskeyRegistrationData, StartPasskeyRegistrationResponse, StartWalletLinkData, StartWalletLinkResponse, WalletData, WalletError, WalletResponse, WebhookEventsData, WebhookEventsResponse } from '../types.gen';
 
 export type QueryKey<TOptions extends Options> = [
     Pick<TOptions, 'baseUrl' | 'body' | 'headers' | 'path' | 'query'> & {
@@ -515,6 +515,108 @@ export const registerPasskeyMutation = (options?: Partial<Options<RegisterPasske
     };
     return mutationOptions;
 };
+
+export const activityQueryKey = (options?: Options<ActivityData>) => createQueryKey('activity', options);
+
+/**
+ * List Activity
+ *
+ * The agent-side events the store recorded, newest first; `kind` narrows them to one kind.
+ */
+export const activityOptions = (options?: Options<ActivityData>) => queryOptions<ActivityResponse, ActivityError, ActivityResponse, ReturnType<typeof activityQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await activity({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: activityQueryKey(options)
+});
+
+export const orderActivityQueryKey = (options: Options<OrderActivityData>) => createQueryKey('orderActivity', options);
+
+/**
+ * Order Activity
+ *
+ * The agent-side events behind one order, oldest first, from the shopper's request on.
+ */
+export const orderActivityOptions = (options: Options<OrderActivityData>) => queryOptions<OrderActivityResponse, OrderActivityError, OrderActivityResponse, ReturnType<typeof orderActivityQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await orderActivity({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: orderActivityQueryKey(options)
+});
+
+export const assistantAccessQueryKey = (options?: Options<AssistantAccessData>) => createQueryKey('assistantAccess', options);
+
+/**
+ * Access
+ *
+ * Answers 204 when the access code is right; the chat panel's code screen checks it here.
+ */
+export const assistantAccessOptions = (options?: Options<AssistantAccessData>) => queryOptions<AssistantAccessResponse, DefaultError, AssistantAccessResponse, ReturnType<typeof assistantAccessQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await assistantAccess({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: assistantAccessQueryKey(options)
+});
+
+/**
+ * Create Conversation
+ *
+ * Start a conversation paid from the wallet; a 404 names a wallet or cart that cannot be used.
+ *
+ * The answer carries the conversation's key, handed out this once; reading or continuing the
+ * conversation needs it.
+ */
+export const createConversationMutation = (options?: Partial<Options<CreateConversationData>>): UseMutationOptions<CreateConversationResponse, CreateConversationError, Options<CreateConversationData>> => {
+    const mutationOptions: UseMutationOptions<CreateConversationResponse, CreateConversationError, Options<CreateConversationData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await createConversation({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const conversationQueryKey = (options: Options<ConversationData>) => createQueryKey('conversation', options);
+
+/**
+ * Get Conversation
+ *
+ * The conversation, for the holder of its key; a 401 without it.
+ */
+export const conversationOptions = (options: Options<ConversationData>) => queryOptions<ConversationResponse, ConversationError, ConversationResponse, ReturnType<typeof conversationQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await conversation({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: conversationQueryKey(options)
+});
 
 export const healthQueryKey = (options?: Options<HealthData>) => createQueryKey('health', options);
 
