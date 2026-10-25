@@ -18,6 +18,10 @@ def timeout(_request: httpx2.Request) -> httpx2.Response:
     raise httpx2.ReadTimeout("PayPal did not answer")
 
 
+def unreachable(_request: httpx2.Request) -> httpx2.Response:
+    raise httpx2.ConnectError("PayPal could not be reached")
+
+
 @final
 class PayPalStub:
     """Answers the token call itself; every other call is matched by `METHOD path`.

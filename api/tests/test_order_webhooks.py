@@ -157,6 +157,26 @@ async def test_a_voided_authorization_does_not_undo_a_refund(
     assert [item.to_status for item in after.events] == ["refunded"]
 
 
+async def test_a_late_pending_event_does_not_undo_a_capture(
+    sessions: async_sessionmaker[AsyncSession], wallet_id: UUID
+) -> None:
+    order_id = await placed_order(sessions, wallet_id, "captured")
+    order = await Orders(sessions).get_by_id(order_id)
+    pending = await event(
+        sessions, "PAYMENT.CAPTURE.PENDING", "capture", {"id": order.capture_id}
+    )
+
+    await webhooks.handlers(sessions)["PAYMENT.CAPTURE.PENDING"](pending)
+
+    after = await Orders(sessions).get_by_id(order_id)
+    assert after.status == "captured"
+    [recorded] = after.events
+    assert (recorded.to_status, recorded.paypal_event) == (
+        "captured",
+        "PAYMENT.CAPTURE.PENDING",
+    )
+
+
 async def test_an_event_for_an_unknown_capture_is_ignored(
     sessions: async_sessionmaker[AsyncSession],
 ) -> None:

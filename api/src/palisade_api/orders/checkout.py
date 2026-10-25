@@ -78,11 +78,11 @@ class Authorization(BaseModel):
 
 
 class Payments(BaseModel):
-    authorizations: list[Authorization]
+    authorizations: list[Authorization] = []
 
 
 class PurchaseUnit(BaseModel):
-    payments: Payments
+    payments: Payments | None = None
 
 
 class Payer(BaseModel):
@@ -91,8 +91,16 @@ class Payer(BaseModel):
 
 class CreatedOrder(BaseModel):
     id: str
+    status: str
     purchase_units: list[PurchaseUnit]
     payer: Payer | None = None
+
+    def authorization(self) -> Authorization | None:
+        """The hold PayPal placed; None when the order waits on the payer instead."""
+        payments = self.purchase_units[0].payments
+        if payments is None or not payments.authorizations:
+            return None
+        return payments.authorizations[0]
 
 
 class Capture(BaseModel):
@@ -152,13 +160,14 @@ def create_order_body(
 
 
 def note_created(
-    created: CreatedOrder, authorization: Authorization
+    created: CreatedOrder, authorization: Authorization | None
 ) -> Callable[[OrderRecord], None]:
     def apply(record: OrderRecord) -> None:
         record.paypal_order_id = created.id
-        record.authorization_id = authorization.id
-        record.authorization_expires_at = authorization.expiration_time
         record.payer_email = created.payer.email_address if created.payer else None
+        if authorization is not None:
+            record.authorization_id = authorization.id
+            record.authorization_expires_at = authorization.expiration_time
 
     return apply
 
@@ -202,29 +211,37 @@ class Checkout:
         """Create the PayPal order, which authorizes the saved wallet, then capture.
 
         Raises:
-            CheckoutDeclined: PayPal refused the payment; the cart is open again.
-            CheckoutFailed: PayPal did not answer; the order is `failed`.
-            PayPalError: a refused capture's void was refused too; the order stays `authorized`.
+            CheckoutDeclined: PayPal refused the payment or placed no hold; the cart is open again.
+            CheckoutFailed: PayPal did not answer, or holds the amount but refused both the
+                capture and the void; the order is `failed` or `authorized` for the repair job.
         """
         try:
             response = await self._calls.once(order_id, "create", CREATE_PATH, body)
         except PayPalError as error:
             raise await self._refused(order_id, number, error) from error
         created = CreatedOrder.model_validate(response.body)
-        authorization = created.purchase_units[0].payments.authorizations[0]
-        if authorization.status != "CREATED":
+        authorization = created.authorization()
+        if authorization is None or authorization.status != "CREATED":
+            issue = (
+                f"ORDER_{created.status}"
+                if authorization is None
+                else f"AUTHORIZATION_{authorization.status}"
+            )
             await self._transition(
                 order_id,
                 "declined",
-                detail=f"authorization {authorization.status}",
+                detail=issue,
                 cart_status="open",
                 apply=note_created(created, authorization),
             )
-            raise CheckoutDeclined([f"AUTHORIZATION_{authorization.status}"])
+            raise CheckoutDeclined([issue])
         await self._transition(
             order_id, "authorized", apply=note_created(created, authorization)
         )
-        return await self.capture(order_id, authorization.id)
+        try:
+            return await self.capture(order_id, authorization.id)
+        except PayPalError as error:
+            raise CheckoutFailed(number) from error
 
     async def capture(self, order_id: UUID, authorization_id: str) -> Order:
         """Capture the whole authorization; a capture that does not complete voids the hold.

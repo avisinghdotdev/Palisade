@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Palisade API",
-    "version": "0.9.1"
+    "version": "0.9.2"
   },
   "paths": {
     "/api/paypal/health": {
@@ -768,11 +768,6 @@
             "format": "uuid",
             "title": "Id"
           },
-          "wallet_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Wallet Id"
-          },
           "status": {
             "type": "string",
             "enum": [
@@ -796,12 +791,12 @@
         "type": "object",
         "required": [
           "id",
-          "wallet_id",
           "status",
           "lines",
           "total"
         ],
-        "title": "Cart"
+        "title": "Cart",
+        "description": "A cart as the shop reads it.\n\nThe wallet it pays with stays server-side: a cart id reached through an order's page must\nnot hand out a wallet that another cart could charge."
       },
       "CartLine": {
         "properties": {

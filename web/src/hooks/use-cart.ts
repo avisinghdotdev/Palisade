@@ -58,6 +58,15 @@ export function useCart(walletId: string | undefined) {
       return updated.data;
     },
     onSuccess: remember,
+    // A refused change means the cart is no longer what this browser thinks: checked out in
+    // another tab, or gone. Reading it again lets the check above forget it.
+    onError: async () => {
+      if (cartId !== null) {
+        await queryClient.invalidateQueries({
+          queryKey: cartQueryKey({ path: { cart_id: cartId } }),
+        });
+      }
+    },
   });
 
   return { cart: stale ? undefined : cart.data, setLine };
