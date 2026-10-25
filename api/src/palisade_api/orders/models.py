@@ -6,6 +6,7 @@ from sqlalchemy import DateTime, ForeignKey, Integer, Text, Uuid, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from palisade_api.agents.models import AgentRecord
 from palisade_api.database import Base
 from palisade_api.wallets.models import WalletRecord
 
@@ -24,6 +25,9 @@ class OrderRecord(Base):
     wallet_id: Mapped[UUID] = mapped_column(ForeignKey("wallets.id"))
     # "human" when the buyer checked out, "agent" when a shopping agent did under a mandate.
     channel: Mapped[str] = mapped_column(Text)
+    # The signed agent behind an agent order, and the hash of the policy that allowed it.
+    agent_id: Mapped[str | None] = mapped_column(ForeignKey("agents.id"), index=True)
+    policy_hash: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(Text)
     currency: Mapped[str] = mapped_column(Text)
     total_cents: Mapped[int] = mapped_column(Integer)
@@ -45,6 +49,7 @@ class OrderRecord(Base):
     )
 
     wallet: Mapped[WalletRecord] = relationship()
+    agent: Mapped[AgentRecord | None] = relationship()
     lines: Mapped[list[OrderLineRecord]] = relationship(
         order_by="OrderLineRecord.position"
     )

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Palisade API",
-    "version": "0.9.4"
+    "version": "0.10.0"
   },
   "paths": {
     "/api/paypal/health": {
@@ -431,7 +431,7 @@
           "shop"
         ],
         "summary": "Place Order",
-        "description": "Pay for the cart from its wallet; calling again returns the order already placed.",
+        "description": "Pay for the cart from its wallet; calling again returns the order already placed.\n\nA request signed by a registered agent places an agent order under the merchant's policy;\na 403 names the rules it breaks. An unsigned request is the buyer's own.",
         "operationId": "checkout",
         "parameters": [
           {
@@ -761,6 +761,24 @@
   },
   "components": {
     "schemas": {
+      "Agent": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "Agent"
+      },
       "Cart": {
         "properties": {
           "id": {
@@ -988,6 +1006,27 @@
             ],
             "title": "Channel"
           },
+          "agent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Agent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "policy_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy Hash"
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -1124,6 +1163,8 @@
           "number",
           "cart_id",
           "channel",
+          "agent",
+          "policy_hash",
           "status",
           "total",
           "custom_id",

@@ -62,6 +62,8 @@ var apiSecrets = [
   { env: 'PAYPAL_WEBHOOK_ID', secret: 'paypal-webhook-id' }
   { env: 'ANTHROPIC_API_KEY', secret: 'anthropic-api-key' }
   { env: 'DATABASE_URL', secret: 'database-url' }
+  { env: 'SHOPPER_AGENT_KEY', secret: 'shopper-agent-key' }
+  { env: 'MCP_AGENT_KEY', secret: 'mcp-agent-key' }
 ]
 var apiSecretEnvironment = [for item in apiSecrets: { name: item.env, secretRef: item.secret }]
 var apiEnvironment = [
