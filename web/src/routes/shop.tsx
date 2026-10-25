@@ -10,6 +10,7 @@ import { CartSheet } from "@/components/cart-sheet";
 import { ConsoleLogo } from "@/components/console-logo";
 import { PalisadeBadge } from "@/components/palisade-badge";
 import { ProductTile, ProductTileSkeleton } from "@/components/product-tile";
+import { ShopAssistant } from "@/components/shop-assistant";
 import { ShopHeader } from "@/components/shop-header";
 import { SurfaceLink } from "@/components/surface-link";
 import { Button } from "@/components/ui/button";
@@ -340,6 +341,7 @@ export default function Shop() {
           </section>
         </div>
       </main>
+      <ShopAssistant wallet={buyer.wallet} />
     </div>
   );
 }

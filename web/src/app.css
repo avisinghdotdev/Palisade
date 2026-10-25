@@ -125,6 +125,14 @@
   @apply bg-black/40 backdrop-blur-sm;
 }
 
+/* Every button that can be pressed shows the hand, as links do; Tailwind's preflight resets it. */
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+}
+
 /* Ridgeline Running: ember on warm stone, the shop and its merchant console. */
 .theme-shop {
   --background: oklch(0.99 0.005 70);

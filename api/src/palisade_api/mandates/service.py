@@ -1,16 +1,16 @@
 """Mandates: what a buyer allowed an agent to buy, from the agent's request to the checkout."""
 
 import base64
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Literal, final
 from uuid import UUID, uuid7
 
-import structlog
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import joinedload, selectinload
 
+from palisade_api.activity.store import Activities
 from palisade_api.agents.keys import private_key
 from palisade_api.agents.registry import Agent
 from palisade_api.mandates.models import MandateRecord
@@ -31,8 +31,6 @@ MERCHANT = "ridgeline-running"
 # How long the buyer has to answer a cart mandate, and how long an intent mandate stays usable.
 CART_WINDOW = timedelta(minutes=15)
 INTENT_WINDOW = timedelta(hours=24)
-
-logger = structlog.stdlib.get_logger(__name__)
 
 
 class MandateLine(BaseModel):
@@ -56,6 +54,12 @@ class MandateRequest(BaseModel):
 
 
 class Mandate(BaseModel):
+    """A mandate as the consent page and the agent read it.
+
+    The cart it covers stays server-side, as on orders: an open cart's id is all it takes to
+    change it or check it out, and a mandate id is public on the activity feed.
+    """
+
     id: UUID
     kind: MandateKind
     status: MandateStatus
@@ -63,7 +67,6 @@ class Mandate(BaseModel):
     wallet_email: str
     cap: Money
     categories: list[str]
-    cart_id: UUID | None
     lines: list[MandateLine]
     policy_hash: str
     token_hash: str
@@ -114,11 +117,8 @@ class MandateRefused(Exception):
         self.reasons: list[str] = reasons
 
 
-def status_of(record: MandateRecord, now: datetime) -> MandateStatus:
-    stored = record.status
-    if stored in ("pending", "signed") and record.expires_at <= now:
-        return "expired"
-    return TypeAdapter(MandateStatus).validate_python(stored)
+def status_of(record: MandateRecord) -> MandateStatus:
+    return TypeAdapter(MandateStatus).validate_python(record.status)
 
 
 def lines_of(cart: CartRecord) -> list[MandateLine]:
@@ -155,6 +155,7 @@ class Mandates:
         tokens: MandateTokens,
         passkeys: Passkeys,
         policies: Policies,
+        activities: Activities,
         demo_signer_seed: str,
         public_origin: str,
     ) -> None:
@@ -162,6 +163,7 @@ class Mandates:
         self._tokens = tokens
         self._passkeys = passkeys
         self._policies = policies
+        self._activities = activities
         self._demo_signer = private_key(demo_signer_seed)
         self._public_origin = public_origin
 
@@ -229,16 +231,24 @@ class Mandates:
             )
             session.add(record)
             await session.flush()
-            logger.info(
-                "mandate_created",
-                mandate_id=str(mandate_id),
-                kind=request.kind,
+            self._activities.add(
+                session,
+                "mandate_requested",
                 agent_id=agent.id,
+                mandate_id=mandate_id,
+                mandate_kind=request.kind,
+                cap=request.cap.value,
+                categories=list(request.categories),
             )
             return await self._load(session, mandate_id)
 
     async def get(self, mandate_id: UUID) -> Mandate:
-        async with self._sessions() as session:
+        """The mandate as it stands; one whose time ran out is marked expired on this read."""
+        async with self._sessions.begin() as session:
+            record = await session.get(MandateRecord, mandate_id)
+            if record is None:
+                raise UnknownMandate(mandate_id)
+            await self._settle_expiry(session, record)
             return await self._load(session, mandate_id)
 
     async def passkey_options(
@@ -290,9 +300,11 @@ class Mandates:
             record.signed_by = approval.signed_by
             record.signed_at = await session.scalar(select(func.now()))
             record.proof = proof
-            logger.info(
+            self._activities.add(
+                session,
                 "mandate_signed",
-                mandate_id=str(mandate_id),
+                agent_id=record.agent_id,
+                mandate_id=mandate_id,
                 signed_by=approval.signed_by,
             )
             return await self._load(session, mandate_id)
@@ -301,7 +313,12 @@ class Mandates:
         async with self._sessions.begin() as session:
             record = await self._pending(session, mandate_id)
             record.status = "declined"
-            logger.info("mandate_declined", mandate_id=str(mandate_id))
+            self._activities.add(
+                session,
+                "mandate_declined",
+                agent_id=record.agent_id,
+                mandate_id=mandate_id,
+            )
             return await self._load(session, mandate_id)
 
     async def claim(
@@ -325,8 +342,8 @@ class Mandates:
         )
         if record is None:
             raise MandateRefused(["MANDATE_UNKNOWN"])
-        now = datetime.now(UTC)
-        status = status_of(record, now)
+        await self._settle_expiry(session, record)
+        status = status_of(record)
         reasons: list[str] = []
         if status != "signed":
             reasons.append(f"MANDATE_{status.upper()}")
@@ -383,10 +400,30 @@ class Mandates:
         )
         if record is None:
             raise UnknownMandate(mandate_id)
-        status = status_of(record, datetime.now(UTC))
+        await self._settle_expiry(session, record)
+        status = status_of(record)
         if status != "pending":
             raise MandateNotPending(mandate_id, status)
         return record
+
+    async def _settle_expiry(
+        self, session: AsyncSession, record: MandateRecord
+    ) -> None:
+        """Mark a pending or signed mandate expired once its time has run out, and log it once."""
+        if record.status not in ("pending", "signed"):
+            return
+        now = await session.scalar(select(func.now()))
+        if now is None or record.expires_at > now:
+            return
+        was = record.status
+        record.status = "expired"
+        self._activities.add(
+            session,
+            "mandate_expired",
+            agent_id=record.agent_id,
+            mandate_id=record.id,
+            was=was,
+        )
 
     async def _load(self, session: AsyncSession, mandate_id: UUID) -> Mandate:
         record = await session.scalar(
@@ -406,12 +443,11 @@ class Mandates:
         return Mandate(
             id=record.id,
             kind=MANDATE_KIND.validate_python(record.kind),
-            status=status_of(record, datetime.now(UTC)),
+            status=status_of(record),
             agent=Agent(id=record.agent.id, name=record.agent.name),
             wallet_email=record.wallet.email,
             cap=money(record.cap_cents),
             categories=list(record.categories),
-            cart_id=record.cart_id,
             lines=lines,
             policy_hash=record.policy_hash,
             token_hash=record.token_hash,

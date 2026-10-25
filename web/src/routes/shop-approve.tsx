@@ -16,7 +16,7 @@ import {
   KeyRound,
   LoaderCircle,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router";
 
 import type { Mandate } from "@/api/client";
@@ -48,6 +48,8 @@ export const meta: Route.MetaFunction = () => [
 
 /** The mandate's answer is final, so the page stops asking the API once it is not pending. */
 const PENDING_REFETCH_MS = 10_000;
+/** Long enough to read the outcome before a window the chat opened closes itself. */
+const CLOSE_DELAY_MS = 1_800;
 
 const SIGNER_LABELS: Record<NonNullable<Mandate["signed_by"]>, string> = {
   passkey: "your passkey",
@@ -150,15 +152,35 @@ function Request({ mandate }: { mandate: Mandate }) {
   );
 }
 
+/** How the page ends: a window the chat opened closes itself; a tab opened by hand says so. */
+function useClosing(): boolean {
+  // This route is never prerendered, so the window is there to ask on the first render.
+  const [closing] = useState(() => window.opener !== null);
+  useEffect(() => {
+    if (!closing) return;
+    const timer = setTimeout(() => {
+      window.close();
+    }, CLOSE_DELAY_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [closing]);
+  return closing;
+}
+
 function Outcome({ mandate }: { mandate: Mandate }) {
+  const closing = useClosing();
+  const back = closing
+    ? "Returning you to the chat…"
+    : "You can close this tab and go back to the chat.";
   if (mandate.status === "signed" && mandate.signed_by !== null) {
     return (
       <div className="text-center" role="status">
         <CircleCheck aria-hidden className="mx-auto size-10 text-emerald-700" />
         <h1 className="mt-3 text-lg font-semibold tracking-tight">Approved</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          You signed this with {SIGNER_LABELS[mandate.signed_by]}. You can go
-          back to {mandate.agent.name}; it finishes the purchase from here.
+          You signed this with {SIGNER_LABELS[mandate.signed_by]}.{" "}
+          {mandate.agent.name} finishes the purchase from here. {back}
         </p>
       </div>
     );
@@ -179,8 +201,9 @@ function Outcome({ mandate }: { mandate: Mandate }) {
       </h1>
       <p className="mt-1 text-sm text-muted-foreground">
         {expired
-          ? `${mandate.agent.name} has to ask again.`
-          : `${mandate.agent.name} will not buy this.`}
+          ? `Nothing was bought. ${mandate.agent.name} has to ask again.`
+          : "Nothing will be bought. Tell the assistant what to change."}{" "}
+        {back}
       </p>
     </div>
   );
@@ -273,7 +296,7 @@ export default function ShopApprove({ params }: Route.ComponentProps) {
           )}
           {mandate.isError && (
             <div className="text-center">
-              <h1 className="text-lg font-semibold">Request Not Found</h1>
+              <h1 className="text-lg font-semibold">Request not Found</h1>
               <p className="mt-2 text-sm text-muted-foreground">
                 {errorDetail(mandate.error)}
               </p>
@@ -289,16 +312,16 @@ export default function ShopApprove({ params }: Route.ComponentProps) {
             <>
               <h1 className="text-lg font-semibold tracking-tight">
                 {mandate.data.kind === "cart"
-                  ? "Approve This Purchase"
+                  ? "Approve this Purchase"
                   : "Let Your Agent Shop for You"}
               </h1>
               <div className="mt-2">
                 <Request mandate={mandate.data} />
               </div>
               <p className="mt-3 text-xs text-muted-foreground">
-                Your approval is signed and recorded; the merchant files it as
-                evidence if the purchase is ever disputed. Expires{" "}
-                {formatLocal(mandate.data.expires_at)}.
+                Ridgeline Running uses Palisade to keep your signed approval
+                with the order, so a dispute can show what you agreed to.
+                Expires {formatLocal(mandate.data.expires_at)}.
               </p>
               {problem !== null && (
                 <p className="mt-4 text-sm text-destructive" role="alert">
@@ -350,13 +373,13 @@ export default function ShopApprove({ params }: Route.ComponentProps) {
                     " Passkeys are not available in this browser."}
                 </p>
                 <Button
-                  className="text-muted-foreground"
+                  className="h-11"
                   disabled={busy}
                   onClick={() => {
                     setProblem(null);
                     decline.mutate();
                   }}
-                  variant="ghost"
+                  variant="outline"
                 >
                   Decline
                 </Button>

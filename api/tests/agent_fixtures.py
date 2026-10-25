@@ -14,6 +14,7 @@ from http_message_signatures.signatures import HTTPMessageSigner
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from palisade_api.activity.store import Activities
 from palisade_api.agents.keys import private_key
 from palisade_api.agents.signatures import content_digest
 from palisade_api.mandates.passkeys import Passkeys
@@ -37,6 +38,7 @@ def mandates_for(sessions: async_sessionmaker[AsyncSession]) -> Mandates:
         MandateTokens(seed()),
         Passkeys(sessions, ORIGIN),
         Policies(sessions),
+        Activities(sessions),
         seed(),
         ORIGIN,
     )

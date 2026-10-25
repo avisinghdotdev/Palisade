@@ -69,7 +69,7 @@ export default function Home() {
       </header>
       <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
         <h1 className="text-3xl font-semibold tracking-tight">
-          Trust and Dispute Defense for Purchases That AI Agents Make with
+          Trust and Dispute Defense for Purchases that AI Agents Make with
           PayPal
         </h1>
         <p className="mt-3 text-muted-foreground">

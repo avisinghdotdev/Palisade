@@ -39,16 +39,20 @@ class Agents:
         self._sessions = sessions
 
     async def register(self, agent: BuiltinAgent) -> None:
-        """Put the agent's public key in the registry; a changed seed replaces the key."""
+        """Put the agent's name and public key in the registry; a changed seed replaces the key."""
         key = encode_public_key(private_key(agent.seed).public_key())
         async with self._sessions.begin() as session:
             record = await session.get(AgentRecord, agent.id)
             if record is None:
                 session.add(AgentRecord(id=agent.id, name=agent.name, public_key=key))
                 logger.info("agent_registered", agent_id=agent.id)
-            elif record.public_key != key:
+                return
+            if record.public_key != key:
                 record.public_key = key
                 logger.warning("agent_key_rotated", agent_id=agent.id)
+            if record.name != agent.name:
+                record.name = agent.name
+                logger.info("agent_renamed", agent_id=agent.id, name=agent.name)
 
     async def public_keys(self) -> dict[str, str]:
         """Every agent's public key by agent id, as a signature verifier resolves them."""

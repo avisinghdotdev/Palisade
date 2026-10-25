@@ -182,15 +182,24 @@ def _outcome(status_code: int) -> str:
     return "success"
 
 
+def route_template(request: Request) -> str | None:
+    """The matched route's path with its placeholders, such as `/api/shop/carts/{cart_id}/lines`.
+
+    None before routing has happened. The template names the endpoint without the ids in the
+    real path, which is what a log or a public record should carry.
+    """
+    # FastAPI stores the matched route in the scope once routing has happened.
+    route = cast("object", request.scope.get("route"))
+    return route.path if isinstance(route, APIRoute) else None
+
+
 def _event_fields(
     request: Request, status_code: int, start: float, outcome: str
 ) -> dict[str, object]:
-    # FastAPI stores the matched route in the scope once routing has happened.
-    route = cast("object", request.scope.get("route"))
     return {
         "schema_version": SCHEMA_VERSION,
         "method": request.method,
-        "route": route.path if isinstance(route, APIRoute) else None,
+        "route": route_template(request),
         "path": request.url.path,
         "status_code": status_code,
         "duration_ms": round((perf_counter() - start) * 1000, 2),

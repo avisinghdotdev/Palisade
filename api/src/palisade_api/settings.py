@@ -45,6 +45,9 @@ class Settings(DatabaseSettings):
     # approves a mandate in place of a buyer's passkey.
     mandate_issuer_key: SecretStr
     demo_signer_key: SecretStr
+    # The in-page agent's Claude access, and the code a shopper types to open the chat.
+    anthropic_api_key: SecretStr
+    chat_access_key: SecretStr
     # Startup applies pending migrations only where this is true, so one process owns the schema.
     run_migrations: bool
     # The job worker runs inside this process only where this is true, so a laptop never takes

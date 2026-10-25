@@ -5,6 +5,49 @@ export type ClientOptions = {
 };
 
 /**
+ * Activity
+ *
+ * An activity row as the console reads it.
+ *
+ * The conversation it belongs to stays server-side: a conversation id plus the shared chat
+ * code would open another shopper's chat. Mandate and order ids are safe to show, because
+ * neither can be acted on without a signature or a signed mandate.
+ */
+export type Activity = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Kind
+     */
+    kind: 'conversation_started' | 'shopper_message' | 'assistant_tool_call' | 'signature_accepted' | 'signature_refused' | 'mandate_requested' | 'mandate_signed' | 'mandate_declined' | 'mandate_expired' | 'policy_refused' | 'mandate_refused' | 'checkout_accepted';
+    agent: Agent | null;
+    /**
+     * Mandate Id
+     */
+    mandate_id: string | null;
+    /**
+     * Order Id
+     */
+    order_id: string | null;
+    /**
+     * Order Number
+     */
+    order_number: string | null;
+    /**
+     * Details
+     */
+    details: {
+        [key: string]: JsonValue;
+    };
+    /**
+     * At
+     */
+    at: string;
+};
+
+/**
  * Agent
  */
 export type Agent = {
@@ -63,6 +106,17 @@ export type Cart = {
 };
 
 /**
+ * CartAttachment
+ */
+export type CartAttachment = {
+    /**
+     * Type
+     */
+    type: 'cart';
+    cart: CartSummary;
+};
+
+/**
  * CartLine
  */
 export type CartLine = {
@@ -91,6 +145,25 @@ export type CartLine = {
 };
 
 /**
+ * CartSummary
+ */
+export type CartSummary = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Status
+     */
+    status: 'open' | 'checking_out' | 'completed';
+    /**
+     * Items
+     */
+    items: number;
+    total: Money;
+};
+
+/**
  * CartWallet
  */
 export type CartWallet = {
@@ -110,6 +183,95 @@ export type CheckoutRequest = {
      * Mandate Id
      */
     mandate_id: string;
+};
+
+/**
+ * Conversation
+ */
+export type Conversation = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Cart Id
+     */
+    cart_id: string | null;
+    /**
+     * Busy
+     */
+    busy: boolean;
+    /**
+     * Turns
+     */
+    turns: Array<Turn>;
+    /**
+     * Created At
+     */
+    created_at: string;
+};
+
+/**
+ * CreatedConversation
+ *
+ * A new conversation with the key that opens it; the key is handed out this once.
+ */
+export type CreatedConversation = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Cart Id
+     */
+    cart_id: string | null;
+    /**
+     * Busy
+     */
+    busy: boolean;
+    /**
+     * Turns
+     */
+    turns: Array<Turn>;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Key
+     */
+    key: string;
+};
+
+/**
+ * DoneEvent
+ *
+ * The turn as stored, and the cart the agent is filling, so the browser can show both.
+ */
+export type DoneEvent = {
+    /**
+     * Type
+     */
+    type: 'done';
+    turn: Turn;
+    /**
+     * Cart Id
+     */
+    cart_id: string | null;
+};
+
+/**
+ * ErrorEvent
+ */
+export type ErrorEvent = {
+    /**
+     * Type
+     */
+    type: 'error';
+    /**
+     * Detail
+     */
+    detail: string;
 };
 
 /**
@@ -186,6 +348,11 @@ export type LinkStart = {
 
 /**
  * Mandate
+ *
+ * A mandate as the consent page and the agent read it.
+ *
+ * The cart it covers stays server-side, as on orders: an open cart's id is all it takes to
+ * change it or check it out, and a mandate id is public on the activity feed.
  */
 export type Mandate = {
     /**
@@ -210,10 +377,6 @@ export type Mandate = {
      * Categories
      */
     categories: Array<string>;
-    /**
-     * Cart Id
-     */
-    cart_id: string | null;
     /**
      * Lines
      */
@@ -250,6 +413,44 @@ export type Mandate = {
 };
 
 /**
+ * MandateAttachment
+ */
+export type MandateAttachment = {
+    /**
+     * Type
+     */
+    type: 'mandate';
+    mandate: MandateCard;
+};
+
+/**
+ * MandateCard
+ */
+export type MandateCard = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Kind
+     */
+    kind: 'intent' | 'cart';
+    /**
+     * Status
+     */
+    status: 'pending' | 'signed' | 'declined' | 'expired';
+    cap: Money;
+    /**
+     * Consent Path
+     */
+    consent_path: string;
+    /**
+     * Expires At
+     */
+    expires_at: string;
+};
+
+/**
  * MandateLine
  */
 export type MandateLine = {
@@ -270,6 +471,22 @@ export type MandateLine = {
      */
     name: string;
     unit_price: Money;
+};
+
+/**
+ * MandateOutcome
+ *
+ * The shopper answered a mandate on the consent page; the agent carries on from the answer.
+ */
+export type MandateOutcome = {
+    /**
+     * Type
+     */
+    type: 'mandate';
+    /**
+     * Mandate Id
+     */
+    mandate_id: string;
 };
 
 /**
@@ -340,6 +557,20 @@ export type Money = {
      * Currency Code
      */
     currency_code: 'USD';
+};
+
+/**
+ * NewConversation
+ */
+export type NewConversation = {
+    /**
+     * Wallet Id
+     */
+    wallet_id: string;
+    /**
+     * Cart Id
+     */
+    cart_id?: string | null;
 };
 
 /**
@@ -422,6 +653,32 @@ export type Order = {
      * Created At
      */
     created_at: string;
+};
+
+/**
+ * OrderAttachment
+ */
+export type OrderAttachment = {
+    /**
+     * Type
+     */
+    type: 'order';
+    order: OrderCard;
+};
+
+/**
+ * OrderCard
+ */
+export type OrderCard = {
+    /**
+     * Number
+     */
+    number: string;
+    /**
+     * Status
+     */
+    status: 'creating' | 'declined' | 'failed' | 'authorized' | 'capture_pending' | 'captured' | 'voided' | 'refunded' | 'reversed';
+    total: Money;
 };
 
 /**
@@ -644,6 +901,47 @@ export type Product = {
 };
 
 /**
+ * ProductCard
+ */
+export type ProductCard = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Brand
+     */
+    brand: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Category
+     */
+    category: string;
+    price: Money;
+    /**
+     * Image Path
+     */
+    image_path: string;
+};
+
+/**
+ * ProductsAttachment
+ */
+export type ProductsAttachment = {
+    /**
+     * Type
+     */
+    type: 'products';
+    /**
+     * Products
+     */
+    products: Array<ProductCard>;
+};
+
+/**
  * QueuedJob
  */
 export type QueuedJob = {
@@ -746,6 +1044,137 @@ export type ShipmentRequest = {
      * Tracking Number
      */
     tracking_number: string;
+};
+
+/**
+ * ShopperMessage
+ */
+export type ShopperMessage = {
+    /**
+     * Type
+     */
+    type: 'message';
+    /**
+     * Text
+     */
+    text: string;
+};
+
+/**
+ * TextEvent
+ */
+export type TextEvent = {
+    /**
+     * Type
+     */
+    type: 'text';
+    /**
+     * Text
+     */
+    text: string;
+};
+
+/**
+ * ToolCallEvent
+ */
+export type ToolCallEvent = {
+    /**
+     * Type
+     */
+    type: 'tool_call';
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Tool
+     */
+    tool: 'search_products' | 'get_product' | 'set_cart_line' | 'request_mandate' | 'check_mandate' | 'checkout' | 'get_order';
+    /**
+     * Input
+     */
+    input: {
+        [key: string]: JsonValue;
+    };
+};
+
+/**
+ * ToolResultEvent
+ */
+export type ToolResultEvent = {
+    /**
+     * Type
+     */
+    type: 'tool_result';
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Tool
+     */
+    tool: 'search_products' | 'get_product' | 'set_cart_line' | 'request_mandate' | 'check_mandate' | 'checkout' | 'get_order';
+    /**
+     * Ok
+     */
+    ok: boolean;
+    /**
+     * Summary
+     */
+    summary: string;
+    /**
+     * Attachment
+     */
+    attachment: ({
+        type: 'products';
+    } & ProductsAttachment) | ({
+        type: 'cart';
+    } & CartAttachment) | ({
+        type: 'mandate';
+    } & MandateAttachment) | ({
+        type: 'order';
+    } & OrderAttachment) | null;
+};
+
+/**
+ * Turn
+ */
+export type Turn = {
+    /**
+     * Position
+     */
+    position: number;
+    request: TurnRequest;
+    /**
+     * Events
+     */
+    events: Array<TextEvent | ToolCallEvent | ToolResultEvent>;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Finished At
+     */
+    finished_at: string;
+};
+
+/**
+ * TurnRequest
+ */
+export type TurnRequest = {
+    /**
+     * Kind
+     */
+    kind: 'message' | 'mandate_approved' | 'mandate_declined' | 'mandate_expired';
+    /**
+     * Text
+     */
+    text: string;
+    /**
+     * Mandate Id
+     */
+    mandate_id?: string | null;
 };
 
 /**
@@ -1620,6 +2049,190 @@ export type RegisterPasskeyResponses = {
 };
 
 export type RegisterPasskeyResponse = RegisterPasskeyResponses[keyof RegisterPasskeyResponses];
+
+export type ActivityData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Kind
+         */
+        kind?: 'conversation_started' | 'shopper_message' | 'assistant_tool_call' | 'signature_accepted' | 'signature_refused' | 'mandate_requested' | 'mandate_signed' | 'mandate_declined' | 'mandate_expired' | 'policy_refused' | 'mandate_refused' | 'checkout_accepted' | null;
+    };
+    url: '/api/activity';
+};
+
+export type ActivityErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ActivityError = ActivityErrors[keyof ActivityErrors];
+
+export type ActivityResponses = {
+    /**
+     * Response Activity
+     *
+     * Successful Response
+     */
+    200: Array<Activity>;
+};
+
+export type ActivityResponse = ActivityResponses[keyof ActivityResponses];
+
+export type OrderActivityData = {
+    body?: never;
+    path: {
+        /**
+         * Number
+         */
+        number: string;
+    };
+    query?: never;
+    url: '/api/orders/{number}/activity';
+};
+
+export type OrderActivityErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type OrderActivityError = OrderActivityErrors[keyof OrderActivityErrors];
+
+export type OrderActivityResponses = {
+    /**
+     * Response Order Activity
+     *
+     * Successful Response
+     */
+    200: Array<Activity>;
+};
+
+export type OrderActivityResponse = OrderActivityResponses[keyof OrderActivityResponses];
+
+export type AssistantAccessData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/assistant/access';
+};
+
+export type AssistantAccessResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type AssistantAccessResponse = AssistantAccessResponses[keyof AssistantAccessResponses];
+
+export type CreateConversationData = {
+    body: NewConversation;
+    path?: never;
+    query?: never;
+    url: '/api/assistant/conversations';
+};
+
+export type CreateConversationErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateConversationError = CreateConversationErrors[keyof CreateConversationErrors];
+
+export type CreateConversationResponses = {
+    /**
+     * Successful Response
+     */
+    201: CreatedConversation;
+};
+
+export type CreateConversationResponse = CreateConversationResponses[keyof CreateConversationResponses];
+
+export type ConversationData = {
+    body?: never;
+    path: {
+        /**
+         * Conversation Id
+         */
+        conversation_id: string;
+    };
+    query?: never;
+    url: '/api/assistant/conversations/{conversation_id}';
+};
+
+export type ConversationErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ConversationError = ConversationErrors[keyof ConversationErrors];
+
+export type ConversationResponses = {
+    /**
+     * Successful Response
+     */
+    200: Conversation;
+};
+
+export type ConversationResponse = ConversationResponses[keyof ConversationResponses];
+
+export type SendMessageData = {
+    /**
+     * Incoming
+     */
+    body: ({
+        type: 'message';
+    } & ShopperMessage) | ({
+        type: 'mandate';
+    } & MandateOutcome);
+    path: {
+        /**
+         * Conversation Id
+         */
+        conversation_id: string;
+    };
+    query?: never;
+    url: '/api/assistant/conversations/{conversation_id}/messages';
+};
+
+export type SendMessageErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SendMessageError = SendMessageErrors[keyof SendMessageErrors];
+
+export type SendMessageResponses = {
+    /**
+     * Response 200 Send Message
+     *
+     * The agent's turn as server-sent events, ending with `done` or `error`.
+     */
+    200: ({
+        type: 'text';
+    } & TextEvent) | ({
+        type: 'tool_call';
+    } & ToolCallEvent) | ({
+        type: 'tool_result';
+    } & ToolResultEvent) | ({
+        type: 'done';
+    } & DoneEvent) | ({
+        type: 'error';
+    } & ErrorEvent);
+};
+
+export type SendMessageResponse = SendMessageResponses[keyof SendMessageResponses];
 
 export type HealthData = {
     body?: never;

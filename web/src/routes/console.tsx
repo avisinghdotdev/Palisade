@@ -32,10 +32,11 @@ export default function Console() {
         </SurfaceLink>
         <AboutDialog title="About Merchant Console">
           <p>
-            This is the merchant's side of Palisade for Ridgeline Running: every
-            order with its PayPal IDs and payment history, every PayPal event
-            the store receives, and in later milestones every agent, mandate,
-            policy decision, and dispute with the evidence Palisade filed.
+            Ridgeline Running uses Palisade to let AI agents buy safely. This
+            console is the store&apos;s view of it: every order with its PayPal
+            IDs and payment history, every PayPal event the store received,
+            every agent request, mandate, and policy decision, and in later
+            milestones every dispute with the evidence Palisade filed.
           </p>
         </AboutDialog>
       </ShopHeader>
