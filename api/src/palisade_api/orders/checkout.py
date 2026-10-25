@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from palisade_api.agents.registry import Agent
+from palisade_api.mandates.service import MandateRefused, Mandates
 from palisade_api.orders.calls import PayPalCalls
 from palisade_api.orders.models import (
     OrderEventRecord,
@@ -123,9 +124,16 @@ def order_number() -> str:
 
 
 def create_order_body(
-    number: str, lines: list[CartLineRecord], total_cents: int, vault_id: str
+    number: str,
+    lines: list[CartLineRecord],
+    total_cents: int,
+    vault_id: str,
+    custom_id: str | None,
 ) -> dict[str, JsonValue]:
-    """The Orders v2 request: authorize the cart's total from the saved wallet, buyer present."""
+    """The Orders v2 request: authorize the cart's total from the saved wallet, buyer present.
+
+    `custom_id` is the mandate's id and hash on an agent order; PayPal keeps it on the order.
+    """
     items: list[JsonValue] = [
         {
             "name": f"{line.brand} {line.name}",
@@ -138,16 +146,17 @@ def create_order_body(
         for line in lines
     ]
     total: dict[str, JsonValue] = dict(money(total_cents).model_dump())
+    unit: dict[str, JsonValue] = {
+        "reference_id": number,
+        "invoice_id": number,
+        "amount": {**total, "breakdown": {"item_total": total}},
+        "items": items,
+    }
+    if custom_id is not None:
+        unit["custom_id"] = custom_id
     return {
         "intent": "AUTHORIZE",
-        "purchase_units": [
-            {
-                "reference_id": number,
-                "invoice_id": number,
-                "amount": {**total, "breakdown": {"item_total": total}},
-                "items": items,
-            }
-        ],
+        "purchase_units": [unit],
         "payment_source": {
             "paypal": {
                 "vault_id": vault_id,
@@ -188,26 +197,32 @@ class Checkout:
         calls: PayPalCalls,
         orders: Orders,
         policies: Policies,
+        mandates: Mandates,
         source: EventSource,
     ) -> None:
         self._sessions = sessions
         self._calls = calls
         self._orders = orders
         self._policies = policies
+        self._mandates = mandates
         self._source: EventSource = source
 
-    async def place_order(self, cart_id: UUID, agent: Agent | None) -> Order:
+    async def place_order(
+        self, cart_id: UUID, agent: Agent | None, mandate_id: UUID | None
+    ) -> Order:
         """Turn the cart into a paid order; a repeat call returns the order already placed.
 
-        `agent` is the signed agent checking out, or None for the buyer's own browser.
+        `agent` is the signed agent checking out, or None for the buyer's own browser; an agent
+        names the buyer-signed `mandate_id` that covers the purchase.
 
         Raises:
             UnknownCart, EmptyCart, CartChanged, WalletUnavailable: nothing was sent to PayPal.
-            PolicyRefused: the merchant's policy refuses the agent's purchase; the cart is open.
+            MandateRefused, PolicyRefused: the mandate or the merchant's policy refuses the
+                agent's purchase; the cart stays open.
             CheckoutDeclined: PayPal refused the payment; the cart is open again.
             CheckoutFailed: PayPal did not answer; the order stays with status `failed`.
         """
-        started = await self._begin(cart_id, agent)
+        started = await self._begin(cart_id, agent, mandate_id)
         if isinstance(started, Order):
             return started
         return await self.create(started.order_id, started.number, started.create_body)
@@ -314,7 +329,9 @@ class Checkout:
         """Close an order whose outcome PayPal can no longer tell: `failed`, the cart open again."""
         await self._transition(order_id, "failed", detail=issue, cart_status="open")
 
-    async def _begin(self, cart_id: UUID, agent: Agent | None) -> Order | Started:
+    async def _begin(
+        self, cart_id: UUID, agent: Agent | None, mandate_id: UUID | None
+    ) -> Order | Started:
         """Freeze the cart and write the order before anything is sent to PayPal."""
         async with self._sessions.begin() as session:
             cart = await session.get(
@@ -360,16 +377,16 @@ class Checkout:
                 line.unit_price_cents * line.quantity for line in cart.lines
             )
             policy_hash = None
+            custom_id = None
             if agent is not None:
                 policy = await self._policies.current(session)
+                categories = {products[line.product_id].category for line in cart.lines}
                 reasons = evaluate(
                     policy,
                     Purchase(
                         agent_id=agent.id,
                         total_cents=total_cents,
-                        categories={
-                            products[line.product_id].category for line in cart.lines
-                        },
+                        categories=categories,
                         spent_cents_today=await self._policies.spent_today(
                             session, agent.id
                         ),
@@ -377,7 +394,13 @@ class Checkout:
                 )
                 if reasons:
                     raise PolicyRefused(reasons)
+                if mandate_id is None:
+                    raise MandateRefused(["MANDATE_REQUIRED"])
+                mandate = await self._mandates.claim(
+                    session, mandate_id, agent, cart, categories, policy.hash
+                )
                 policy_hash = policy.hash
+                custom_id = f"{mandate.id}:{mandate.token_hash}"
             record = OrderRecord(
                 id=uuid7(),
                 number=await self._unused_number(session),
@@ -386,6 +409,8 @@ class Checkout:
                 channel="human" if agent is None else "agent",
                 agent_id=None if agent is None else agent.id,
                 policy_hash=policy_hash,
+                mandate_id=mandate_id if agent is not None else None,
+                custom_id=custom_id,
                 status="creating",
                 currency="USD",
                 total_cents=total_cents,
@@ -411,7 +436,11 @@ class Checkout:
             session.add(record)
             cart.status = "checking_out"
             body = create_order_body(
-                record.number, cart.lines, total_cents, wallet.payment_token_id
+                record.number,
+                cart.lines,
+                total_cents,
+                wallet.payment_token_id,
+                custom_id,
             )
             return Started(record.id, record.number, body)
 

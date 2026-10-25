@@ -17,6 +17,10 @@ from palisade_api.agents.signatures import AgentSignatures
 from palisade_api.database import create_engine
 from palisade_api.jobs import run_worker
 from palisade_api.logging import RequestLogMiddleware
+from palisade_api.mandates import router as mandates_router
+from palisade_api.mandates.passkeys import Passkeys
+from palisade_api.mandates.service import Mandates
+from palisade_api.mandates.tokens import MandateTokens
 from palisade_api.migrate import upgrade_to_head
 from palisade_api.orders import router as orders_router
 from palisade_api.orders import webhooks as order_webhooks
@@ -59,6 +63,8 @@ class State(TypedDict):
     orders: Orders
     shipments: Shipments
     agent_signatures: AgentSignatures
+    mandates: Mandates
+    passkeys: Passkeys
 
 
 @asynccontextmanager
@@ -112,6 +118,15 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[State]:
             )
             orders = Orders(sessions)
             calls = PayPalCalls(sessions, paypal_client)
+            passkeys = Passkeys(sessions, settings.public_origin)
+            mandates = Mandates(
+                sessions,
+                MandateTokens(settings.mandate_issuer_key.get_secret_value()),
+                passkeys,
+                policies,
+                settings.demo_signer_key.get_secret_value(),
+                settings.public_origin,
+            )
             if settings.run_worker:
                 handlers = {
                     **order_webhooks.handlers(sessions),
@@ -119,7 +134,9 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[State]:
                 }
                 repairs = Repairs(
                     sessions,
-                    Checkout(sessions, calls, orders, policies, source="repair"),
+                    Checkout(
+                        sessions, calls, orders, policies, mandates, source="repair"
+                    ),
                     paypal_client,
                 )
                 await stack.enter_async_context(
@@ -142,12 +159,16 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[State]:
                 catalog=Catalog(sessions),
                 carts=Carts(sessions),
                 wallets=wallets,
-                checkout=Checkout(sessions, calls, orders, policies, source="api"),
+                checkout=Checkout(
+                    sessions, calls, orders, policies, mandates, source="api"
+                ),
                 orders=orders,
                 shipments=Shipments(sessions, calls, orders),
                 agent_signatures=AgentSignatures(
                     sessions, agents, settings.public_origin
                 ),
+                mandates=mandates,
+                passkeys=passkeys,
             )
     finally:
         await engine.dispose()
@@ -160,6 +181,7 @@ app.include_router(webhooks.router)
 app.include_router(shop.router)
 app.include_router(wallets_router.router)
 app.include_router(orders_router.router)
+app.include_router(mandates_router.router)
 
 
 class Health(BaseModel):

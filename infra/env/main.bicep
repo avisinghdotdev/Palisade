@@ -64,6 +64,8 @@ var apiSecrets = [
   { env: 'DATABASE_URL', secret: 'database-url' }
   { env: 'SHOPPER_AGENT_KEY', secret: 'shopper-agent-key' }
   { env: 'MCP_AGENT_KEY', secret: 'mcp-agent-key' }
+  { env: 'MANDATE_ISSUER_KEY', secret: 'mandate-issuer-key' }
+  { env: 'DEMO_SIGNER_KEY', secret: 'demo-signer-key' }
 ]
 var apiSecretEnvironment = [for item in apiSecrets: { name: item.env, secretRef: item.secret }]
 var apiEnvironment = [
