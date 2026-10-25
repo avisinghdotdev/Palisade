@@ -4,6 +4,7 @@ import type { ToolCallEvent } from "@/api/client";
 export const TOOL_LABELS: Record<ToolCallEvent["tool"], string> = {
   search_products: "Searching the catalog",
   get_product: "Reading a shoe's details",
+  get_cart: "Reading your cart",
   set_cart_line: "Updating your cart",
   request_mandate: "Asking for your approval",
   check_mandate: "Checking your approval",

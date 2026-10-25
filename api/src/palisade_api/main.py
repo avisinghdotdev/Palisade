@@ -112,7 +112,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[State]:
                 settings.mcp_agent_key.get_secret_value(),
             )
         )
-        await policies.ensure_default()
+        await policies.ensure_current()
         async with AsyncExitStack() as stack:
             http = await stack.enter_async_context(
                 httpx2.AsyncClient(

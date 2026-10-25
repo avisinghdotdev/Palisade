@@ -3,8 +3,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { Wallet } from "@/api/client";
 
-import { AgentIcon } from "@/components/agent-icon";
-import { AssistantTurn } from "@/components/assistant-turn";
+import { AgentRow, AssistantTurn } from "@/components/assistant-turn";
 import { ClaudeLogo } from "@/components/claude-logo";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -81,16 +80,13 @@ export function AssistantChat({
         >
           {turns.length === 0 && live === null ? (
             <div className="flex h-full flex-col justify-end gap-4">
-              <div className="flex items-start gap-2.5">
-                <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-                  <AgentIcon className="size-5" />
-                </span>
-                <p className="rounded-2xl rounded-tl-sm bg-secondary px-3 py-2 text-sm">
+              <AgentRow>
+                <p className="w-fit rounded-2xl rounded-tl-sm bg-secondary px-3 py-2 text-sm">
                   Hi, I&apos;m Ridgeline Assistant. Tell me what you run and
                   your US size. I find shoes, fill your bag, and never pay
                   before you approve.
                 </p>
-              </div>
+              </AgentRow>
               <div>
                 <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
                   Try asking
