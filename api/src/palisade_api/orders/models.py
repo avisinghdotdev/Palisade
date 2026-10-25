@@ -8,6 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from palisade_api.agents.models import AgentRecord
 from palisade_api.database import Base
+from palisade_api.mandates.models import MandateRecord
 from palisade_api.wallets.models import WalletRecord
 
 
@@ -28,6 +29,10 @@ class OrderRecord(Base):
     # The signed agent behind an agent order, and the hash of the policy that allowed it.
     agent_id: Mapped[str | None] = mapped_column(ForeignKey("agents.id"), index=True)
     policy_hash: Mapped[str | None] = mapped_column(Text)
+    # The buyer-signed mandate an agent order was placed under.
+    mandate_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("mandates.id"), index=True
+    )
     status: Mapped[str] = mapped_column(Text)
     currency: Mapped[str] = mapped_column(Text)
     total_cents: Mapped[int] = mapped_column(Integer)
@@ -50,6 +55,7 @@ class OrderRecord(Base):
 
     wallet: Mapped[WalletRecord] = relationship()
     agent: Mapped[AgentRecord | None] = relationship()
+    mandate: Mapped[MandateRecord | None] = relationship()
     lines: Mapped[list[OrderLineRecord]] = relationship(
         order_by="OrderLineRecord.position"
     )

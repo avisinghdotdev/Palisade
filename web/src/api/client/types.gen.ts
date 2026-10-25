@@ -19,6 +19,26 @@ export type Agent = {
 };
 
 /**
+ * Approval
+ */
+export type Approval = {
+    /**
+     * Signed By
+     */
+    signed_by: 'passkey' | 'demo_signer';
+    /**
+     * Passkey Id
+     */
+    passkey_id?: string | null;
+    /**
+     * Credential
+     */
+    credential?: {
+        [key: string]: JsonValue;
+    } | null;
+};
+
+/**
  * Cart
  *
  * A cart as the shop reads it.
@@ -78,6 +98,18 @@ export type CartWallet = {
      * Wallet Id
      */
     wallet_id: string;
+};
+
+/**
+ * CheckoutRequest
+ *
+ * What an agent sends with a checkout: the buyer-signed mandate that covers it.
+ */
+export type CheckoutRequest = {
+    /**
+     * Mandate Id
+     */
+    mandate_id: string;
 };
 
 /**
@@ -153,6 +185,148 @@ export type LinkStart = {
 };
 
 /**
+ * Mandate
+ */
+export type Mandate = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Kind
+     */
+    kind: 'intent' | 'cart';
+    /**
+     * Status
+     */
+    status: 'pending' | 'signed' | 'declined' | 'expired';
+    agent: Agent;
+    /**
+     * Wallet Email
+     */
+    wallet_email: string;
+    cap: Money;
+    /**
+     * Categories
+     */
+    categories: Array<string>;
+    /**
+     * Cart Id
+     */
+    cart_id: string | null;
+    /**
+     * Lines
+     */
+    lines: Array<MandateLine>;
+    /**
+     * Policy Hash
+     */
+    policy_hash: string;
+    /**
+     * Token Hash
+     */
+    token_hash: string;
+    /**
+     * Signed By
+     */
+    signed_by: 'passkey' | 'demo_signer' | null;
+    /**
+     * Signed At
+     */
+    signed_at: string | null;
+    /**
+     * Expires At
+     */
+    expires_at: string;
+    spent: Money;
+    /**
+     * Consent Path
+     */
+    consent_path: string;
+    /**
+     * Created At
+     */
+    created_at: string;
+};
+
+/**
+ * MandateLine
+ */
+export type MandateLine = {
+    /**
+     * Product Id
+     */
+    product_id: string;
+    /**
+     * Size
+     */
+    size: string;
+    /**
+     * Quantity
+     */
+    quantity: number;
+    /**
+     * Name
+     */
+    name: string;
+    unit_price: Money;
+};
+
+/**
+ * MandateRequest
+ *
+ * What an agent asks the buyer to allow.
+ */
+export type MandateRequest = {
+    /**
+     * Kind
+     */
+    kind: 'intent' | 'cart';
+    /**
+     * Wallet Id
+     */
+    wallet_id: string;
+    cap: Money;
+    /**
+     * Categories
+     */
+    categories?: Array<string>;
+    /**
+     * Cart Id
+     */
+    cart_id?: string | null;
+};
+
+/**
+ * MandateSummary
+ *
+ * The mandate as an order carries it.
+ */
+export type MandateSummary = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Kind
+     */
+    kind: 'intent' | 'cart';
+    /**
+     * Signed By
+     */
+    signed_by: 'passkey' | 'demo_signer' | null;
+    /**
+     * Signed At
+     */
+    signed_at: string | null;
+    cap: Money;
+    /**
+     * Token Hash
+     */
+    token_hash: string;
+};
+
+/**
  * Money
  *
  * An amount in PayPal's shape, so an order line can carry it unchanged.
@@ -193,6 +367,7 @@ export type Order = {
      * Policy Hash
      */
     policy_hash: string | null;
+    mandate: MandateSummary | null;
     /**
      * Status
      */
@@ -351,6 +526,16 @@ export type OrderSummary = {
 };
 
 /**
+ * Passkey
+ */
+export type Passkey = {
+    /**
+     * Id
+     */
+    id: string;
+};
+
+/**
  * PayPalCall
  */
 export type PayPalCall = {
@@ -491,6 +676,40 @@ export type ReceivedEvent = {
      * Processed At
      */
     processed_at: string | null;
+};
+
+/**
+ * Registration
+ */
+export type Registration = {
+    /**
+     * Challenge
+     */
+    challenge: string;
+    /**
+     * Credential
+     */
+    credential: {
+        [key: string]: JsonValue;
+    };
+};
+
+/**
+ * RegistrationStart
+ *
+ * What the browser's `navigator.credentials.create()` needs, and the challenge to return.
+ */
+export type RegistrationStart = {
+    /**
+     * Challenge
+     */
+    challenge: string;
+    /**
+     * Options
+     */
+    options: {
+        [key: string]: JsonValue;
+    };
 };
 
 /**
@@ -648,6 +867,7 @@ export type OrderWritable = {
      * Policy Hash
      */
     policy_hash: string | null;
+    mandate: MandateSummary | null;
     /**
      * Status
      */
@@ -1009,7 +1229,10 @@ export type SetCartWalletResponses = {
 export type SetCartWalletResponse = SetCartWalletResponses[keyof SetCartWalletResponses];
 
 export type CheckoutData = {
-    body?: never;
+    /**
+     * Body
+     */
+    body?: CheckoutRequest | null;
     path: {
         /**
          * Cart Id
@@ -1202,6 +1425,201 @@ export type ShipOrderResponses = {
 };
 
 export type ShipOrderResponse = ShipOrderResponses[keyof ShipOrderResponses];
+
+export type CreateMandateData = {
+    body: MandateRequest;
+    path?: never;
+    query?: never;
+    url: '/api/mandates';
+};
+
+export type CreateMandateErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateMandateError = CreateMandateErrors[keyof CreateMandateErrors];
+
+export type CreateMandateResponses = {
+    /**
+     * Successful Response
+     */
+    201: Mandate;
+};
+
+export type CreateMandateResponse = CreateMandateResponses[keyof CreateMandateResponses];
+
+export type MandateData = {
+    body?: never;
+    path: {
+        /**
+         * Mandate Id
+         */
+        mandate_id: string;
+    };
+    query?: never;
+    url: '/api/mandates/{mandate_id}';
+};
+
+export type MandateErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type MandateError = MandateErrors[keyof MandateErrors];
+
+export type MandateResponses = {
+    /**
+     * Successful Response
+     */
+    200: Mandate;
+};
+
+export type MandateResponse = MandateResponses[keyof MandateResponses];
+
+export type MandatePasskeyOptionsData = {
+    body?: never;
+    path: {
+        /**
+         * Mandate Id
+         */
+        mandate_id: string;
+    };
+    query: {
+        /**
+         * Passkey Id
+         */
+        passkey_id: string;
+    };
+    url: '/api/mandates/{mandate_id}/passkey-options';
+};
+
+export type MandatePasskeyOptionsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type MandatePasskeyOptionsError = MandatePasskeyOptionsErrors[keyof MandatePasskeyOptionsErrors];
+
+export type MandatePasskeyOptionsResponses = {
+    /**
+     * Response Mandate Passkey Options
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: JsonValue;
+    };
+};
+
+export type MandatePasskeyOptionsResponse = MandatePasskeyOptionsResponses[keyof MandatePasskeyOptionsResponses];
+
+export type ApproveMandateData = {
+    body: Approval;
+    path: {
+        /**
+         * Mandate Id
+         */
+        mandate_id: string;
+    };
+    query?: never;
+    url: '/api/mandates/{mandate_id}/approval';
+};
+
+export type ApproveMandateErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ApproveMandateError = ApproveMandateErrors[keyof ApproveMandateErrors];
+
+export type ApproveMandateResponses = {
+    /**
+     * Successful Response
+     */
+    200: Mandate;
+};
+
+export type ApproveMandateResponse = ApproveMandateResponses[keyof ApproveMandateResponses];
+
+export type DeclineMandateData = {
+    body?: never;
+    path: {
+        /**
+         * Mandate Id
+         */
+        mandate_id: string;
+    };
+    query?: never;
+    url: '/api/mandates/{mandate_id}/decline';
+};
+
+export type DeclineMandateErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeclineMandateError = DeclineMandateErrors[keyof DeclineMandateErrors];
+
+export type DeclineMandateResponses = {
+    /**
+     * Successful Response
+     */
+    200: Mandate;
+};
+
+export type DeclineMandateResponse = DeclineMandateResponses[keyof DeclineMandateResponses];
+
+export type StartPasskeyRegistrationData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/passkeys/registration';
+};
+
+export type StartPasskeyRegistrationResponses = {
+    /**
+     * Successful Response
+     */
+    201: RegistrationStart;
+};
+
+export type StartPasskeyRegistrationResponse = StartPasskeyRegistrationResponses[keyof StartPasskeyRegistrationResponses];
+
+export type RegisterPasskeyData = {
+    body: Registration;
+    path?: never;
+    query?: never;
+    url: '/api/passkeys';
+};
+
+export type RegisterPasskeyErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RegisterPasskeyError = RegisterPasskeyErrors[keyof RegisterPasskeyErrors];
+
+export type RegisterPasskeyResponses = {
+    /**
+     * Successful Response
+     */
+    201: Passkey;
+};
+
+export type RegisterPasskeyResponse = RegisterPasskeyResponses[keyof RegisterPasskeyResponses];
 
 export type HealthData = {
     body?: never;

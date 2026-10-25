@@ -109,8 +109,9 @@ class Policies:
         Raises:
             LookupError: the merchant has no policy.
         """
+        # UUIDv7 ids sort in creation order and never tie, which `created_at` does inside one transaction.
         record = await session.scalar(
-            select(PolicyRecord).order_by(PolicyRecord.created_at.desc()).limit(1)
+            select(PolicyRecord).order_by(PolicyRecord.id.desc()).limit(1)
         )
         if record is None:
             raise LookupError("the merchant has no policy")

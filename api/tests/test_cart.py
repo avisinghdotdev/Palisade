@@ -86,6 +86,7 @@ async def test_bad_lines_are_refused(
     cart = await new_cart(client, wallet_id)
 
     assert (await set_line(client, cart.id, "4", 1)).status_code == 422
+    assert (await set_line(client, cart.id, "10", 6)).status_code == 422
     unknown = await client.put(
         f"/api/shop/carts/{cart.id}/lines",
         json={"product_id": "moon-boot", "size": "10", "quantity": 1},

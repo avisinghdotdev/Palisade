@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import joinedload, selectinload
 
 from palisade_api.agents.registry import Agent
+from palisade_api.mandates.service import MandateSummary, summary
 from palisade_api.orders.calls import CallAction
 from palisade_api.orders.models import (
     OrderEventRecord,
@@ -118,6 +119,7 @@ class Order(BaseModel):
     # The signed agent and the policy hash on an agent order; None on a human order.
     agent: Agent | None
     policy_hash: str | None
+    mandate: MandateSummary | None
     status: OrderStatus
     total: Money
     custom_id: str | None
@@ -188,6 +190,7 @@ def order(record: OrderRecord) -> Order:
         if record.agent is None
         else Agent(id=record.agent.id, name=record.agent.name),
         policy_hash=record.policy_hash,
+        mandate=None if record.mandate is None else summary(record.mandate),
         status=ORDER_STATUS.validate_python(record.status),
         total=money(record.total_cents),
         custom_id=record.custom_id,
@@ -210,6 +213,7 @@ def with_details(statement: Select[OrderRecord]) -> Select[OrderRecord]:
     return statement.options(
         joinedload(OrderRecord.wallet),
         joinedload(OrderRecord.agent),
+        joinedload(OrderRecord.mandate),
         joinedload(OrderRecord.shipment),
         selectinload(OrderRecord.lines),
         selectinload(OrderRecord.events),

@@ -10,6 +10,7 @@ export default [
   route("shop", "routes/shop.tsx"),
   route("shop/orders/:number", "routes/shop-order.tsx"),
   route("shop/wallet/:outcome", "routes/shop-wallet.tsx"),
+  route("shop/approve/:mandateId", "routes/shop-approve.tsx"),
   route("credits", "routes/credits.tsx"),
   layout("routes/console.tsx", [
     route("console", "routes/console-orders.tsx"),

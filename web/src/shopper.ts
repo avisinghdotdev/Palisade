@@ -5,6 +5,7 @@ const WALLET_KEY = "palisade.wallet";
 const PAYS_WITH_DEMO_KEY = "palisade.pays-with-demo";
 const CART_KEY = "palisade.cart";
 const PENDING_LINK_KEY = "palisade.pending-wallet-link";
+const PASSKEY_KEY = "palisade.passkey";
 
 const listeners = new Set<() => void>();
 
@@ -82,6 +83,16 @@ export const pendingLink = {
   },
   clear() {
     localStorage.removeItem(PENDING_LINK_KEY);
+  },
+};
+
+/** The passkey this browser registered to sign mandates; the API knows it by this id. */
+export const passkey = {
+  get(): null | string {
+    return localStorage.getItem(PASSKEY_KEY);
+  },
+  set(id: string) {
+    localStorage.setItem(PASSKEY_KEY, id);
   },
 };
 

@@ -10,6 +10,10 @@ import {
 } from "@/api/client/@tanstack/react-query.gen";
 import { useShopper } from "@/shopper";
 
+/** The most pairs of one shoe in one size an order may hold; the API refuses more. */
+export const MAX_PER_LINE = 5;
+export const MAX_PER_LINE_NOTE = `Up to ${String(MAX_PER_LINE)} pairs of a size per order.`;
+
 /** The browser's open cart, created on the first add with the wallet that pays. */
 export function useCart(walletId: string | undefined) {
   const { cartId, setCartId } = useShopper();

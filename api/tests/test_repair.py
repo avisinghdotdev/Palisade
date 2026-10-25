@@ -5,6 +5,7 @@ from uuid import UUID
 
 import httpx2
 import pytest
+from agent_fixtures import mandates_for
 from order_fixtures import (
     CAPTURE_PATH,
     CREATE_PATH,
@@ -48,10 +49,13 @@ class Shop:
         policies = Policies(sessions)
         self.sessions = sessions
         self.orders = orders
-        self.checkout = Checkout(sessions, calls, orders, policies, source="api")
+        mandates = mandates_for(sessions)
+        self.checkout = Checkout(
+            sessions, calls, orders, policies, mandates, source="api"
+        )
         self.repairs = Repairs(
             sessions,
-            Checkout(sessions, calls, orders, policies, source="repair"),
+            Checkout(sessions, calls, orders, policies, mandates, source="repair"),
             client,
         )
 
@@ -132,7 +136,7 @@ async def unanswered_create(
     paypal.on("POST", CREATE_PATH, timeout)
     cart = await cart_with_shoes(client, wallet_id)
     with pytest.raises(CheckoutFailed):
-        await shop.checkout.place_order(cart.id, None)
+        await shop.checkout.place_order(cart.id, None, None)
     return cart.id, await shop.order_of(cart.id)
 
 
@@ -144,7 +148,7 @@ async def uncaptured_hold(
     paypal.on("POST", VOID_PATH, json_answer(422, declined()))
     cart = await cart_with_shoes(client, wallet_id)
     with pytest.raises(CheckoutFailed):
-        await shop.checkout.place_order(cart.id, None)
+        await shop.checkout.place_order(cart.id, None, None)
     order = await shop.order_of(cart.id)
     assert order.status == "authorized"
     return cart.id, order
