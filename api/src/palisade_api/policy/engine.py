@@ -18,10 +18,12 @@ from palisade_api.policy.models import PolicyRecord
 DAILY_WINDOW = timedelta(hours=24)
 # Order statuses that hold or took the buyer's money.
 SPENDING_STATUSES = ("authorized", "capture_pending", "captured")
-DEFAULT_RULES = {
+# The merchant's rules. Both caps sit far above any sandbox purchase, so no shopper is refused
+# on spend; the rules stay for a merchant that sets real ones.
+MERCHANT_RULES = {
     "allowed_agents": ["palisade-shopper", "palisade-mcp"],
-    "per_order_cap_cents": 50_000,
-    "per_agent_daily_cap_cents": 200_000,
+    "per_order_cap_cents": 100_000_000,
+    "per_agent_daily_cap_cents": 100_000_000,
     "blocked_categories": [],
 }
 
@@ -92,12 +94,19 @@ class Policies:
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         self._sessions = sessions
 
-    async def ensure_default(self) -> None:
-        """Write the default rules when the merchant has no policy yet."""
+    async def ensure_current(self) -> None:
+        """Write the merchant's rules as a new policy unless the one in force already is them.
+
+        Orders and mandates keep the hash of the rules they passed, so an older policy stays
+        readable, and a mandate signed under it is refused with POLICY_CHANGED.
+        """
+        rules = Rules.model_validate(MERCHANT_RULES)
         async with self._sessions.begin() as session:
-            if await session.scalar(select(PolicyRecord.id).limit(1)) is not None:
+            newest = await session.scalar(
+                select(PolicyRecord.hash).order_by(PolicyRecord.id.desc()).limit(1)
+            )
+            if newest == rules.hash():
                 return
-            rules = Rules.model_validate(DEFAULT_RULES)
             session.add(
                 PolicyRecord(id=uuid7(), hash=rules.hash(), **rules.model_dump())
             )

@@ -45,7 +45,7 @@ from palisade_api.orders.store import Orders
 from palisade_api.paypal.auth import PayPalAuth
 from palisade_api.paypal.client import PayPalClient
 from palisade_api.policy.engine import Policies
-from palisade_api.shop.cart import Carts
+from palisade_api.shop.cart import Cart, Carts
 from palisade_api.shop.catalog import Catalog
 from palisade_api.shop.router import carts as carts_dependency
 from palisade_api.shop.router import catalog as catalog_dependency
@@ -450,8 +450,53 @@ async def test_the_shoppers_approval_lets_the_agent_pay(
 
 
 @pytest.mark.usefixtures("shop")
-async def test_a_refusal_reaches_the_shopper_and_the_log(
+async def test_the_agent_reads_the_cart_the_shopper_filled(
     client: httpx2.AsyncClient, wallet_id: UUID, model: ScriptedModel
+) -> None:
+    fresh = await start(client, wallet_id)
+    model.turns.append([Call("get_cart", {})])
+    [nothing] = tool_results(
+        await send(client, fresh, {"type": "message", "text": "What is in my bag?"})
+    )
+    assert (nothing.ok, nothing.summary, nothing.attachment) == (
+        True,
+        "No cart yet",
+        None,
+    )
+    created = await client.post("/api/shop/carts", json={"wallet_id": str(wallet_id)})
+    cart_id = Cart.model_validate_json(created.content).id
+    filled = await client.put(
+        f"/api/shop/carts/{cart_id}/lines",
+        json={"product_id": "hoka-mach-x-2", "size": "9.5", "quantity": 2},
+    )
+    assert filled.status_code == 200, filled.text
+    response = await client.post(
+        "/api/assistant/conversations",
+        json={"wallet_id": str(wallet_id), "cart_id": str(cart_id)},
+        headers=HEADERS,
+    )
+    conversation = CreatedConversation.model_validate_json(response.content)
+    model.turns.append([Call("get_cart", {})])
+
+    [read] = tool_results(
+        await send(
+            client, conversation, {"type": "message", "text": "Check out my cart"}
+        )
+    )
+
+    assert read.ok
+    assert read.attachment is not None
+    assert read.attachment.type == "cart"
+    assert (read.attachment.cart.id, read.attachment.cart.items) == (cart_id, 2)
+    assert read.summary == f"Cart: 2 pairs, ${read.attachment.cart.total.value}"
+
+
+@pytest.mark.usefixtures("shop")
+async def test_a_refusal_reaches_the_shopper_and_the_log(
+    client: httpx2.AsyncClient,
+    wallet_id: UUID,
+    model: ScriptedModel,
+    sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     conversation = await start(client, wallet_id)
     model.turns.append(
@@ -476,8 +521,8 @@ async def test_a_refusal_reaches_the_shopper_and_the_log(
 
     [refused] = tool_results(events)
     assert not refused.ok
-    assert "MANDATE_PENDING" in refused.summary
-    assert "Approve button" in refused.summary
+    # The shopper reads plain words; the code and the store's detail go to the log and to Claude.
+    assert refused.summary == "The store is still waiting for your approval."
     assert refused.attachment is None
     calls = [event for event in events if isinstance(event, ToolCallEvent)]
     assert calls[0].id == refused.id
@@ -486,6 +531,19 @@ async def test_a_refusal_reaches_the_shopper_and_the_log(
     )
     assert refusals[0].mandate_id == asked.attachment.mandate.id
     assert refusals[0].details["reasons"] == ["MANDATE_PENDING"]
+    async with sessions() as session:
+        failed_call = await session.scalar(
+            select(ActivityRecord)
+            .where(
+                ActivityRecord.conversation_id == conversation.id,
+                ActivityRecord.kind == "assistant_tool_call",
+            )
+            .order_by(ActivityRecord.id.desc())
+            .limit(1)
+        )
+    assert failed_call is not None
+    assert failed_call.details["summary"] == refused.summary
+    assert "MANDATE_PENDING" in str(failed_call.details["told"])
 
 
 @pytest.mark.usefixtures("shop")

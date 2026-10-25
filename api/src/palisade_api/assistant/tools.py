@@ -1,4 +1,4 @@
-"""The seven tools the in-page agent shops with, each a signed call to the store's own API.
+"""The eight tools the in-page agent shops with, each a signed call to the store's own API.
 
 Every call is shown to the shopper as it starts and as it ends, and lands in the activity log
 with whatever it created. A refusal from the store comes back to Claude as an error that says
@@ -47,6 +47,7 @@ ORDER = TypeAdapter(Order)
 CARDS_SHOWN = 6
 # What Claude should do about a refusal, by the reason code the store gives.
 NEXT_STEPS = {
+    "MANDATE_UNKNOWN": "That is not a mandate id. Pass the id request_mandate or check_mandate returned.",
     "MANDATE_REQUIRED": "Call request_mandate first; nothing is paid before the shopper approves.",
     "MANDATE_PENDING": "The shopper has not approved yet. Ask them to use the Approve button, then wait.",
     "MANDATE_DECLINED": "The shopper declined. Ask what they would like to change; do not retry.",
@@ -62,6 +63,25 @@ NEXT_STEPS = {
     "AGENT_DAILY_CAP_EXCEEDED": "The store's daily limit for agent purchases is reached. The shopper can still buy in the shop directly.",
     "AGENT_NOT_ALLOWED": "The store does not let this agent buy. The shopper can buy in the shop directly.",
     "CATEGORY_BLOCKED": "The store blocks agents from buying that category. Tell the shopper.",
+}
+# What the shopper reads when the store refuses, by reason code: plain words, no codes.
+REFUSALS = {
+    "MANDATE_UNKNOWN": "The store does not know that approval.",
+    "MANDATE_REQUIRED": "The store needs your approval before anything is paid.",
+    "MANDATE_PENDING": "The store is still waiting for your approval.",
+    "MANDATE_DECLINED": "You declined this request.",
+    "MANDATE_EXPIRED": "Your approval ran out.",
+    "MANDATE_USED": "That approval already paid for an order.",
+    "MANDATE_CART_MISMATCH": "The cart changed after you approved it.",
+    "MANDATE_CAP_EXCEEDED": "The total is over what you allowed.",
+    "MANDATE_CATEGORY_NOT_ALLOWED": "Your approval does not cover that category.",
+    "MANDATE_WALLET_MISMATCH": "Your approval was for a different wallet.",
+    "MANDATE_AGENT_MISMATCH": "Your approval was for a different agent.",
+    "POLICY_CHANGED": "The store's rules changed after you approved.",
+    "ORDER_CAP_EXCEEDED": "The store caps what an agent may spend on one order.",
+    "AGENT_DAILY_CAP_EXCEEDED": "The store's daily limit for agent purchases is reached.",
+    "AGENT_NOT_ALLOWED": "The store does not let this agent buy.",
+    "CATEGORY_BLOCKED": "The store does not let agents buy that category.",
 }
 
 MandateKindInput = Literal["cart", "intent"]
@@ -144,6 +164,11 @@ SPECS: tuple[Spec, ...] = (
         ),
     ),
     Spec(
+        "get_cart",
+        """What the shopper's cart holds right now: every line with its shoe, size, quantity, and price, and the total. It is the same cart the shopper fills in the shop, so call it when they mention their cart or bag, ask you to check out, or before a cart mandate for shoes you did not add yourself. An empty result means there is nothing to pay for yet.""",
+        (),
+    ),
+    Spec(
         "set_cart_line",
         f"""Set how many pairs of one shoe in one size the shopper's cart holds; 0 removes the line. Creates the cart on the first call. Use it only after the shopper has confirmed the shoe and the size. Returns the whole cart with its total. The cart holds at most {MAX_PER_LINE} pairs of one shoe in one size.""",
         (
@@ -207,6 +232,12 @@ def next_step(detail: str) -> str:
     """The store's refusal with the step Claude should take, when the reason code is a known one."""
     hints = [hint for code, hint in NEXT_STEPS.items() if code in detail]
     return f"{detail}. {hints[0]}" if hints else detail
+
+
+def shopper_words(detail: str) -> str:
+    """The store's refusal as the shopper reads it: each reason in plain words, no codes."""
+    reasons = [words for code, words in REFUSALS.items() if code in detail]
+    return " ".join(reasons) if reasons else detail
 
 
 def usd(amount: str) -> Money:
@@ -330,6 +361,7 @@ class Shopping:
         handlers: dict[ToolName, Handler] = {
             "search_products": self.search_products,
             "get_product": self.get_product,
+            "get_cart": self.get_cart,
             "set_cart_line": self.set_cart_line,
             "request_mandate": self.request_mandate,
             "check_mandate": self.check_mandate,
@@ -385,6 +417,19 @@ class Shopping:
             ),
         )
 
+    async def get_cart(self) -> Outcome:
+        cart = await self._current_cart()
+        if cart is None:
+            return Outcome(
+                result={
+                    "lines": [],
+                    "total_usd": "0.00",
+                    "note": "The shopper has no open cart; set_cart_line starts one.",
+                },
+                summary="No cart yet",
+            )
+        return self._cart_outcome(cart)
+
     async def set_cart_line(self, product_id: str, size: str, quantity: int) -> Outcome:
         cart_id = await self._open_cart()
         cart = CART.validate_python(
@@ -393,13 +438,7 @@ class Shopping:
                 {"product_id": product_id, "size": size, "quantity": quantity},
             )
         )
-        items = sum(line.quantity for line in cart.lines)
-        pairs = "pair" if items == 1 else "pairs"
-        return Outcome(
-            result=cart_result(cart),
-            summary=f"Cart: {items} {pairs}, ${cart.total.value}",
-            attachment=CartAttachment(type="cart", cart=cart_summary(cart)),
-        )
+        return self._cart_outcome(cart)
 
     async def request_mandate(
         self, kind: MandateKindInput, cap_usd: str, categories: list[str]
@@ -456,6 +495,16 @@ class Shopping:
         return self._order_outcome(order)
 
     @staticmethod
+    def _cart_outcome(cart: Cart) -> Outcome:
+        items = sum(line.quantity for line in cart.lines)
+        pairs = "pair" if items == 1 else "pairs"
+        return Outcome(
+            result=cart_result(cart),
+            summary=f"Cart: {items} {pairs}, ${cart.total.value}",
+            attachment=CartAttachment(type="cart", cart=cart_summary(cart)),
+        )
+
+    @staticmethod
     def _order_outcome(order: Order) -> Outcome:
         return Outcome(
             result=order_result(order),
@@ -465,37 +514,38 @@ class Shopping:
             order_id=order.id,
         )
 
+    async def _current_cart(self) -> Cart | None:
+        """The conversation's cart while it is open; None when there is none or it was paid for."""
+        if self.cart_id is None:
+            return None
+        try:
+            cart = CART.validate_python(
+                await self._shop.get(f"/api/shop/carts/{self.cart_id}")
+            )
+        except ShopError as error:
+            if error.status_code != 404:
+                raise
+            return None
+        return cart if cart.status == "open" else None
+
     async def _filled_cart(self) -> Cart:
         """The conversation's open cart with lines in it.
 
         Raises:
             ToolError: there is no such cart.
         """
-        empty = ToolError(
-            "The cart is empty; add shoes before asking for a cart mandate."
-        )
-        if self.cart_id is None:
-            raise empty
-        cart = CART.validate_python(
-            await self._shop.get(f"/api/shop/carts/{self.cart_id}")
-        )
-        if cart.status != "open" or not cart.lines:
-            raise empty
+        cart = await self._current_cart()
+        if cart is None or not cart.lines:
+            raise ToolError(
+                "The cart is empty; add shoes before asking for a cart mandate."
+            )
         return cart
 
     async def _open_cart(self) -> UUID:
         """The conversation's open cart, or a new one when there is none or it was checked out."""
-        if self.cart_id is not None:
-            try:
-                cart = CART.validate_python(
-                    await self._shop.get(f"/api/shop/carts/{self.cart_id}")
-                )
-            except ShopError as error:
-                if error.status_code != 404:
-                    raise
-            else:
-                if cart.status == "open":
-                    return cart.id
+        cart = await self._current_cart()
+        if cart is not None:
+            return cart.id
         cart = CART.validate_python(
             await self._shop.post(
                 "/api/shop/carts", {"wallet_id": str(self._wallet_id)}
@@ -517,13 +567,16 @@ class Shopping:
             try:
                 outcome = await handler(**arguments)
             except ShopError as error:
-                summary = await self._failed(
-                    call_id, spec.name, arguments, next_step(error.detail)
+                told = next_step(error.detail)
+                await self._failed(
+                    call_id, spec.name, arguments, shopper_words(error.detail), told
                 )
-                raise ToolError(summary) from error
+                raise ToolError(told) from error
             except ToolError as error:
-                summary = await self._failed(call_id, spec.name, arguments, str(error))
-                raise ToolError(summary) from error
+                await self._failed(
+                    call_id, spec.name, arguments, str(error), str(error)
+                )
+                raise
             self._emit(
                 ToolResultEvent(
                     type="tool_result",
@@ -561,15 +614,17 @@ class Shopping:
         call_id: str,
         name: ToolName,
         arguments: dict[str, JsonValue],
-        summary: str,
-    ) -> str:
+        shown: str,
+        told: str,
+    ) -> None:
+        """Show the shopper why the call failed, in their words, and log that with Claude's."""
         self._emit(
             ToolResultEvent(
                 type="tool_result",
                 id=call_id,
                 tool=name,
                 ok=False,
-                summary=summary,
+                summary=shown,
                 attachment=None,
             )
         )
@@ -580,6 +635,6 @@ class Shopping:
             tool=name,
             input=arguments,
             ok=False,
-            summary=summary,
+            summary=shown,
+            told=told,
         )
-        return summary
