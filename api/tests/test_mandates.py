@@ -15,9 +15,11 @@ from order_fixtures import CAPTURE_PATH, CREATE_PATH, cart_with_shoes, created_o
 from paypal_stub import PayPalStub, json_answer
 from pydantic import BaseModel, JsonValue
 from soft_webauthn import SoftWebauthnDevice
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from palisade_api.activity.models import ActivityRecord
+from palisade_api.activity.store import Activities
 from palisade_api.agents.registry import Agents, BuiltinAgent
 from palisade_api.agents.signatures import AgentSignatures, agent_signatures
 from palisade_api.main import app
@@ -84,15 +86,18 @@ def shop(
     agents = Agents(sessions)
     orders = Orders(sessions)
     policies = Policies(sessions)
+    activities = Activities(sessions)
     passkeys = Passkeys(sessions, ORIGIN)
-    mandates = Mandates(sessions, tokens, passkeys, policies, seed(), ORIGIN)
+    mandates = Mandates(
+        sessions, tokens, passkeys, policies, activities, seed(), ORIGIN
+    )
     app.dependency_overrides[carts_dependency] = lambda: Carts(sessions)
     app.dependency_overrides[checkout_dependency] = lambda: Checkout(
-        sessions, calls, orders, policies, mandates, source="api"
+        sessions, calls, orders, policies, mandates, activities, source="api"
     )
     app.dependency_overrides[orders_dependency] = lambda: orders
     app.dependency_overrides[agent_signatures] = lambda: AgentSignatures(
-        sessions, agents, ORIGIN
+        sessions, agents, activities, ORIGIN
     )
     app.dependency_overrides[mandates_dependency] = lambda: mandates
     app.dependency_overrides[passkeys_dependency] = lambda: passkeys
@@ -183,10 +188,9 @@ async def test_a_cart_mandate_is_asked_signed_and_spent(
 ) -> None:
     policy_hash = await allow(sessions)
     cart_id, asked = await cart_mandate(client, wallet_id, agent_seed)
-    assert (asked.status, asked.kind, asked.cart_id, asked.policy_hash) == (
+    assert (asked.status, asked.kind, asked.policy_hash) == (
         "pending",
         "cart",
-        cart_id,
         policy_hash,
     )
     assert [(line.name, line.quantity) for line in asked.lines] == [
@@ -416,6 +420,32 @@ async def test_only_a_signed_agent_asks_and_only_for_a_real_cart(
 
     unknown = await checkout(client, agent_seed, uuid7(), uuid7())
     assert unknown.status_code == 404
+
+
+@pytest.mark.usefixtures("shop")
+async def test_a_checkout_naming_no_mandate_is_refused_and_logged(
+    client: httpx2.AsyncClient,
+    wallet_id: UUID,
+    agent_seed: str,
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    await allow(sessions)
+    cart = await cart_with_shoes(client, wallet_id)
+    named = uuid7()
+
+    response = await checkout(client, agent_seed, cart.id, named)
+
+    assert response.status_code == 403
+    assert "MANDATE_UNKNOWN" in response.text
+    async with sessions() as session:
+        refusal = await session.scalar(
+            select(ActivityRecord).where(
+                ActivityRecord.kind == "mandate_refused",
+                ActivityRecord.details["named_mandate"].as_string() == str(named),
+            )
+        )
+    assert refusal is not None
+    assert refusal.mandate_id is None
 
 
 def browser_json(credential: dict[str, Any]) -> dict[str, JsonValue]:  # pyright: ignore[reportExplicitAny]

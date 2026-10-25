@@ -35,8 +35,8 @@ export const meta: Route.MetaFunction = ({ error }) => [
       error === null || error === undefined
         ? siteTitle
         : isRouteErrorResponse(error) && error.status === 404
-          ? "Page Not Found"
-          : "Something Went Wrong",
+          ? "Page not Found"
+          : "Something went Wrong",
   },
   { property: "og:title", content: siteTitle },
   { property: "og:type", content: "website" },
@@ -82,7 +82,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
     <main className="theme-palisade flex min-h-dvh flex-col items-center justify-center bg-background px-6 text-center text-foreground">
       <PalisadeLogo className="size-10 text-primary" />
       <h1 className="mt-4 text-2xl font-semibold tracking-tight">
-        {missing ? "Page Not Found" : "Something Went Wrong"}
+        {missing ? "Page not Found" : "Something went Wrong"}
       </h1>
       <p className="mt-2 max-w-md text-sm text-muted-foreground">
         {missing

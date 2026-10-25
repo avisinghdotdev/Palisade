@@ -19,6 +19,7 @@ from paypal_stub import PayPalStub, json_answer, timeout
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from palisade_api.activity.store import Activities
 from palisade_api.main import app
 from palisade_api.orders.calls import PayPalCalls
 from palisade_api.orders.checkout import Checkout, CheckoutFailed
@@ -50,12 +51,15 @@ class Shop:
         self.sessions = sessions
         self.orders = orders
         mandates = mandates_for(sessions)
+        activities = Activities(sessions)
         self.checkout = Checkout(
-            sessions, calls, orders, policies, mandates, source="api"
+            sessions, calls, orders, policies, mandates, activities, source="api"
         )
         self.repairs = Repairs(
             sessions,
-            Checkout(sessions, calls, orders, policies, mandates, source="repair"),
+            Checkout(
+                sessions, calls, orders, policies, mandates, activities, source="repair"
+            ),
             client,
         )
 

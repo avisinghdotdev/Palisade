@@ -1,11 +1,31 @@
 import { useSyncExternalStore } from "react";
 
-/** What the browser remembers about its shopper: their linked wallet, who pays, and the open cart. */
+/**
+ * What the browser remembers about its shopper: their linked wallet, who pays, the open cart,
+ * the chat with the assistant, and the code that opens it.
+ */
 const WALLET_KEY = "palisade.wallet";
 const PAYS_WITH_DEMO_KEY = "palisade.pays-with-demo";
 const CART_KEY = "palisade.cart";
 const PENDING_LINK_KEY = "palisade.pending-wallet-link";
 const PASSKEY_KEY = "palisade.passkey";
+const CONVERSATION_KEY = "palisade.conversation";
+const CHAT_KEY_KEY = "palisade.chat-key";
+const CHATS_KEY = "palisade.chats";
+// Past chats the browser lists; older ones fall off the end.
+const CHATS_KEPT = 20;
+
+/**
+ * A chat this browser had with the assistant: enough to list it and open it again. The key is
+ * the one the API handed out when the chat started; nothing else opens the chat.
+ */
+export interface RememberedChat {
+  id: string;
+  key: string;
+  walletId: string;
+  title: string;
+  at: string;
+}
 
 const listeners = new Set<() => void>();
 
@@ -33,16 +53,63 @@ function useStored(key: string): null | string {
   );
 }
 
+function isRememberedChat(value: unknown): value is RememberedChat {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "id" in value &&
+    typeof value.id === "string" &&
+    "key" in value &&
+    typeof value.key === "string" &&
+    "walletId" in value &&
+    typeof value.walletId === "string" &&
+    "title" in value &&
+    typeof value.title === "string" &&
+    "at" in value &&
+    typeof value.at === "string"
+  );
+}
+
+/** The stored list, dropping anything an older build or a hand edit left in a different shape. */
+function parseChats(raw: null | string): RememberedChat[] {
+  if (raw === null) return [];
+  const parsed: unknown = JSON.parse(raw);
+  return Array.isArray(parsed) ? parsed.filter(isRememberedChat) : [];
+}
+
 export function useShopper() {
   const walletId = useStored(WALLET_KEY);
   const paysWithDemo = useStored(PAYS_WITH_DEMO_KEY) !== null;
   const cartId = useStored(CART_KEY);
+  const conversationId = useStored(CONVERSATION_KEY);
+  const chatKey = useStored(CHAT_KEY_KEY);
+  const chats = parseChats(useStored(CHATS_KEY));
   return {
     /** The visitor's own linked wallet, kept while the demo buyer pays; null until one is linked. */
     walletId,
     /** True when the demo buyer pays: no wallet of their own, or they chose the demo buyer. */
     paysWithDemo: walletId === null || paysWithDemo,
     cartId,
+    /** The chat with the assistant this browser is in the middle of; null before the first message. */
+    conversationId,
+    /** The code that opens the chat, kept so a reload does not ask for it again. */
+    chatKey,
+    /** This browser's chats, newest first. */
+    chats,
+    rememberChat: (chat: RememberedChat) => {
+      write(
+        CHATS_KEY,
+        JSON.stringify(
+          [chat, ...chats.filter((other) => other.id !== chat.id)].slice(
+            0,
+            CHATS_KEPT,
+          ),
+        ),
+      );
+    },
+    forgetChat: (id: string) => {
+      write(CHATS_KEY, JSON.stringify(chats.filter((chat) => chat.id !== id)));
+    },
     setWalletId: (id: string) => {
       write(WALLET_KEY, id);
     },
@@ -52,7 +119,18 @@ export function useShopper() {
     setCartId: (id: null | string) => {
       write(CART_KEY, id);
     },
+    setConversationId: (id: null | string) => {
+      write(CONVERSATION_KEY, id);
+    },
+    setChatKey: (key: null | string) => {
+      write(CHAT_KEY_KEY, key);
+    },
   };
+}
+
+/** The chat code for the API client, which sends it on every chat request. */
+export function storedChatKey(): string | undefined {
+  return localStorage.getItem(CHAT_KEY_KEY) ?? undefined;
 }
 
 /** PayPal came back with a wallet link this browser, at this web address, did not start. */

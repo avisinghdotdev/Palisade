@@ -66,6 +66,7 @@ var apiSecrets = [
   { env: 'MCP_AGENT_KEY', secret: 'mcp-agent-key' }
   { env: 'MANDATE_ISSUER_KEY', secret: 'mandate-issuer-key' }
   { env: 'DEMO_SIGNER_KEY', secret: 'demo-signer-key' }
+  { env: 'CHAT_ACCESS_KEY', secret: 'chat-access-key' }
 ]
 var apiSecretEnvironment = [for item in apiSecrets: { name: item.env, secretRef: item.secret }]
 var apiEnvironment = [
