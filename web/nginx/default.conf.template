@@ -44,6 +44,14 @@ server {
     proxy_read_timeout 300s;
   }
 
+  # MCP clients post here; a reply may stream as server-sent events, and a tool call that
+  # pays takes a few seconds.
+  location = /api/shop/mcp {
+    proxy_pass http://${API_UPSTREAM};
+    proxy_buffering off;
+    proxy_read_timeout 300s;
+  }
+
   # The platform's health probes, every few seconds, so they stay out of the access log.
   location = /health {
     access_log off;

@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
+from starlette.types import ASGIApp
 
 from palisade_api.activity import router as activity_router
 from palisade_api.activity.store import Activities
@@ -31,6 +32,7 @@ from palisade_api.mandates import router as mandates_router
 from palisade_api.mandates.passkeys import Passkeys
 from palisade_api.mandates.service import Mandates
 from palisade_api.mandates.tokens import MandateTokens
+from palisade_api.mcp.server import MOUNT, MountedServer, asgi, build
 from palisade_api.migrate import upgrade_to_head
 from palisade_api.orders import router as orders_router
 from palisade_api.orders import webhooks as order_webhooks
@@ -58,6 +60,7 @@ from palisade_api.webhooks.verification import WebhookVerifier
 # A hung connection fails within this and is logged, instead of holding the caller.
 READY_TIMEOUT_SECONDS = 2
 SHOPPER_AGENT = "palisade-shopper"
+MCP_AGENT = "palisade-mcp"
 
 logger = structlog.stdlib.get_logger(__name__)
 
@@ -79,6 +82,7 @@ class State(TypedDict):
     activities: Activities
     chat_access: ChatAccess
     assistant: Assistant
+    mcp_app: ASGIApp
 
 
 @asynccontextmanager
@@ -107,9 +111,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[State]:
         )
         await agents.register(
             BuiltinAgent(
-                "palisade-mcp",
-                "Palisade MCP",
-                settings.mcp_agent_key.get_secret_value(),
+                MCP_AGENT, "MCP Agent", settings.mcp_agent_key.get_secret_value()
             )
         )
         await policies.ensure_current()
@@ -186,6 +188,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[State]:
             claude = await stack.enter_async_context(
                 AsyncAnthropic(api_key=settings.anthropic_api_key.get_secret_value())
             )
+            mcp = build(
+                AgentHttp(
+                    shop_http,
+                    AgentSigner(MCP_AGENT, settings.mcp_agent_key.get_secret_value()),
+                ),
+                activities,
+                wallets,
+                MCP_AGENT,
+                settings.public_origin,
+            )
+            mcp_app = asgi(mcp)
+            await stack.enter_async_context(mcp.session_manager.run())
             state = State(
                 engine=engine,
                 paypal_auth=auth,
@@ -227,6 +241,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[State]:
                     activities,
                     SHOPPER_AGENT,
                 ),
+                mcp_app=mcp_app,
             )
             local_state.update(state)
             yield state
@@ -244,6 +259,8 @@ app.include_router(orders_router.router)
 app.include_router(mandates_router.router)
 app.include_router(activity_router.router)
 app.include_router(assistant_router.router)
+# After the routers, so the shop's own paths win and only the MCP endpoint falls through.
+app.mount(MOUNT, MountedServer(), name="mcp")
 
 
 class Health(BaseModel):
