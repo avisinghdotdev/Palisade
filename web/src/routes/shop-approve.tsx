@@ -168,11 +168,22 @@ function useClosing(): boolean {
   return closing;
 }
 
+/** Where the buyer goes next: a window on its way to closing says so and shows it is working. */
+function Next({ closing }: { closing: boolean }) {
+  return closing ? (
+    <p className="mt-4 flex items-center justify-center gap-2 text-sm font-medium">
+      <LoaderCircle aria-hidden className="size-4 motion-safe:animate-spin" />
+      Taking you back to Ridgeline Running…
+    </p>
+  ) : (
+    <p className="mt-4 text-sm text-muted-foreground">
+      You can close this tab and go back to the chat.
+    </p>
+  );
+}
+
 function Outcome({ mandate }: { mandate: Mandate }) {
   const closing = useClosing();
-  const back = closing
-    ? "Returning you to the chat…"
-    : "You can close this tab and go back to the chat.";
   if (mandate.status === "signed" && mandate.signed_by !== null) {
     return (
       <div className="text-center" role="status">
@@ -180,8 +191,9 @@ function Outcome({ mandate }: { mandate: Mandate }) {
         <h1 className="mt-3 text-lg font-semibold tracking-tight">Approved</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           You signed this with {SIGNER_LABELS[mandate.signed_by]}.{" "}
-          {mandate.agent.name} finishes the purchase from here. {back}
+          {mandate.agent.name} finishes the purchase from here.
         </p>
+        <Next closing={closing} />
       </div>
     );
   }
@@ -202,9 +214,9 @@ function Outcome({ mandate }: { mandate: Mandate }) {
       <p className="mt-1 text-sm text-muted-foreground">
         {expired
           ? `Nothing was bought. ${mandate.agent.name} has to ask again.`
-          : "Nothing will be bought. Tell the assistant what to change."}{" "}
-        {back}
+          : "Nothing will be bought. Tell the assistant what to change."}
       </p>
+      <Next closing={closing} />
     </div>
   );
 }

@@ -77,6 +77,42 @@ function parseChats(raw: null | string): RememberedChat[] {
   return Array.isArray(parsed) ? parsed.filter(isRememberedChat) : [];
 }
 
+// The setters read and write storage directly, so they keep one identity across renders and an
+// effect that lists one never re-runs for it.
+function rememberChat(chat: RememberedChat): void {
+  const others = parseChats(localStorage.getItem(CHATS_KEY)).filter(
+    (other) => other.id !== chat.id,
+  );
+  write(CHATS_KEY, JSON.stringify([chat, ...others].slice(0, CHATS_KEPT)));
+}
+
+function forgetChat(id: string): void {
+  const kept = parseChats(localStorage.getItem(CHATS_KEY)).filter(
+    (chat) => chat.id !== id,
+  );
+  write(CHATS_KEY, JSON.stringify(kept));
+}
+
+function setWalletId(id: string): void {
+  write(WALLET_KEY, id);
+}
+
+function setPaysWithDemo(demo: boolean): void {
+  write(PAYS_WITH_DEMO_KEY, demo ? "true" : null);
+}
+
+function setCartId(id: null | string): void {
+  write(CART_KEY, id);
+}
+
+function setConversationId(id: null | string): void {
+  write(CONVERSATION_KEY, id);
+}
+
+function setChatKey(key: null | string): void {
+  write(CHAT_KEY_KEY, key);
+}
+
 export function useShopper() {
   const walletId = useStored(WALLET_KEY);
   const paysWithDemo = useStored(PAYS_WITH_DEMO_KEY) !== null;
@@ -96,35 +132,13 @@ export function useShopper() {
     chatKey,
     /** This browser's chats, newest first. */
     chats,
-    rememberChat: (chat: RememberedChat) => {
-      write(
-        CHATS_KEY,
-        JSON.stringify(
-          [chat, ...chats.filter((other) => other.id !== chat.id)].slice(
-            0,
-            CHATS_KEPT,
-          ),
-        ),
-      );
-    },
-    forgetChat: (id: string) => {
-      write(CHATS_KEY, JSON.stringify(chats.filter((chat) => chat.id !== id)));
-    },
-    setWalletId: (id: string) => {
-      write(WALLET_KEY, id);
-    },
-    setPaysWithDemo: (demo: boolean) => {
-      write(PAYS_WITH_DEMO_KEY, demo ? "true" : null);
-    },
-    setCartId: (id: null | string) => {
-      write(CART_KEY, id);
-    },
-    setConversationId: (id: null | string) => {
-      write(CONVERSATION_KEY, id);
-    },
-    setChatKey: (key: null | string) => {
-      write(CHAT_KEY_KEY, key);
-    },
+    rememberChat,
+    forgetChat,
+    setWalletId,
+    setPaysWithDemo,
+    setCartId,
+    setConversationId,
+    setChatKey,
   };
 }
 
