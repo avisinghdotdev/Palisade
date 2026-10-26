@@ -248,6 +248,20 @@ async def test_a_wrong_cart_id_is_refused_in_words(server: MCPServer) -> None:
     assert "cart_id must be" in refused.content[0].model_dump_json()
 
 
+async def test_a_cart_mandate_without_a_cart_id_asks_for_one(server: MCPServer) -> None:
+    async with Client(server, raise_exceptions=True) as agent:
+        added = await agent.call_tool(
+            "set_cart_line",
+            {"product_id": "hoka-mach-x-2", "size": "9.5", "quantity": 1},
+        )
+        assert not added.is_error
+        refused = await agent.call_tool("request_mandate", {"kind": "cart"})
+    assert refused.is_error
+    message = refused.content[0].model_dump_json()
+    assert "pass the cart_id that set_cart_line returned" in message
+    assert "empty" not in message
+
+
 async def test_the_endpoint_answers_over_streamable_http(server: MCPServer) -> None:
     """The mounted path serves the protocol over HTTP, the way a remote client reaches it."""
     mcp_app = asgi(server)
