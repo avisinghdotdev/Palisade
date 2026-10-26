@@ -49,7 +49,7 @@ CARDS_SHOWN = 6
 NEXT_STEPS = {
     "MANDATE_UNKNOWN": "That is not a mandate id. Pass the id request_mandate or check_mandate returned.",
     "MANDATE_REQUIRED": "Call request_mandate first; nothing is paid before the shopper approves.",
-    "MANDATE_PENDING": "The shopper has not approved yet. Ask them to use the Approve button, then wait.",
+    "MANDATE_PENDING": "The shopper has not approved yet. Ask them to approve on the consent page, then wait.",
     "MANDATE_DECLINED": "The shopper declined. Ask what they would like to change; do not retry.",
     "MANDATE_EXPIRED": "The approval ran out. Request a new mandate.",
     "MANDATE_USED": "That mandate already paid for an order. Request a new one for this purchase.",
@@ -312,6 +312,7 @@ def mandate_result(mandate: Mandate) -> dict[str, JsonValue]:
         "spent_usd": mandate.spent.value,
         "categories": list(mandate.categories),
         "expires_at": mandate.expires_at.isoformat(),
+        "consent_path": mandate.consent_path,
     }
 
 
@@ -337,14 +338,18 @@ def score(product: Product, words: list[str]) -> int:
 
 @final
 class Shopping:
-    """One conversation's shopping while a turn runs: its cart, and where events and the log go."""
+    """One shopper's shopping through the store's API: its cart, and where events and the log go.
+
+    The chat gives it a conversation and a panel to show each call in; the MCP endpoint gives it
+    neither, and only the log sees its calls.
+    """
 
     def __init__(
         self,
         shop: AgentHttp,
         activities: Activities,
         agent_id: str,
-        conversation_id: UUID,
+        conversation_id: UUID | None,
         wallet_id: UUID,
         cart_id: UUID | None,
         emit: Emit,
@@ -356,9 +361,7 @@ class Shopping:
         self._wallet_id = wallet_id
         self.cart_id: UUID | None = cart_id
         self._emit = emit
-
-    def tools(self) -> list[Tool]:
-        handlers: dict[ToolName, Handler] = {
+        self._handlers: dict[ToolName, Handler] = {
             "search_products": self.search_products,
             "get_product": self.get_product,
             "get_cart": self.get_cart,
@@ -368,7 +371,53 @@ class Shopping:
             "checkout": self.checkout,
             "get_order": self.get_order,
         }
-        return [self._tool(spec, handlers[spec.name]) for spec in SPECS]
+
+    def tools(self) -> list[Tool]:
+        return [self._tool(spec) for spec in SPECS]
+
+    async def call(self, name: ToolName, **arguments: JsonValue) -> Outcome:
+        """Run one tool the way the shopper and the log see it: shown as it starts and ends, logged.
+
+        Raises:
+            ToolError: the store refused or the call was wrong; the message says what to do next.
+        """
+        call_id = uuid4().hex[:12]
+        self._emit(
+            ToolCallEvent(type="tool_call", id=call_id, tool=name, input=arguments)
+        )
+        try:
+            outcome = await self._handlers[name](**arguments)
+        except ShopError as error:
+            told = next_step(error.detail)
+            await self._failed(
+                call_id, name, arguments, shopper_words(error.detail), told
+            )
+            raise ToolError(told) from error
+        except ToolError as error:
+            await self._failed(call_id, name, arguments, str(error), str(error))
+            raise
+        self._emit(
+            ToolResultEvent(
+                type="tool_result",
+                id=call_id,
+                tool=name,
+                ok=True,
+                summary=outcome.summary,
+                attachment=outcome.attachment,
+            )
+        )
+        await self._activities.record(
+            "assistant_tool_call",
+            agent_id=self._agent_id,
+            conversation_id=self._conversation_id,
+            mandate_id=outcome.mandate_id,
+            order_id=outcome.order_id,
+            tool=name,
+            input=arguments,
+            ok=True,
+            summary=outcome.summary,
+        )
+        return outcome
 
     async def search_products(self, query: str, category: str) -> Outcome:
         products = PRODUCTS.validate_python(await self._shop.get("/api/shop/products"))
@@ -554,51 +603,11 @@ class Shopping:
         self.cart_id = cart.id
         return cart.id
 
-    def _tool(self, spec: Spec, handler: Handler) -> Tool:
-        """Wrap a handler so each call is shown to the shopper, logged, and safe for Claude."""
+    def _tool(self, spec: Spec) -> Tool:
+        """The spec as Claude's runner calls it: the model's arguments in, the result as text out."""
 
         async def run(**arguments: JsonValue) -> str:
-            call_id = uuid4().hex[:12]
-            self._emit(
-                ToolCallEvent(
-                    type="tool_call", id=call_id, tool=spec.name, input=arguments
-                )
-            )
-            try:
-                outcome = await handler(**arguments)
-            except ShopError as error:
-                told = next_step(error.detail)
-                await self._failed(
-                    call_id, spec.name, arguments, shopper_words(error.detail), told
-                )
-                raise ToolError(told) from error
-            except ToolError as error:
-                await self._failed(
-                    call_id, spec.name, arguments, str(error), str(error)
-                )
-                raise
-            self._emit(
-                ToolResultEvent(
-                    type="tool_result",
-                    id=call_id,
-                    tool=spec.name,
-                    ok=True,
-                    summary=outcome.summary,
-                    attachment=outcome.attachment,
-                )
-            )
-            await self._activities.record(
-                "assistant_tool_call",
-                agent_id=self._agent_id,
-                conversation_id=self._conversation_id,
-                mandate_id=outcome.mandate_id,
-                order_id=outcome.order_id,
-                tool=spec.name,
-                input=arguments,
-                ok=True,
-                summary=outcome.summary,
-            )
-            return json.dumps(outcome.result)
+            return json.dumps((await self.call(spec.name, **arguments)).result)
 
         runner: ToolFunction = run
         return BetaAsyncFunctionTool[ToolFunction](
