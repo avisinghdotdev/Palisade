@@ -177,7 +177,7 @@ function Next({ closing }: { closing: boolean }) {
     </p>
   ) : (
     <p className="mt-4 text-sm text-muted-foreground">
-      You can close this tab and go back to the chat.
+      You can close this tab and go back to your agent.
     </p>
   );
 }

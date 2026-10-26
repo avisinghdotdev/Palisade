@@ -168,7 +168,12 @@ class ShopTools:
             ),
         ] = (),
     ) -> dict[str, JsonValue]:
-        """Ask the shopper to approve a purchase on the store's consent page. Give the shopper the consent_url to open in their browser, then call check_mandate until it reports signed. A cart mandate needs a cart with lines in it."""
+        """Ask the shopper to approve a purchase on the store's consent page. Give the shopper the consent_url to open in their browser, then call check_mandate until it reports signed. A cart mandate needs the cart_id of a cart with lines in it."""
+        # The endpoint keeps no cart between calls, so a missing id is the agent's slip, not an empty cart.
+        if kind == "cart" and cart_id == "":
+            raise ToolError(
+                "A cart mandate covers one cart: pass the cart_id that set_cart_line returned."
+            )
         outcome = await self._call(
             "request_mandate",
             cart_id,
