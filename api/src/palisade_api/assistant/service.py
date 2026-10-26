@@ -30,7 +30,7 @@ from palisade_api.assistant.events import (
     TurnEvent,
     TurnRequest,
 )
-from palisade_api.assistant.model import Model, Usage
+from palisade_api.assistant.model import Model, Refused, Usage
 from palisade_api.assistant.models import ConversationRecord, TurnRecord
 from palisade_api.assistant.tools import Shopping
 from palisade_api.mandates.service import Mandates
@@ -298,6 +298,17 @@ class Assistant:
                 [*history, *reply.messages],
                 merged(events),
                 reply.usage,
+            )
+        except Refused:
+            logger.warning(
+                "assistant_refused", conversation_id=str(started.conversation_id)
+            )
+            await self._release(started.conversation_id)
+            queue.put_nowait(
+                ErrorEvent(
+                    type="error",
+                    detail="The assistant will not answer that. Ask about shoes, sizes, or your order.",
+                )
             )
         except Exception:
             # The task is the last line of defence: an error here would otherwise vanish with
