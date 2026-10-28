@@ -1,4 +1,9 @@
-import { ArrowDown, ArrowRight, SendHorizontal } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowRight,
+  LoaderCircle,
+  SendHorizontal,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import type { Wallet } from "@/api/client";
@@ -43,14 +48,20 @@ export function AssistantChat({
   const submit = () => {
     const text = draft.trim();
     if (text === "" || assistant.busy || wallet === undefined) return;
-    assistant.send(text);
+    // The words come back to the box when the API did not take them.
+    assistant.send(text, () => {
+      setDraft((typed) => (typed === "" ? text : typed));
+    });
     setDraft("");
     setFollow(true);
   };
 
   const lastEvent = live?.events.at(-1);
-  const status =
-    live === null
+  // A turn the API is still answering that this panel is not streaming, as after a reload.
+  const unseen = live === null && assistant.busy;
+  const status = unseen
+    ? "The assistant is still answering"
+    : live === null
       ? assistant.awaited !== null
         ? "Waiting for your approval on the consent page"
         : turns.length > 0
@@ -96,9 +107,11 @@ export function AssistantChat({
                     <li key={suggestion}>
                       <button
                         className="group flex w-full items-center gap-2 rounded-lg border border-dashed bg-secondary/40 px-3 py-2.5 text-left text-sm transition-colors hover:border-solid hover:bg-secondary focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none disabled:opacity-50"
-                        disabled={wallet === undefined}
+                        disabled={wallet === undefined || assistant.busy}
                         onClick={() => {
-                          assistant.send(suggestion);
+                          assistant.send(suggestion, () => {
+                            setDraft(suggestion);
+                          });
                           setFollow(true);
                         }}
                         type="button"
@@ -158,6 +171,16 @@ export function AssistantChat({
           </Button>
         )}
       </div>
+      {unseen && (
+        <p className="flex items-center gap-2 border-t px-4 py-2 text-sm text-muted-foreground">
+          <LoaderCircle
+            aria-hidden
+            className="size-4 motion-safe:animate-spin"
+          />
+          Still answering your last message. The reply shows here when it is
+          done.
+        </p>
+      )}
       {assistant.problem !== null && (
         <p
           className="border-t bg-destructive/10 px-4 py-2 text-sm text-destructive"

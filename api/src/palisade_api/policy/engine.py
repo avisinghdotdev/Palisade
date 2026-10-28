@@ -8,16 +8,18 @@ from uuid import uuid7
 
 import structlog
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, Select, and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from palisade_api.orders.models import OrderRecord
 from palisade_api.policy.models import PolicyRecord
+from palisade_api.shop.models import CartRecord
 
 # An agent's purchases in this window count against its daily cap.
 DAILY_WINDOW = timedelta(hours=24)
-# Order statuses that hold or took the buyer's money.
-SPENDING_STATUSES = ("authorized", "capture_pending", "captured")
+# Order statuses that may hold or took the buyer's money: a create still waiting on PayPal
+# counts, so a second checkout running beside it cannot slip under a cap.
+SPENDING_STATUSES = ("creating", "authorized", "capture_pending", "captured")
 # The merchant's rules. Both caps sit far above any sandbox purchase, so no shopper is refused
 # on spend; the rules stay for a merchant that sets real ones.
 MERCHANT_RULES = {
@@ -84,6 +86,28 @@ def evaluate(policy: Policy, purchase: Purchase) -> list[str]:
     return reasons
 
 
+def spending(condition: ColumnElement[bool]) -> Select[int]:
+    """Cents the orders matching `condition` hold or may hold.
+
+    A `failed` order whose cart still waits on the repair job counts too: PayPal never answered
+    its create, so the money may be held, and the job may still capture it.
+    """
+    return (
+        select(func.coalesce(func.sum(OrderRecord.total_cents), 0))
+        .join(CartRecord, CartRecord.id == OrderRecord.cart_id)
+        .where(
+            condition,
+            or_(
+                OrderRecord.status.in_(SPENDING_STATUSES),
+                and_(
+                    OrderRecord.status == "failed",
+                    CartRecord.status == "checking_out",
+                ),
+            ),
+        )
+    )
+
+
 def policy(record: PolicyRecord) -> Policy:
     rules = Rules.model_validate(record, from_attributes=True)
     return Policy(rules=rules, hash=record.hash)
@@ -128,12 +152,13 @@ class Policies:
 
     @staticmethod
     async def spent_today(session: AsyncSession, agent_id: str) -> int:
-        """Cents the agent's orders hold or took in the last day."""
+        """Cents the agent's orders hold or may hold from the last day."""
         total = await session.scalar(
-            select(func.coalesce(func.sum(OrderRecord.total_cents), 0)).where(
-                OrderRecord.agent_id == agent_id,
-                OrderRecord.status.in_(SPENDING_STATUSES),
-                OrderRecord.created_at > func.now() - DAILY_WINDOW,
+            spending(
+                and_(
+                    OrderRecord.agent_id == agent_id,
+                    OrderRecord.created_at > func.now() - DAILY_WINDOW,
+                )
             )
         )
         return int(total or 0)

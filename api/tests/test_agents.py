@@ -1,7 +1,7 @@
 import base64
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
-from uuid import UUID
+from uuid import UUID, uuid7
 
 import httpx2
 import pytest
@@ -116,7 +116,9 @@ async def test_a_signature_by_an_unknown_key_is_refused(
     response = await client.send(signed(client, path, seed(), agent_id="stranger"))
 
     assert response.status_code == 401
-    assert "stranger" in response.json()["detail"]
+    # The key id is the caller's own text, so the public refusal does not repeat it.
+    assert "no agent has that key id" in response.text
+    assert "stranger" not in response.text
 
 
 @pytest.mark.usefixtures("shop")
@@ -130,6 +132,28 @@ async def test_a_signature_for_another_target_is_refused(
     response = await client.send(other_cart)
 
     assert response.status_code == 401
+
+
+@pytest.mark.usefixtures("shop")
+async def test_a_signed_digest_must_match_even_an_empty_body(
+    client: httpx2.AsyncClient, wallet_id: UUID, agent_seed: str
+) -> None:
+    path = await checkout_path(client, wallet_id)
+    with_body = signed(
+        client, path, agent_seed, json={"mandate_id": str(uuid7()), "mandate_key": "k"}
+    )
+    stripped = client.build_request("POST", path)
+    stripped.headers.update(
+        {
+            name: with_body.headers[name]
+            for name in ("Signature", "Signature-Input", "Content-Digest")
+        }
+    )
+
+    response = await client.send(stripped)
+
+    assert response.status_code == 401
+    assert "the body digest is missing or does not match" in response.json()["detail"]
 
 
 @pytest.mark.usefixtures("shop")

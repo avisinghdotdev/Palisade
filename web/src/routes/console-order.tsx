@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, Signature, Truck } from "lucide-react";
 import { Link } from "react-router";
 
-import type { Activity, Order } from "@/api/client";
+import type { Activity, MandateSummary, Order } from "@/api/client";
 
 import {
   ACTIVITY_LABELS,
@@ -114,6 +114,49 @@ function PayPalId({
       {note !== undefined && (
         <dd className="text-xs text-muted-foreground">{note}</dd>
       )}
+    </div>
+  );
+}
+
+/** The terms the buyer's signature covers, decoded from the mandate as it was issued. */
+function SignedTerms({ mandate }: { mandate: MandateSummary }) {
+  return (
+    <div className="py-3">
+      <dt className="text-xs text-muted-foreground">What the Buyer Signed</dt>
+      {mandate.kind === "cart" ? (
+        <dd className="mt-1">
+          <ul className="grid gap-0.5 text-sm">
+            {mandate.lines.map((line) => (
+              <li
+                className="flex justify-between gap-3"
+                key={`${line.product_id}/${line.size}`}
+              >
+                <span>
+                  {line.name},{" "}
+                  <span className="whitespace-nowrap">
+                    US {line.size} × {line.quantity}
+                  </span>
+                </span>
+                <span className="tabular-nums">
+                  {formatAmount(
+                    String(Number(line.unit_price.value) * line.quantity),
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </dd>
+      ) : (
+        <dd className="mt-0.5 text-sm">
+          Up to {formatAmount(mandate.cap.value)} in all, on{" "}
+          {mandate.categories.length === 0
+            ? "any shoes"
+            : `${mandate.categories.join(", ")} shoes`}
+        </dd>
+      )}
+      <dd className="text-xs text-muted-foreground">
+        Valid until {formatUtc(mandate.expires_at)}.
+      </dd>
     </div>
   );
 }
@@ -417,6 +460,7 @@ export default function ConsoleOrder({ params }: Route.ComponentProps) {
                       }
                       value={order.data.mandate.id}
                     />
+                    <SignedTerms mandate={order.data.mandate} />
                     <PayPalId
                       label="Signed By"
                       mono={false}

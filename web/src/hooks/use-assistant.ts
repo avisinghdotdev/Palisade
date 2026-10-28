@@ -13,6 +13,7 @@ import type {
   TurnRequest,
 } from "@/api/client";
 
+import { statusOf } from "@/api-errors";
 import { createConversation, sendMessage } from "@/api/client";
 import {
   cartQueryKey,
@@ -21,7 +22,7 @@ import {
   mandateOptions,
 } from "@/api/client/@tanstack/react-query.gen";
 import { client } from "@/api/client/client.gen";
-import { storedChatKey, useShopper } from "@/shopper";
+import { errorDetail, storedChatKey, useShopper } from "@/shopper";
 
 // The chat endpoints declare the access code as their security scheme; the client reads it
 // from storage for those requests and sends nothing extra anywhere else.
@@ -38,20 +39,30 @@ export interface LiveTurn {
 
 /** How often the panel asks after a mandate the shopper has been sent to approve. */
 const PENDING_MANDATE_REFETCH_MS = 3_000;
+/** How often the panel reads a conversation the API is still answering in, unseen. */
+const BUSY_REFETCH_MS = 2_000;
 const CHAT_TITLE_LENGTH = 80;
 
 const PROBLEMS: Record<number, string> = {
   401: "The access code no longer works. Enter it again.",
+  403: "This browser can no longer open that chat. Start a new one.",
   404: "This conversation is gone. Start a new one.",
   409: "The assistant is still answering. Give it a moment.",
 };
+const DROPPED =
+  "The connection dropped. The assistant may still be working; its answer shows here when it is done.";
+const UNREACHABLE =
+  "The store could not be reached. Check your connection and send again.";
 
-/** The streaming client reports a refused request as an error naming the status; the message for it. */
-function problemFor(error: unknown): string {
-  const status = Number(
-    /^SSE failed: (\d+)/.exec(error instanceof Error ? error.message : "")?.[1],
+/** A message the API refused before the turn began, so the shopper's words were not taken. */
+class NotSent extends Error {}
+
+/** The status the streaming client names when the API refused the request; undefined when the stream broke. */
+function streamStatus(error: unknown): number | undefined {
+  const match = /^SSE failed: (\d+)/.exec(
+    error instanceof Error ? error.message : "",
   );
-  return PROBLEMS[status] ?? "The connection dropped. Send your message again.";
+  return match === null ? undefined : Number(match[1]);
 }
 
 /** The turn's events with each run of streamed text joined into one block, as the API stores them. */
@@ -144,26 +155,33 @@ export function useAssistant(walletId: string | undefined) {
       headers: { "X-Conversation-Key": current?.key ?? "" },
     }),
     enabled: current !== null && chatKey !== null,
-    retry: false,
+    // A refusal is final; a failed read is tried again.
+    retry: (failures, error) => statusOf(error) === undefined && failures < 3,
+    // A turn the panel lost sight of (a dropped stream, a reload) runs on in the API.
+    refetchInterval: (query) =>
+      query.state.data?.busy === true ? BUSY_REFETCH_MS : false,
   });
 
-  // A conversation this browser has no key for, one the API refuses or no longer knows, or
-  // one paid by another wallet, is forgotten.
+  // A conversation the API refuses or no longer knows is forgotten, with its key; one this
+  // browser has no key for, or one paid by another wallet, is left. A wrong access code asks
+  // for the code again and forgets nothing, and a failed read waits for the next.
+  const readStatus = statusOf(conversation.error);
+  const gone = readStatus === 403 || readStatus === 404 ? conversationId : null;
   const stale =
-    conversation.isError ||
+    gone !== null ||
     (conversationId !== null && current === null) ||
     (current !== null &&
       walletId !== undefined &&
       current.walletId !== walletId);
-  const gone = conversation.isError ? conversationId : null;
   useEffect(() => {
     if (stale) setConversationId(null);
     if (gone !== null) forgetChat(gone);
-  }, [stale, gone, setConversationId, forgetChat]);
+    if (readStatus === 401) setChatKey(null);
+  }, [stale, gone, readStatus, setConversationId, forgetChat, setChatKey]);
 
   const send = useMutation({
     mutationFn: async (incoming: Incoming) => {
-      if (walletId === undefined) throw new Error("no wallet to pay with");
+      if (walletId === undefined) throw new NotSent("No wallet to pay with.");
       let chat = current;
       if (chat === null) {
         const created = await createConversation({
@@ -218,6 +236,7 @@ export function useAssistant(walletId: string | undefined) {
               (stored: Conversation | undefined) =>
                 stored && {
                   ...stored,
+                  busy: false,
                   cart_id: event.cart_id,
                   turns: [...stored.turns, turn],
                 },
@@ -245,13 +264,36 @@ export function useAssistant(walletId: string | undefined) {
           }
         }
       }
-      if (!finished) {
-        const detail = problemFor(failure);
-        if (detail === PROBLEMS[401]) setChatKey(null);
-        if (detail === PROBLEMS[404]) setConversationId(null);
-        setProblem(detail);
-      }
       setLive(null);
+      if (finished) return;
+      const status = streamStatus(failure);
+      if (status === undefined) {
+        // The turn runs on in the API and is stored when it ends; reading the chat shows it.
+        setProblem(DROPPED);
+        await queryClient.invalidateQueries({
+          queryKey: conversationQueryKey({
+            path: { conversation_id: id },
+            headers: opened,
+          }),
+        });
+        return;
+      }
+      if (status === 401) setChatKey(null);
+      if (status === 403 || status === 404) {
+        forgetChat(id);
+        setConversationId(null);
+      }
+      throw new NotSent(PROBLEMS[status] ?? errorDetail(failure));
+    },
+    onError: (error) => {
+      setLive(null);
+      setProblem(
+        error instanceof NotSent
+          ? error.message
+          : statusOf(error) === undefined
+            ? UNREACHABLE
+            : errorDetail(error),
+      );
     },
   });
 
@@ -279,8 +321,10 @@ export function useAssistant(walletId: string | undefined) {
     return bag;
   };
 
-  const { mutate: sendIncoming, isPending: busy } = send;
+  const { mutate: sendIncoming, isPending: sending } = send;
   const turns = stale ? [] : (conversation.data?.turns ?? []);
+  // Busy while this panel streams a turn, and while the API answers one the panel lost sight of.
+  const busy = sending || (!stale && conversation.data?.busy === true);
   const awaited = awaitedMandate(turns, live);
   const awaitedMandateQuery = useQuery({
     ...mandateOptions({ path: { mandate_id: awaited ?? "" } }),
@@ -290,7 +334,8 @@ export function useAssistant(walletId: string | undefined) {
         ? PENDING_MANDATE_REFETCH_MS
         : false,
   });
-  // The consent page answered: the agent is told once, and carries on from the answer.
+  // The consent page answered: the agent is told once, and carries on from the answer. An
+  // answer the API did not take is told again once the chat is free.
   const settled = awaitedMandateQuery.data;
   useEffect(() => {
     if (
@@ -302,18 +347,32 @@ export function useAssistant(walletId: string | undefined) {
       return;
     }
     answeredRef.current.add(settled.id);
-    sendIncoming({ type: "mandate", mandate_id: settled.id });
+    sendIncoming(
+      { type: "mandate", mandate_id: settled.id },
+      {
+        onError: () => {
+          answeredRef.current.delete(settled.id);
+        },
+      },
+    );
   }, [settled, busy, sendIncoming]);
 
   return {
     conversationId: stale ? null : conversationId,
     turns,
     live,
-    problem,
+    // A dropped stream's note stands only until the API has finished the turn it was about.
+    problem:
+      problem === DROPPED && conversation.data?.busy === false ? null : problem,
     busy,
     awaited,
-    send: (text: string) => {
-      sendIncoming({ type: "message", text });
+    /** Send the shopper's words with the bag they see now; `onNotSent` runs when they were not taken. */
+    send: (text: string, onNotSent: () => void) => {
+      if (busy) return;
+      sendIncoming(
+        { type: "message", text, cart_id: cartId },
+        { onError: onNotSent },
+      );
     },
     /** Leave the current chat where it is and start the next message in a new one. */
     reset: () => {

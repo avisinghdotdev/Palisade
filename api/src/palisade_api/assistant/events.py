@@ -49,7 +49,9 @@ class MandateCard(BaseModel):
     kind: MandateKind
     status: MandateStatus
     cap: Money
-    consent_path: str
+    # The consent page with the mandate's key, on the card of the request that issued it; a
+    # card from a later check has none.
+    consent_path: str | None = None
     expires_at: datetime
 
 
@@ -164,6 +166,8 @@ AssistantEvent = Annotated[
 class ShopperMessage(BaseModel):
     type: Literal["message"]
     text: str = Field(min_length=1, max_length=MESSAGE_LENGTH)
+    # The browser's open cart, so the agent works on the bag the shopper sees now.
+    cart_id: UUID | None = None
 
 
 class MandateOutcome(BaseModel):

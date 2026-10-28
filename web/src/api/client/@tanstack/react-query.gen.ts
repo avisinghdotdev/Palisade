@@ -4,7 +4,7 @@ import { type DefaultError, queryOptions, type UseMutationOptions } from '@tanst
 
 import { client } from '../client.gen';
 import { activity, approveMandate, assistantAccess, cart, checkout, confirmWalletLink, conversation, createCart, createConversation, createMandate, declineMandate, demoWallet, health, mandate, mandatePasskeyOptions, type Options, order, orderActivity, orders, paypalHealth, paypalWebhook, product, products, ready, registerPasskey, replayWebhookEvent, setCartLine, setCartWallet, shipOrder, startPasskeyRegistration, startWalletLink, wallet, webhookEvents } from '../sdk.gen';
-import type { ActivityData, ActivityError, ActivityResponse, ApproveMandateData, ApproveMandateError, ApproveMandateResponse, AssistantAccessData, AssistantAccessResponse, CartData, CartError, CartResponse, CheckoutData, CheckoutError, CheckoutResponse, ConfirmWalletLinkData, ConfirmWalletLinkError, ConfirmWalletLinkResponse, ConversationData, ConversationError, ConversationResponse, CreateCartData, CreateCartError, CreateCartResponse, CreateConversationData, CreateConversationError, CreateConversationResponse, CreateMandateData, CreateMandateError, CreateMandateResponse, DeclineMandateData, DeclineMandateError, DeclineMandateResponse, DemoWalletData, DemoWalletResponse, HealthData, HealthResponse, MandateData, MandateError, MandatePasskeyOptionsData, MandatePasskeyOptionsError, MandatePasskeyOptionsResponse, MandateResponse, OrderActivityData, OrderActivityError, OrderActivityResponse, OrderData, OrderError, OrderResponse, OrdersData, OrdersResponse, PaypalHealthData, PaypalHealthResponse, PaypalWebhookData, PaypalWebhookError, PaypalWebhookResponse, ProductData, ProductError, ProductResponse, ProductsData, ProductsResponse, ReadyData, ReadyResponse, RegisterPasskeyData, RegisterPasskeyError, RegisterPasskeyResponse, ReplayWebhookEventData, ReplayWebhookEventError, ReplayWebhookEventResponse, SetCartLineData, SetCartLineError, SetCartLineResponse, SetCartWalletData, SetCartWalletError, SetCartWalletResponse, ShipOrderData, ShipOrderError, ShipOrderResponse, StartPasskeyRegistrationData, StartPasskeyRegistrationResponse, StartWalletLinkData, StartWalletLinkResponse, WalletData, WalletError, WalletResponse, WebhookEventsData, WebhookEventsResponse } from '../types.gen';
+import type { ActivityData, ActivityError, ActivityResponse, ApproveMandateData, ApproveMandateError, ApproveMandateResponse, AssistantAccessData, AssistantAccessResponse, CartData, CartError, CartResponse, CheckoutData, CheckoutError, CheckoutResponse, ConfirmWalletLinkData, ConfirmWalletLinkError, ConfirmWalletLinkResponse, ConversationData, ConversationError, ConversationResponse, CreateCartData, CreateCartError, CreateCartResponse, CreateConversationData, CreateConversationError, CreateConversationResponse, CreateMandateData, CreateMandateError, CreateMandateResponse, DeclineMandateData, DeclineMandateError, DeclineMandateResponse, DemoWalletData, DemoWalletResponse, HealthData, HealthResponse, MandateData, MandateError, MandatePasskeyOptionsData, MandatePasskeyOptionsError, MandatePasskeyOptionsResponse, MandateResponse, OrderActivityData, OrderActivityError, OrderActivityResponse, OrderData, OrderError, OrderResponse, OrdersData, OrdersResponse, PaypalHealthData, PaypalHealthResponse, PaypalWebhookData, PaypalWebhookError, PaypalWebhookResponse, ProductData, ProductError, ProductResponse, ProductsData, ProductsResponse, ReadyData, ReadyResponse, RegisterPasskeyData, RegisterPasskeyError, RegisterPasskeyResponse, ReplayWebhookEventData, ReplayWebhookEventError, ReplayWebhookEventResponse, SetCartLineData, SetCartLineError, SetCartLineResponse, SetCartWalletData, SetCartWalletError, SetCartWalletResponse, ShipOrderData, ShipOrderError, ShipOrderResponse, StartPasskeyRegistrationData, StartPasskeyRegistrationError, StartPasskeyRegistrationResponse, StartWalletLinkData, StartWalletLinkResponse, WalletData, WalletError, WalletResponse, WebhookEventsData, WebhookEventsResponse } from '../types.gen';
 
 export type QueryKey<TOptions extends Options> = [
     Pick<TOptions, 'baseUrl' | 'body' | 'headers' | 'path' | 'query'> & {
@@ -63,7 +63,8 @@ export const paypalHealthOptions = (options?: Options<PaypalHealthData>) => quer
  * Accept a delivery once PayPal confirms its signature; a repeat delivery is a no-op.
  *
  * The event is stored and its processing queued in one transaction before the 2xx that stops
- * PayPal's retries. A 400 answers a signature PayPal rejects, and an error reaching PayPal or the
+ * PayPal's retries. A 400 answers headers or a body that cannot be PayPal's, checked first so
+ * they cost no PayPal call, or a signature PayPal rejects; an error reaching PayPal or the
  * database surfaces as a 500 so PayPal delivers the event again later.
  */
 export const paypalWebhookMutation = (options?: Partial<Options<PaypalWebhookData>>): UseMutationOptions<PaypalWebhookResponse, PaypalWebhookError, Options<PaypalWebhookData>> => {
@@ -386,9 +387,10 @@ export const shipOrderMutation = (options?: Partial<Options<ShipOrderData>>): Us
 /**
  * Create Mandate
  *
- * An agent asks the buyer for a mandate; the answer holds the consent page's path.
+ * An agent asks the buyer for a mandate; the answer holds the key and the consent link.
  *
- * Only a signed agent request may ask; a 404 names a wallet or cart that cannot be used.
+ * Only a signed agent request may ask. A 404 names a wallet or cart that cannot be used; a 422
+ * a request that does not fit its kind, such as a cart mandate whose cap is not the cart total.
  */
 export const createMandateMutation = (options?: Partial<Options<CreateMandateData>>): UseMutationOptions<CreateMandateResponse, CreateMandateError, Options<CreateMandateData>> => {
     const mutationOptions: UseMutationOptions<CreateMandateResponse, CreateMandateError, Options<CreateMandateData>> = {
@@ -422,12 +424,36 @@ export const mandateOptions = (options: Options<MandateData>) => queryOptions<Ma
     queryKey: mandateQueryKey(options)
 });
 
+/**
+ * Start Passkey Registration
+ *
+ * A challenge and the options for a new passkey that signs for this mandate's wallet.
+ *
+ * The options are for `navigator.credentials.create()`. A 403 means the mandate key is
+ * missing or wrong.
+ */
+export const startPasskeyRegistrationMutation = (options?: Partial<Options<StartPasskeyRegistrationData>>): UseMutationOptions<StartPasskeyRegistrationResponse, StartPasskeyRegistrationError, Options<StartPasskeyRegistrationData>> => {
+    const mutationOptions: UseMutationOptions<StartPasskeyRegistrationResponse, StartPasskeyRegistrationError, Options<StartPasskeyRegistrationData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await startPasskeyRegistration({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
 export const mandatePasskeyOptionsQueryKey = (options: Options<MandatePasskeyOptionsData>) => createQueryKey('mandatePasskeyOptions', options);
 
 /**
  * Mandate Passkey Options
  *
  * The browser options that make the given passkey sign this mandate.
+ *
+ * A 404 names a passkey that does not sign for this mandate's wallet; register a new one.
  */
 export const mandatePasskeyOptionsOptions = (options: Options<MandatePasskeyOptionsData>) => queryOptions<MandatePasskeyOptionsResponse, MandatePasskeyOptionsError, MandatePasskeyOptionsResponse, ReturnType<typeof mandatePasskeyOptionsQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -445,7 +471,9 @@ export const mandatePasskeyOptionsOptions = (options: Options<MandatePasskeyOpti
 /**
  * Approve Mandate
  *
- * The buyer signs the mandate with a passkey or the demo signer (simulated).
+ * The buyer signs the mandate with a passkey, or the demo signer (simulated) for the demo buyer.
+ *
+ * A 409 means it is answered already or its cart changed since the request.
  */
 export const approveMandateMutation = (options?: Partial<Options<ApproveMandateData>>): UseMutationOptions<ApproveMandateResponse, ApproveMandateError, Options<ApproveMandateData>> => {
     const mutationOptions: UseMutationOptions<ApproveMandateResponse, ApproveMandateError, Options<ApproveMandateData>> = {
@@ -479,28 +507,9 @@ export const declineMandateMutation = (options?: Partial<Options<DeclineMandateD
 };
 
 /**
- * Start Passkey Registration
- *
- * A challenge and the options for `navigator.credentials.create()`.
- */
-export const startPasskeyRegistrationMutation = (options?: Partial<Options<StartPasskeyRegistrationData>>): UseMutationOptions<StartPasskeyRegistrationResponse, DefaultError, Options<StartPasskeyRegistrationData>> => {
-    const mutationOptions: UseMutationOptions<StartPasskeyRegistrationResponse, DefaultError, Options<StartPasskeyRegistrationData>> = {
-        mutationFn: async (fnOptions) => {
-            const { data } = await startPasskeyRegistration({
-                ...options,
-                ...fnOptions,
-                throwOnError: true
-            });
-            return data;
-        }
-    };
-    return mutationOptions;
-};
-
-/**
  * Register Passkey
  *
- * Keep the passkey the browser created; its id signs mandates from now on.
+ * Keep the passkey the browser created; its id signs that wallet's mandates from now on.
  */
 export const registerPasskeyMutation = (options?: Partial<Options<RegisterPasskeyData>>): UseMutationOptions<RegisterPasskeyResponse, RegisterPasskeyError, Options<RegisterPasskeyData>> => {
     const mutationOptions: UseMutationOptions<RegisterPasskeyResponse, RegisterPasskeyError, Options<RegisterPasskeyData>> = {
@@ -603,7 +612,9 @@ export const conversationQueryKey = (options: Options<ConversationData>) => crea
 /**
  * Get Conversation
  *
- * The conversation, for the holder of its key; a 401 without it.
+ * The conversation, for the holder of its key.
+ *
+ * A 401 means the chat access code is wrong; a 403 means the conversation key is.
  */
 export const conversationOptions = (options: Options<ConversationData>) => queryOptions<ConversationResponse, ConversationError, ConversationResponse, ReturnType<typeof conversationQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {

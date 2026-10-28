@@ -46,7 +46,13 @@ async def placed_order(
 ) -> UUID:
     suffix = uuid4().hex[:6].upper()
     async with sessions.begin() as session:
-        cart = CartRecord(id=uuid7(), wallet_id=wallet_id, status="completed", lines=[])
+        cart = CartRecord(
+            id=uuid7(),
+            wallet_id=wallet_id,
+            status="completed",
+            completed_at=datetime.now(UTC),
+            lines=[],
+        )
         session.add(cart)
         await session.flush()
         order = OrderRecord(
@@ -65,6 +71,14 @@ async def placed_order(
         )
         session.add(order)
         return order.id
+
+
+async def cart_of(
+    sessions: async_sessionmaker[AsyncSession], order_id: UUID
+) -> CartRecord:
+    async with sessions() as session:
+        order = await session.get_one(OrderRecord, order_id)
+        return await session.get_one(CartRecord, order.cart_id)
 
 
 async def test_a_completed_capture_settles_a_pending_order(
@@ -155,6 +169,41 @@ async def test_a_voided_authorization_does_not_undo_a_refund(
     after = await Orders(sessions).get_by_id(order_id)
     assert after.status == "refunded"
     assert [item.to_status for item in after.events] == ["refunded"]
+
+
+async def test_a_voided_authorization_reopens_the_cart(
+    sessions: async_sessionmaker[AsyncSession], wallet_id: UUID
+) -> None:
+    order_id = await placed_order(sessions, wallet_id, "authorized")
+    order = await Orders(sessions).get_by_id(order_id)
+    voided = await event(
+        sessions,
+        "PAYMENT.AUTHORIZATION.VOIDED",
+        "authorization",
+        {"id": order.authorization_id},
+    )
+
+    await webhooks.handlers(sessions)["PAYMENT.AUTHORIZATION.VOIDED"](voided)
+
+    assert (await Orders(sessions).get_by_id(order_id)).status == "voided"
+    cart = await cart_of(sessions, order_id)
+    assert (cart.status, cart.completed_at) == ("open", None)
+
+
+async def test_a_declined_capture_reopens_the_cart(
+    sessions: async_sessionmaker[AsyncSession], wallet_id: UUID
+) -> None:
+    order_id = await placed_order(sessions, wallet_id, "capture_pending")
+    order = await Orders(sessions).get_by_id(order_id)
+    declined = await event(
+        sessions, "PAYMENT.CAPTURE.DECLINED", "capture", {"id": order.capture_id}
+    )
+
+    await webhooks.handlers(sessions)["PAYMENT.CAPTURE.DECLINED"](declined)
+
+    assert (await Orders(sessions).get_by_id(order_id)).status == "declined"
+    cart = await cart_of(sessions, order_id)
+    assert (cart.status, cart.completed_at) == ("open", None)
 
 
 async def test_a_late_pending_event_does_not_undo_a_capture(

@@ -4,7 +4,6 @@ The code says who may use Claude at all. The key says whose conversation it is: 
 that started it got the key once, and nobody else can read or continue it.
 """
 
-import hashlib
 import secrets
 from typing import Annotated, final
 
@@ -13,7 +12,6 @@ from fastapi.security import APIKeyHeader
 
 CHAT_KEY_HEADER = "X-Chat-Key"
 CONVERSATION_KEY_HEADER = "X-Conversation-Key"
-KEY_BYTES = 24
 
 chat_key = APIKeyHeader(
     name=CHAT_KEY_HEADER,
@@ -27,19 +25,6 @@ conversation_key = APIKeyHeader(
     description="The key a conversation was created with, sent when reading or continuing it.",
     auto_error=False,
 )
-
-
-def new_key() -> str:
-    return secrets.token_urlsafe(KEY_BYTES)
-
-
-def key_hash(key: str) -> str:
-    return hashlib.sha256(key.encode()).hexdigest()
-
-
-def key_matches(key: str | None, stored_hash: str) -> bool:
-    """Whether the key is the one the conversation was created with, compared in constant time."""
-    return key is not None and secrets.compare_digest(key_hash(key), stored_hash)
 
 
 @final

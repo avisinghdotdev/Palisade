@@ -184,24 +184,32 @@ async def test_any_agent_shops_through_the_endpoint_under_the_same_rules(
         assert not asked.is_error
         mandate = result_of(asked)
         mandate_id = mandate["mandate_id"]
+        key = mandate["mandate_key"]
         assert isinstance(mandate_id, str)
-        assert mandate["consent_url"] == f"{ORIGIN}/shop/approve/{mandate_id}"
+        assert isinstance(key, str)
+        assert mandate["consent_url"] == f"{ORIGIN}/shop/approve/{mandate_id}#key={key}"
         assert mandate["status"] == "pending"
+        spend = {"cart_id": cart_id, "mandate_id": mandate_id, "mandate_key": key}
 
-        early = await agent.call_tool(
-            "checkout", {"cart_id": cart_id, "mandate_id": mandate_id}
-        )
+        early = await agent.call_tool("checkout", spend)
         assert early.is_error
         assert "MANDATE_PENDING" in early.content[0].model_dump_json()
 
         approved = await client.post(
-            f"/api/mandates/{mandate_id}/approval", json={"signed_by": "demo_signer"}
+            f"/api/mandates/{mandate_id}/approval",
+            json={"signed_by": "demo_signer"},
+            headers={"X-Mandate-Key": key},
         )
         assert approved.status_code == 200, approved.text
 
-        paid = await agent.call_tool(
-            "checkout", {"cart_id": cart_id, "mandate_id": mandate_id}
+        # Another client that read the mandate's id off the public feed holds no key.
+        stranger = await agent.call_tool(
+            "checkout", {**spend, "mandate_key": "read-off-the-feed"}
         )
+        assert stranger.is_error
+        assert "MANDATE_KEY_INVALID" in stranger.content[0].model_dump_json()
+
+        paid = await agent.call_tool("checkout", spend)
         assert not paid.is_error, paid.content
         order = result_of(paid)
         assert order["status"] == "captured"
@@ -229,6 +237,7 @@ async def test_any_agent_shops_through_the_endpoint_under_the_same_rules(
         "request_mandate",
         "checkout",
         "checkout",
+        "checkout",
         "get_order",
     ]
     assert [row.details["ok"] for row in logged] == [
@@ -236,9 +245,17 @@ async def test_any_agent_shops_through_the_endpoint_under_the_same_rules(
         True,
         True,
         False,
+        False,
         True,
         True,
     ]
+    # The feed never keeps a mandate key or an id the agent typed.
+    for row in logged:
+        assert key not in str(row.details)
+        assert "read-off-the-feed" not in str(row.details)
+        logged_input = row.details["input"]
+        assert isinstance(logged_input, dict)
+        assert not {"mandate_id", "mandate_key"} & logged_input.keys()
 
 
 async def test_a_wrong_cart_id_is_refused_in_words(server: MCPServer) -> None:

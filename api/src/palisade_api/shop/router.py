@@ -2,7 +2,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from palisade_api.agents.registry import Agent
 from palisade_api.agents.signatures import caller
@@ -13,6 +13,7 @@ from palisade_api.orders.checkout import (
     CheckoutDeclined,
     CheckoutFailed,
     EmptyCart,
+    MandateClaim,
     WalletUnavailable,
 )
 from palisade_api.orders.store import Order
@@ -52,9 +53,13 @@ class CartWallet(BaseModel):
 
 
 class CheckoutRequest(BaseModel):
-    """What an agent sends with a checkout: the buyer-signed mandate that covers it."""
+    """What an agent sends with a checkout: the buyer-signed mandate that covers it.
+
+    The key is the one the agent got when it asked for the mandate.
+    """
 
     mandate_id: UUID
+    mandate_key: str = Field(min_length=1, max_length=64)
 
 
 @router.get("/products", operation_id="products")
@@ -134,7 +139,9 @@ async def place_order(
     """
     try:
         return await service.place_order(
-            cart_id, agent, None if body is None else body.mandate_id
+            cart_id,
+            agent,
+            None if body is None else MandateClaim(body.mandate_id, body.mandate_key),
         )
     except UnknownCart as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error

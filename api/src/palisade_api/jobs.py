@@ -22,14 +22,19 @@ logger = structlog.stdlib.get_logger(__name__)
 # never fetches it.
 WEBHOOKS_QUEUE = "webhooks"
 ORDERS_QUEUE = "orders"
-WORKER_QUEUES = (WEBHOOKS_QUEUE, ORDERS_QUEUE)
+MAINTENANCE_QUEUE = "maintenance"
+WORKER_QUEUES = (WEBHOOKS_QUEUE, ORDERS_QUEUE, MAINTENANCE_QUEUE)
 
 # Tasks register when their module is imported; the worker imports these before it starts. This
 # connector is never opened: a job is deferred on the caller's own connection, and the worker
 # opens its own connector in `run_worker`.
 jobs = App(
     connector=PsycopgConnector(),
-    import_paths=["palisade_api.webhooks.tasks", "palisade_api.orders.tasks"],
+    import_paths=[
+        "palisade_api.webhooks.tasks",
+        "palisade_api.orders.tasks",
+        "palisade_api.maintenance",
+    ],
 )
 
 

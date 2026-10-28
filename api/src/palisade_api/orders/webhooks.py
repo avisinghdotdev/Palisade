@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from palisade_api.orders.models import OrderEventRecord, OrderRecord
 from palisade_api.orders.store import ORDER_STATUS, OrderStatus, PaymentEvent
+from palisade_api.shop.models import CartRecord
 from palisade_api.webhooks.store import WebhookEvent
 from palisade_api.webhooks.tasks import Handler
 
@@ -29,6 +30,8 @@ class Effect:
     kind: Kind
     to_status: OrderStatus | None = None
     from_statuses: frozenset[OrderStatus] = frozenset()
+    # The payment ended without taking the money, so the buyer may try the cart again.
+    reopens_cart: bool = False
 
     def moves(self, status: OrderStatus) -> bool:
         return self.to_status is not None and status in self.from_statuses
@@ -37,7 +40,7 @@ class Effect:
 EVENTS: dict[PaymentEvent, Effect] = {
     "PAYMENT.AUTHORIZATION.CREATED": Effect("authorization"),
     "PAYMENT.AUTHORIZATION.VOIDED": Effect(
-        "authorization", "voided", frozenset({"authorized"})
+        "authorization", "voided", frozenset({"authorized"}), reopens_cart=True
     ),
     "PAYMENT.CAPTURE.PENDING": Effect(
         "capture", "capture_pending", frozenset({"authorized"})
@@ -46,7 +49,10 @@ EVENTS: dict[PaymentEvent, Effect] = {
         "capture", "captured", frozenset({"authorized", "capture_pending"})
     ),
     "PAYMENT.CAPTURE.DECLINED": Effect(
-        "capture", "declined", frozenset({"authorized", "capture_pending"})
+        "capture",
+        "declined",
+        frozenset({"authorized", "capture_pending"}),
+        reopens_cart=True,
     ),
     "PAYMENT.CAPTURE.REFUNDED": Effect(
         "capture", "refunded", frozenset({"captured", "capture_pending"})
@@ -115,6 +121,10 @@ async def apply(
         from_status = ORDER_STATUS.validate_python(record.status)
         if effect.moves(from_status) and effect.to_status is not None:
             record.status = effect.to_status
+            if effect.reopens_cart:
+                cart = await session.get_one(CartRecord, record.cart_id)
+                cart.status = "open"
+                cart.completed_at = None
         session.add(
             OrderEventRecord(
                 id=uuid7(),

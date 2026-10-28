@@ -27,6 +27,9 @@ param federatedCredentials { name: string, issuer: string, subject: string }[]
 @description('Object ID of the person who enters the secrets and imports the origin certificate.')
 param vaultOfficerPrincipalId string
 
+@description('Name of the origin certificate in the vault. Empty until it has been imported.')
+param originCertificateName string = ''
+
 @description('The shared registry the images are pushed to, in another subscription.')
 param registrySubscriptionId string
 
@@ -93,8 +96,9 @@ module apiIdentity 'br/public:avm/res/managed-identity/user-assigned-identity:0.
   }
 }
 
-// The api app reads its secrets and the environment reads the origin certificate (stored as a
-// secret) through the web identity; both need only the secrets-user role.
+// The api app reads its secrets through its own identity. The environment reads the origin
+// certificate (stored as a secret) through the web identity, which the web app carries too, so
+// that identity may read the certificate's secret and nothing else in the vault.
 module keyVault 'br/public:avm/res/key-vault/vault:0.14.2' = {
   scope: resourceGroup(resourceGroupName)
   dependsOn: [workloadResourceGroup]
@@ -112,11 +116,6 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.14.2' = {
         roleDefinitionIdOrName: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roleDefinitionIds.keyVaultSecretsUser)
       }
       {
-        principalId: webIdentity.outputs.principalId
-        principalType: 'ServicePrincipal'
-        roleDefinitionIdOrName: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roleDefinitionIds.keyVaultSecretsUser)
-      }
-      {
         principalId: vaultOfficerPrincipalId
         principalType: 'User'
         roleDefinitionIdOrName: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roleDefinitionIds.keyVaultSecretsOfficer)
@@ -127,6 +126,16 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.14.2' = {
         roleDefinitionIdOrName: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roleDefinitionIds.keyVaultCertificatesOfficer)
       }
     ]
+  }
+}
+
+module webCertificateReader '../modules/key-vault-secret-reader.bicep' = if (!empty(originCertificateName)) {
+  scope: resourceGroup(resourceGroupName)
+  dependsOn: [keyVault]
+  params: {
+    keyVaultName: keyVaultName
+    secretName: originCertificateName
+    principalId: webIdentity.outputs.principalId
   }
 }
 

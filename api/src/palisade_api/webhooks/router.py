@@ -2,7 +2,7 @@ from typing import Annotated
 
 import structlog
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from palisade_api.webhooks.store import (
     ReceivedEvent,
@@ -48,7 +48,8 @@ async def receive_paypal_webhook(
     """Accept a delivery once PayPal confirms its signature; a repeat delivery is a no-op.
 
     The event is stored and its processing queued in one transaction before the 2xx that stops
-    PayPal's retries. A 400 answers a signature PayPal rejects, and an error reaching PayPal or the
+    PayPal's retries. A 400 answers headers or a body that cannot be PayPal's, checked first so
+    they cost no PayPal call, or a signature PayPal rejects; an error reaching PayPal or the
     database surfaces as a 500 so PayPal delivers the event again later.
     """
     raw_event = await request.body()
@@ -59,11 +60,20 @@ async def receive_paypal_webhook(
         cert_url=paypal_cert_url,
         auth_algo=paypal_auth_algo,
     )
+    if not transmission.plausible():
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "the signature headers are not PayPal's"
+        )
+    try:
+        event = WebhookEvent.model_validate_json(raw_event)
+    except ValidationError as error:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "the delivery is not a PayPal event"
+        ) from error
     if not await verifier.verify(transmission, raw_event):
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, "PayPal rejected the delivery's signature"
         )
-    event = WebhookEvent.model_validate_json(raw_event)
     job_id = await store.add(event)
     logger.info(
         "paypal_webhook_received",

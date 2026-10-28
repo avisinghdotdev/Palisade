@@ -112,9 +112,14 @@ class OrderSummary(BaseModel):
 
 
 class Order(BaseModel):
+    """An order as its public page shows it.
+
+    The cart it came from stays server-side: a declined order reopens its cart, and an open
+    cart's id is all it takes to fill it and pay from its wallet.
+    """
+
     id: UUID
     number: str
-    cart_id: UUID
     channel: Channel
     # The signed agent and the policy hash on an agent order; None on a human order.
     agent: Agent | None
@@ -184,7 +189,6 @@ def order(record: OrderRecord) -> Order:
     return Order(
         id=record.id,
         number=record.number,
-        cart_id=record.cart_id,
         channel=CHANNEL.validate_python(record.channel),
         agent=None
         if record.agent is None
