@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
+from datetime import timedelta
 from typing import final
 from uuid import UUID, uuid7
 
@@ -12,7 +13,7 @@ from anthropic.lib.tools import ToolError
 from order_fixtures import CAPTURE_PATH, CREATE_PATH, created_order
 from paypal_stub import PayPalStub, json_answer
 from pydantic import JsonValue, TypeAdapter
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from palisade_api.activity.models import ActivityRecord
@@ -27,12 +28,16 @@ from palisade_api.assistant.events import (
     Conversation,
     CreatedConversation,
     DoneEvent,
+    ErrorEvent,
+    MandateCard,
+    ShopperMessage,
     ToolCallEvent,
     ToolResultEvent,
 )
-from palisade_api.assistant.model import OnText, Reply, Tool, Usage
+from palisade_api.assistant.model import OnText, Refused, Reply, Tool, Usage
+from palisade_api.assistant.models import ConversationRecord
 from palisade_api.assistant.router import assistant as assistant_dependency
-from palisade_api.assistant.service import Assistant
+from palisade_api.assistant.service import STALE_TURN, Assistant
 from palisade_api.main import app
 from palisade_api.mandates.passkeys import Passkeys
 from palisade_api.mandates.router import mandates as mandates_dependency
@@ -65,8 +70,8 @@ class Call:
     arguments: dict[str, JsonValue]
 
 
-# One step of a scripted reply: words to stream, or a tool to call.
-Step = str | Call
+# One step of a scripted reply: words to stream, a tool to call, or an error the model raises.
+Step = str | Call | Exception
 
 
 @final
@@ -84,6 +89,8 @@ class ScriptedModel:
         by_name = {tool.name: tool for tool in tools}
         content: list[JsonValue] = []
         for step in self.turns.pop(0):
+            if isinstance(step, Exception):
+                raise step
             if isinstance(step, str):
                 on_text(step)
                 content.append({"type": "text", "text": step})
@@ -120,8 +127,11 @@ def model() -> ScriptedModel:
 @pytest.fixture
 async def shop(
     sessions: async_sessionmaker[AsyncSession], paypal: PayPalStub, model: ScriptedModel
-) -> AsyncIterator[Mandates]:
-    """The app wired for a conversation whose tools call this same app, signed as the test agent."""
+) -> AsyncIterator[Assistant]:
+    """The app wired for a conversation whose tools call this same app, signed as the test agent.
+
+    Yields the one assistant behind the chat endpoints, for tests that drive its turns directly.
+    """
     agent_seed = seed()
     await Agents(sessions).register(BuiltinAgent(AGENT, "Test Agent", agent_seed))
     await allow(sessions)
@@ -143,6 +153,14 @@ async def shop(
         transport=httpx2.ASGITransport(app=app, raise_app_exceptions=False),
         base_url=ORIGIN,
     )
+    assistant = Assistant(
+        sessions,
+        model,
+        AgentHttp(shop_http, AgentSigner(AGENT, agent_seed)),
+        mandates,
+        activities,
+        AGENT,
+    )
     app.dependency_overrides[catalog_dependency] = lambda: Catalog(sessions)
     app.dependency_overrides[carts_dependency] = lambda: Carts(sessions)
     app.dependency_overrides[checkout_dependency] = lambda: Checkout(
@@ -155,15 +173,8 @@ async def shop(
     app.dependency_overrides[mandates_dependency] = lambda: mandates
     app.dependency_overrides[activities_dependency] = lambda: activities
     app.dependency_overrides[chat_access] = lambda: ChatAccess(CHAT_KEY)
-    app.dependency_overrides[assistant_dependency] = lambda: Assistant(
-        sessions,
-        model,
-        AgentHttp(shop_http, AgentSigner(AGENT, agent_seed)),
-        mandates,
-        activities,
-        AGENT,
-    )
-    yield mandates
+    app.dependency_overrides[assistant_dependency] = lambda: assistant
+    yield assistant
     app.dependency_overrides.clear()
     await shop_http.aclose()
 
@@ -217,8 +228,23 @@ async def activity_kinds(
         )
 
 
+async def fetched(
+    client: httpx2.AsyncClient, conversation: CreatedConversation
+) -> Conversation:
+    response = await client.get(
+        f"/api/assistant/conversations/{conversation.id}", headers=opened(conversation)
+    )
+    return Conversation.model_validate_json(response.content)
+
+
 def tool_results(events: list[AssistantEvent]) -> list[ToolResultEvent]:
     return [event for event in events if isinstance(event, ToolResultEvent)]
+
+
+def mandate_key(card: MandateCard) -> str:
+    """The key in the consent link of the card the mandate request showed."""
+    assert card.consent_path is not None
+    return card.consent_path.split("#key=")[1]
 
 
 @pytest.mark.usefixtures("shop")
@@ -307,14 +333,7 @@ async def test_a_turn_streams_the_agents_words_tools_and_cards(
     assert done.turn.events[0].type == "text"
     assert done.turn.request.text == "Hoka Mach, size 9.5"
 
-    stored = Conversation.model_validate_json(
-        (
-            await client.get(
-                f"/api/assistant/conversations/{conversation.id}",
-                headers=opened(conversation),
-            )
-        ).content
-    )
+    stored = await fetched(client, conversation)
     assert (stored.busy, stored.cart_id, len(stored.turns)) == (False, done.cart_id, 1)
     assert stored.turns[0] == done.turn
     [history] = model.histories
@@ -352,15 +371,18 @@ async def test_a_conversation_opens_only_with_its_own_key(
     other = await start(client, wallet_id)
     path = f"/api/assistant/conversations/{conversation.id}"
 
-    assert (await client.get(path, headers=HEADERS)).status_code == 401
-    assert (await client.get(path, headers=opened(other))).status_code == 401
+    # A 401 is the chat code, a 403 the conversation's key, so the browser can tell them apart.
+    wrong_code = {**opened(conversation), "X-Chat-Key": "wrong"}
+    assert (await client.get(path, headers=wrong_code)).status_code == 401
+    assert (await client.get(path, headers=HEADERS)).status_code == 403
+    assert (await client.get(path, headers=opened(other))).status_code == 403
     assert (await client.get(path, headers=opened(conversation))).status_code == 200
     stranger = await client.post(
         f"{path}/messages",
         json={"type": "message", "text": "Buy everything"},
         headers=opened(other),
     )
-    assert stranger.status_code == 401
+    assert stranger.status_code == 403
 
 
 @pytest.mark.usefixtures("shop")
@@ -393,14 +415,17 @@ async def test_the_shoppers_approval_lets_the_agent_pay(
     )
     assert unanswered.status_code == 409
 
+    key = mandate_key(asked.attachment.mandate)
     model.turns.append(
         [
-            Call("checkout", {"mandate_id": str(mandate_id)}),
+            Call("checkout", {"mandate_id": str(mandate_id), "mandate_key": key}),
             "Done.",
         ]
     )
     approved = await client.post(
-        f"/api/mandates/{mandate_id}/approval", json={"signed_by": "demo_signer"}
+        f"/api/mandates/{mandate_id}/approval",
+        json={"signed_by": "demo_signer"},
+        headers={"X-Mandate-Key": key},
     )
     assert approved.status_code == 200
     events = await send(
@@ -514,7 +539,15 @@ async def test_a_refusal_reaches_the_shopper_and_the_log(
     assert asked.attachment is not None
     assert asked.attachment.type == "mandate"
     model.turns.append(
-        [Call("checkout", {"mandate_id": str(asked.attachment.mandate.id)})]
+        [
+            Call(
+                "checkout",
+                {
+                    "mandate_id": str(asked.attachment.mandate.id),
+                    "mandate_key": mandate_key(asked.attachment.mandate),
+                },
+            )
+        ]
     )
 
     events = await send(client, conversation, {"type": "message", "text": "Pay now"})
@@ -559,3 +592,154 @@ async def test_a_conversation_needs_a_wallet_that_can_pay(
     assert (
         await client.get(f"/api/assistant/conversations/{uuid7()}", headers=HEADERS)
     ).status_code == 404
+
+
+@pytest.mark.usefixtures("shop")
+@pytest.mark.parametrize(
+    "failure",
+    [RuntimeError("the model went away"), Refused()],
+    ids=["error", "refusal"],
+)
+async def test_a_turn_that_fails_after_a_step_keeps_what_it_did(
+    client: httpx2.AsyncClient,
+    wallet_id: UUID,
+    model: ScriptedModel,
+    failure: Exception,
+) -> None:
+    conversation = await start(client, wallet_id)
+    model.turns.append(
+        [
+            Call(
+                "set_cart_line",
+                {"product_id": "hoka-mach-x-2", "size": "9.5", "quantity": 1},
+            ),
+            failure,
+        ]
+    )
+
+    events = await send(client, conversation, {"type": "message", "text": "Add it"})
+
+    [added] = tool_results(events)
+    assert added.attachment is not None
+    assert added.attachment.type == "cart"
+    stopped = events[-1]
+    assert isinstance(stopped, ErrorEvent)
+    assert stopped.detail.startswith("The assistant stopped partway.")
+    stored = await fetched(client, conversation)
+    assert (stored.busy, stored.cart_id) == (False, added.attachment.cart.id)
+    [turn] = stored.turns
+    assert [event.type for event in turn.events] == ["tool_call", "tool_result"]
+    model.turns.append(["It is in your bag."])
+    await send(client, conversation, {"type": "message", "text": "Did it work?"})
+    note = model.histories[-1][-2]
+    assert isinstance(note, dict)
+    assert note["role"] == "assistant"
+    assert f"set_cart_line: {added.summary}" in str(note["content"])
+
+
+@pytest.mark.usefixtures("shop")
+async def test_a_turn_that_fails_before_any_step_asks_for_the_message_again(
+    client: httpx2.AsyncClient, wallet_id: UUID, model: ScriptedModel
+) -> None:
+    conversation = await start(client, wallet_id)
+    model.turns.append(["Let me look", RuntimeError("the model went away")])
+
+    events = await send(client, conversation, {"type": "message", "text": "Hoka?"})
+
+    failed = events[-1]
+    assert isinstance(failed, ErrorEvent)
+    assert failed.detail.endswith("Send your message again.")
+    stored = await fetched(client, conversation)
+    assert (stored.busy, stored.cart_id, stored.turns) == (False, None, [])
+
+
+@pytest.mark.usefixtures("shop")
+async def test_a_message_hands_the_agent_the_bag_the_shopper_sees(
+    client: httpx2.AsyncClient, wallet_id: UUID, model: ScriptedModel
+) -> None:
+    conversation = await start(client, wallet_id)
+    created = await client.post("/api/shop/carts", json={"wallet_id": str(wallet_id)})
+    cart_id = Cart.model_validate_json(created.content).id
+    await client.put(
+        f"/api/shop/carts/{cart_id}/lines",
+        json={"product_id": "hoka-mach-x-2", "size": "9.5", "quantity": 2},
+    )
+    model.turns.append([Call("get_cart", {})])
+
+    events = await send(
+        client,
+        conversation,
+        {"type": "message", "text": "Check out my bag", "cart_id": str(cart_id)},
+    )
+
+    [read] = tool_results(events)
+    assert read.attachment is not None
+    assert read.attachment.type == "cart"
+    assert (read.attachment.cart.id, read.attachment.cart.items) == (cart_id, 2)
+    assert (await fetched(client, conversation)).cart_id == cart_id
+
+
+@pytest.mark.usefixtures("shop")
+async def test_a_cart_another_wallet_pays_for_is_refused(
+    client: httpx2.AsyncClient, wallet_id: UUID, own_wallet_id: UUID
+) -> None:
+    created = await client.post(
+        "/api/shop/carts", json={"wallet_id": str(own_wallet_id)}
+    )
+    foreign = Cart.model_validate_json(created.content).id
+    started = await client.post(
+        "/api/assistant/conversations",
+        json={"wallet_id": str(wallet_id), "cart_id": str(foreign)},
+        headers=HEADERS,
+    )
+    assert started.status_code == 404
+    conversation = await start(client, wallet_id)
+
+    refused = [
+        (
+            await client.post(
+                f"/api/assistant/conversations/{conversation.id}/messages",
+                json={"type": "message", "text": "Pay for this", "cart_id": str(cart)},
+                headers=opened(conversation),
+            )
+        ).status_code
+        for cart in (foreign, uuid7())
+    ]
+
+    assert refused == [404, 404]
+    assert (await fetched(client, conversation)).cart_id is None
+
+
+async def test_a_turn_that_outlived_its_lease_takes_the_next_place(
+    shop: Assistant,
+    client: httpx2.AsyncClient,
+    wallet_id: UUID,
+    model: ScriptedModel,
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    conversation = await start(client, wallet_id)
+    stalled = await shop.start_turn(
+        conversation.id,
+        conversation.key,
+        ShopperMessage(type="message", text="First"),
+    )
+    async with sessions.begin() as session:
+        await session.execute(
+            update(ConversationRecord)
+            .where(ConversationRecord.id == conversation.id)
+            .values(busy_since=func.now() - STALE_TURN - timedelta(minutes=1))
+        )
+    took_over = await shop.start_turn(
+        conversation.id,
+        conversation.key,
+        ShopperMessage(type="message", text="Second"),
+    )
+    model.turns.extend([["Second answer."], ["First answer."]])
+
+    taken = [event async for event in shop.events(took_over)][-1]
+    late = [event async for event in shop.events(stalled)][-1]
+
+    assert isinstance(taken, DoneEvent)
+    assert isinstance(late, DoneEvent)
+    assert (taken.turn.request.text, taken.turn.position) == ("Second", 1)
+    assert (late.turn.request.text, late.turn.position) == ("First", 2)

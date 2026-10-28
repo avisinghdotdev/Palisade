@@ -33,6 +33,13 @@ def log_call(method: str, path: str, response: httpx2.Response, started: float) 
     )
 
 
+class TokenUnavailable(Exception):
+    """PayPal's token endpoint answered with a server error; another try later may work."""
+
+    def __init__(self, status_code: int) -> None:
+        super().__init__(f"PayPal's token endpoint answered {status_code}")
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: Literal["Bearer"]
@@ -78,6 +85,9 @@ class PayPalAuth:
             data={"grant_type": "client_credentials"},
         )
         log_call("POST", OAUTH_PATH, response, started)
+        if response.is_server_error:
+            raise TokenUnavailable(response.status_code)
+        # A 4xx means the credentials are wrong: a setup fault that must surface, not be retried.
         response.raise_for_status()
         body = TokenResponse.model_validate_json(response.content)
         return AccessToken(

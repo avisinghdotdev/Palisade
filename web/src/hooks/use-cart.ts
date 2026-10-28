@@ -3,6 +3,7 @@ import { useEffect } from "react";
 
 import type { Cart } from "@/api/client";
 
+import { statusOf } from "@/api-errors";
 import { createCart, setCartLine } from "@/api/client";
 import {
   cartOptions,
@@ -21,12 +22,14 @@ export function useCart(walletId: string | undefined) {
   const cart = useQuery({
     ...cartOptions({ path: { cart_id: cartId ?? "" } }),
     enabled: cartId !== null,
-    retry: false,
+    // A cart that is gone stays gone; anything else is tried again before the bag shows empty.
+    retry: (failures, error) => statusOf(error) !== 404 && failures < 3,
   });
 
-  // A cart id the API no longer knows, or a cart already turned into an order, is forgotten.
+  // A cart id the API no longer knows, or a cart already paid for, is forgotten. A failed read
+  // forgets nothing, and neither does a payment still under way: a declined one reopens the cart.
   const stale =
-    cart.isError || (cart.data !== undefined && cart.data.status !== "open");
+    statusOf(cart.error) === 404 || cart.data?.status === "completed";
   useEffect(() => {
     if (stale) setCartId(null);
   }, [stale, setCartId]);
@@ -73,5 +76,8 @@ export function useCart(walletId: string | undefined) {
     },
   });
 
-  return { cart: stale ? undefined : cart.data, setLine };
+  return {
+    cart: stale || cart.data?.status !== "open" ? undefined : cart.data,
+    setLine,
+  };
 }

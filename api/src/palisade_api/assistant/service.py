@@ -15,7 +15,6 @@ from sqlalchemy.orm import selectinload
 
 from palisade_api.activity.store import Activities
 from palisade_api.agents.client import AgentHttp
-from palisade_api.assistant.access import key_hash, key_matches, new_key
 from palisade_api.assistant.events import (
     AssistantEvent,
     Conversation,
@@ -26,6 +25,7 @@ from palisade_api.assistant.events import (
     NewConversation,
     ShopperMessage,
     TextEvent,
+    ToolResultEvent,
     Turn,
     TurnEvent,
     TurnRequest,
@@ -33,6 +33,7 @@ from palisade_api.assistant.events import (
 from palisade_api.assistant.model import Model, Refused, Usage
 from palisade_api.assistant.models import ConversationRecord, TurnRecord
 from palisade_api.assistant.tools import Shopping
+from palisade_api.bearer import key_hash, key_matches, new_key
 from palisade_api.mandates.service import Mandates
 from palisade_api.shop.models import CartRecord
 from palisade_api.wallets.models import WalletRecord
@@ -51,6 +52,12 @@ ANSWERED: dict[str, TurnRequest] = {
         kind="mandate_expired", text="The request expired before it was answered."
     ),
 }
+REFUSED = "The assistant will not answer that. Ask about shoes, sizes, or your order."
+FAILED = "The assistant could not finish answering. Send your message again."
+# Shown when the turn already changed something: sending the message again would repeat it.
+STOPPED = (
+    "The assistant stopped partway. What it did is kept above; ask it to carry on."
+)
 
 logger = structlog.stdlib.get_logger(__name__)
 
@@ -72,6 +79,13 @@ class ConversationRefused(Exception):
         super().__init__(f"the key does not open conversation {conversation_id}")
 
 
+class ForeignCart(LookupError):
+    """The cart does not exist, or another wallet pays for it."""
+
+    def __init__(self, cart_id: UUID) -> None:
+        super().__init__(f"no cart {cart_id} belongs to this wallet")
+
+
 class MandateUnanswered(Exception):
     def __init__(self, mandate_id: UUID) -> None:
         super().__init__(f"mandate {mandate_id} has not been answered yet")
@@ -85,7 +99,6 @@ class Started:
     wallet_id: UUID
     cart_id: UUID | None
     history: list[JsonValue]
-    position: int
     request: TurnRequest
     # The user message the model gets; the shopper's words, or a note on what they did.
     prompt: str
@@ -109,6 +122,10 @@ def conversation(record: ConversationRecord) -> Conversation:
         turns=[turn(item) for item in record.turns],
         created_at=record.created_at,
     )
+
+
+def steps_taken(events: list[TurnEvent]) -> list[ToolResultEvent]:
+    return [event for event in events if isinstance(event, ToolResultEvent)]
 
 
 def merged(events: list[TurnEvent]) -> list[TurnEvent]:
@@ -149,18 +166,15 @@ class Assistant:
         The answer carries the conversation's key, the only time it is handed out.
 
         Raises:
-            LookupError: the wallet cannot pay, or the cart does not exist.
+            LookupError: the wallet cannot pay, or the cart is not the wallet's.
         """
         key = new_key()
         async with self._sessions.begin() as session:
             wallet = await session.get(WalletRecord, request.wallet_id)
             if wallet is None or wallet.status != "active":
                 raise LookupError(f"wallet {request.wallet_id} cannot pay")
-            if (
-                request.cart_id is not None
-                and await session.get(CartRecord, request.cart_id) is None
-            ):
-                raise LookupError(f"no cart has the id {request.cart_id}")
+            if request.cart_id is not None:
+                await self._own_cart(session, request.cart_id, request.wallet_id)
             record = ConversationRecord(
                 id=uuid7(),
                 wallet_id=request.wallet_id,
@@ -211,6 +225,7 @@ class Assistant:
             UnknownConversation: no such conversation.
             ConversationRefused: the key is not the conversation's.
             ConversationBusy: another turn is still running.
+            ForeignCart: the message names a cart the conversation's wallet does not pay for.
             UnknownMandate, MandateUnanswered: the mandate outcome names no answered mandate.
         """
         request, prompt = await self._compose(incoming)
@@ -227,12 +242,11 @@ class Assistant:
                 raise RuntimeError("the database returned no clock")
             if record.busy_since is not None and record.busy_since > now - STALE_TURN:
                 raise ConversationBusy(conversation_id)
+            # The bag the shopper sees now, which may be one they filled in the shop since.
+            if isinstance(incoming, ShopperMessage) and incoming.cart_id is not None:
+                await self._own_cart(session, incoming.cart_id, record.wallet_id)
+                record.cart_id = incoming.cart_id
             record.busy_since = now
-            taken = await session.scalar(
-                select(func.count())
-                .select_from(TurnRecord)
-                .where(TurnRecord.conversation_id == conversation_id)
-            )
             self._activities.add(
                 session,
                 "shopper_message",
@@ -246,7 +260,6 @@ class Assistant:
                 wallet_id=record.wallet_id,
                 cart_id=record.cart_id,
                 history=list(record.history),
-                position=(taken or 0) + 1,
                 request=request,
                 prompt=prompt,
             )
@@ -303,12 +316,9 @@ class Assistant:
             logger.warning(
                 "assistant_refused", conversation_id=str(started.conversation_id)
             )
-            await self._release(started.conversation_id)
+            stopped = await self._stopped(started, shopping.cart_id, history, events)
             queue.put_nowait(
-                ErrorEvent(
-                    type="error",
-                    detail="The assistant will not answer that. Ask about shoes, sizes, or your order.",
-                )
+                ErrorEvent(type="error", detail=STOPPED if stopped else REFUSED)
             )
         except Exception:
             # The task is the last line of defence: an error here would otherwise vanish with
@@ -316,12 +326,9 @@ class Assistant:
             logger.exception(
                 "assistant_turn_failed", conversation_id=str(started.conversation_id)
             )
-            await self._release(started.conversation_id)
+            stopped = await self._stopped(started, shopping.cart_id, history, events)
             queue.put_nowait(
-                ErrorEvent(
-                    type="error",
-                    detail="The assistant could not finish answering. Send your message again.",
-                )
+                ErrorEvent(type="error", detail=STOPPED if stopped else FAILED)
             )
         else:
             queue.put_nowait(
@@ -345,6 +352,34 @@ class Assistant:
         )
         return request, prompt
 
+    async def _stopped(
+        self,
+        started: Started,
+        cart_id: UUID | None,
+        history: list[JsonValue],
+        events: list[TurnEvent],
+    ) -> bool:
+        """End a turn that failed; whether it had already changed something.
+
+        A turn that ran a tool may have filled the cart or paid, so it is stored as far as it
+        got, and the model's history notes what happened, so neither the shopper's screen nor
+        the model's memory loses a purchase. Otherwise the conversation is only freed.
+        """
+        steps = steps_taken(events)
+        if not steps:
+            await self._release(started.conversation_id)
+            return False
+        done = "; ".join(f"{step.tool}: {step.summary}" for step in steps)
+        note: JsonValue = {
+            "role": "assistant",
+            "content": f"[My answer stopped partway because of an error. Before it stopped: {done}. I tell the shopper what happened and carry on from there.]",
+        }
+        # The usage of a failed run is not known; the turn records none.
+        _ = await self._finish(
+            started, cart_id, [*history, note], merged(events), Usage()
+        )
+        return True
+
     async def _finish(
         self,
         started: Started,
@@ -354,14 +389,23 @@ class Assistant:
         usage: Usage,
     ) -> Turn:
         async with self._sessions.begin() as session:
-            record = await session.get_one(ConversationRecord, started.conversation_id)
+            record = await session.get_one(
+                ConversationRecord, started.conversation_id, with_for_update=True
+            )
             record.history = history
             record.cart_id = cart_id
             record.busy_since = None
+            # Counted under the conversation's lock, so a turn that outlived its lease and the
+            # one that took over never claim the same place.
+            taken = await session.scalar(
+                select(func.count())
+                .select_from(TurnRecord)
+                .where(TurnRecord.conversation_id == started.conversation_id)
+            )
             stored = TurnRecord(
                 id=uuid7(),
                 conversation_id=started.conversation_id,
-                position=started.position,
+                position=(taken or 0) + 1,
                 request=started.request.model_dump(mode="json"),
                 events=TURN_EVENTS.dump_python(events, mode="json"),
                 input_tokens=usage.input_tokens,
@@ -379,6 +423,12 @@ class Assistant:
         async with self._sessions.begin() as session:
             record = await session.get_one(ConversationRecord, conversation_id)
             record.busy_since = None
+
+    @staticmethod
+    async def _own_cart(session: AsyncSession, cart_id: UUID, wallet_id: UUID) -> None:
+        cart = await session.get(CartRecord, cart_id)
+        if cart is None or cart.wallet_id != wallet_id:
+            raise ForeignCart(cart_id)
 
     @staticmethod
     async def _load(session: AsyncSession, conversation_id: UUID) -> ConversationRecord:

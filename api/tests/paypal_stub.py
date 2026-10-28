@@ -5,6 +5,8 @@ from typing import final
 
 import httpx2
 
+from palisade_api.paypal.auth import OAUTH_PATH
+
 Answer = Callable[[httpx2.Request], httpx2.Response]
 
 
@@ -24,7 +26,7 @@ def unreachable(_request: httpx2.Request) -> httpx2.Response:
 
 @final
 class PayPalStub:
-    """Answers the token call itself; every other call is matched by `METHOD path`.
+    """Answers every call by `METHOD path`, and grants the token itself unless a test scripts it.
 
     Answers for a path are consumed in order, the last one repeating, so a test can script a
     timeout followed by a success. Each request PayPal would have seen is kept in `requests`.
@@ -38,7 +40,8 @@ class PayPalStub:
         self.answers[f"{method} {path}"] = list(answers)
 
     def handle(self, request: httpx2.Request) -> httpx2.Response:
-        if request.url.path == "/v1/oauth2/token":
+        key = f"{request.method} {request.url.path}"
+        if request.url.path == OAUTH_PATH and key not in self.answers:
             return httpx2.Response(
                 200,
                 json={
@@ -50,7 +53,7 @@ class PayPalStub:
                 },
             )
         self.requests.append(request)
-        answers = self.answers[f"{request.method} {request.url.path}"]
+        answers = self.answers[key]
         answer = answers.pop(0) if len(answers) > 1 else answers[0]
         return answer(request)
 

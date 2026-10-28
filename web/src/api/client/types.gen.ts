@@ -11,7 +11,7 @@ export type ClientOptions = {
  *
  * The conversation it belongs to stays server-side: a conversation id plus the shared chat
  * code would open another shopper's chat. Mandate and order ids are safe to show, because
- * neither can be acted on without a signature or a signed mandate.
+ * neither can be acted on without the mandate's key or a signed mandate.
  */
 export type Activity = {
     /**
@@ -177,12 +177,18 @@ export type CartWallet = {
  * CheckoutRequest
  *
  * What an agent sends with a checkout: the buyer-signed mandate that covers it.
+ *
+ * The key is the one the agent got when it asked for the mandate.
  */
 export type CheckoutRequest = {
     /**
      * Mandate Id
      */
     mandate_id: string;
+    /**
+     * Mandate Key
+     */
+    mandate_key: string;
 };
 
 /**
@@ -298,6 +304,79 @@ export type Health = {
     version: string;
 };
 
+/**
+ * IssuedMandate
+ *
+ * A new mandate as its requesting agent gets it: the one time its key is handed out.
+ *
+ * `consent_path` carries the key after `#`, so browsers send it to no server and no Referer.
+ */
+export type IssuedMandate = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Kind
+     */
+    kind: 'intent' | 'cart';
+    /**
+     * Status
+     */
+    status: 'pending' | 'signed' | 'declined' | 'expired';
+    agent: Agent;
+    /**
+     * Wallet Email
+     */
+    wallet_email: string;
+    /**
+     * Demo Wallet
+     */
+    demo_wallet: boolean;
+    cap: Money;
+    /**
+     * Categories
+     */
+    categories: Array<string>;
+    /**
+     * Lines
+     */
+    lines: Array<MandateLine>;
+    /**
+     * Policy Hash
+     */
+    policy_hash: string;
+    /**
+     * Token Hash
+     */
+    token_hash: string;
+    /**
+     * Signed By
+     */
+    signed_by: 'passkey' | 'demo_signer' | null;
+    /**
+     * Signed At
+     */
+    signed_at: string | null;
+    /**
+     * Expires At
+     */
+    expires_at: string;
+    spent: Money;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Key
+     */
+    key: string;
+    /**
+     * Consent Path
+     */
+    consent_path: string;
+};
+
 export type JsonValue = unknown;
 
 /**
@@ -349,10 +428,11 @@ export type LinkStart = {
 /**
  * Mandate
  *
- * A mandate as the consent page and the agent read it.
+ * A mandate as the consent page and the agent read it; anyone holding its id may read it.
  *
  * The cart it covers stays server-side, as on orders: an open cart's id is all it takes to
- * change it or check it out, and a mandate id is public on the activity feed.
+ * change it or check it out, and a mandate id is public on the activity feed. Answering or
+ * spending the mandate takes the key only its requesting agent got.
  */
 export type Mandate = {
     /**
@@ -372,6 +452,10 @@ export type Mandate = {
      * Wallet Email
      */
     wallet_email: string;
+    /**
+     * Demo Wallet
+     */
+    demo_wallet: boolean;
     cap: Money;
     /**
      * Categories
@@ -402,10 +486,6 @@ export type Mandate = {
      */
     expires_at: string;
     spent: Money;
-    /**
-     * Consent Path
-     */
-    consent_path: string;
     /**
      * Created At
      */
@@ -443,7 +523,7 @@ export type MandateCard = {
     /**
      * Consent Path
      */
-    consent_path: string;
+    consent_path?: string | null;
     /**
      * Expires At
      */
@@ -507,7 +587,7 @@ export type MandateRequest = {
     /**
      * Categories
      */
-    categories?: Array<string>;
+    categories?: Array<'Road' | 'Tempo' | 'Trail' | 'Stability'>;
     /**
      * Cart Id
      */
@@ -517,7 +597,7 @@ export type MandateRequest = {
 /**
  * MandateSummary
  *
- * The mandate as an order carries it.
+ * The mandate as an order carries it, decoded for the console.
  */
 export type MandateSummary = {
     /**
@@ -537,6 +617,18 @@ export type MandateSummary = {
      */
     signed_at: string | null;
     cap: Money;
+    /**
+     * Categories
+     */
+    categories: Array<string>;
+    /**
+     * Lines
+     */
+    lines: Array<MandateLine>;
+    /**
+     * Expires At
+     */
+    expires_at: string;
     /**
      * Token Hash
      */
@@ -575,6 +667,11 @@ export type NewConversation = {
 
 /**
  * Order
+ *
+ * An order as its public page shows it.
+ *
+ * The cart it came from stays server-side: a declined order reopens its cart, and an open
+ * cart's id is all it takes to fill it and pay from its wallet.
  */
 export type Order = {
     /**
@@ -585,10 +682,6 @@ export type Order = {
      * Number
      */
     number: string;
-    /**
-     * Cart Id
-     */
-    cart_id: string;
     /**
      * Channel
      */
@@ -1058,6 +1151,10 @@ export type ShopperMessage = {
      * Text
      */
     text: string;
+    /**
+     * Cart Id
+     */
+    cart_id?: string | null;
 };
 
 /**
@@ -1273,6 +1370,11 @@ export type WebhookEvent = {
 
 /**
  * Order
+ *
+ * An order as its public page shows it.
+ *
+ * The cart it came from stays server-side: a declined order reopens its cart, and an open
+ * cart's id is all it takes to fill it and pay from its wallet.
  */
 export type OrderWritable = {
     /**
@@ -1283,10 +1385,6 @@ export type OrderWritable = {
      * Number
      */
     number: string;
-    /**
-     * Cart Id
-     */
-    cart_id: string;
     /**
      * Channel
      */
@@ -1875,7 +1973,7 @@ export type CreateMandateResponses = {
     /**
      * Successful Response
      */
-    201: Mandate;
+    201: IssuedMandate;
 };
 
 export type CreateMandateResponse = CreateMandateResponses[keyof CreateMandateResponses];
@@ -1909,6 +2007,36 @@ export type MandateResponses = {
 };
 
 export type MandateResponse = MandateResponses[keyof MandateResponses];
+
+export type StartPasskeyRegistrationData = {
+    body?: never;
+    path: {
+        /**
+         * Mandate Id
+         */
+        mandate_id: string;
+    };
+    query?: never;
+    url: '/api/mandates/{mandate_id}/passkey-registration';
+};
+
+export type StartPasskeyRegistrationErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type StartPasskeyRegistrationError = StartPasskeyRegistrationErrors[keyof StartPasskeyRegistrationErrors];
+
+export type StartPasskeyRegistrationResponses = {
+    /**
+     * Successful Response
+     */
+    201: RegistrationStart;
+};
+
+export type StartPasskeyRegistrationResponse = StartPasskeyRegistrationResponses[keyof StartPasskeyRegistrationResponses];
 
 export type MandatePasskeyOptionsData = {
     body?: never;
@@ -2008,22 +2136,6 @@ export type DeclineMandateResponses = {
 };
 
 export type DeclineMandateResponse = DeclineMandateResponses[keyof DeclineMandateResponses];
-
-export type StartPasskeyRegistrationData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/api/passkeys/registration';
-};
-
-export type StartPasskeyRegistrationResponses = {
-    /**
-     * Successful Response
-     */
-    201: RegistrationStart;
-};
-
-export type StartPasskeyRegistrationResponse = StartPasskeyRegistrationResponses[keyof StartPasskeyRegistrationResponses];
 
 export type RegisterPasskeyData = {
     body: Registration;

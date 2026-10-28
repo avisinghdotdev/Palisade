@@ -1,5 +1,6 @@
 from typing import Annotated
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from palisade_api.orders.shipping import (
@@ -26,6 +27,18 @@ def shipments(request: Request) -> Shipments:
     return service
 
 
+async def bound(number: str) -> str:
+    """The path's order number, also bound to the request's log event.
+
+    Async, so it runs in the request's own context and the binding reaches the event.
+    """
+    structlog.contextvars.bind_contextvars(order_number=number)
+    return number
+
+
+OrderNumber = Annotated[str, Depends(bound)]
+
+
 @router.get("", operation_id="orders")
 async def list_orders(
     service: Annotated[Orders, Depends(orders)],
@@ -34,7 +47,9 @@ async def list_orders(
 
 
 @router.get("/{number}", operation_id="order")
-async def get_order(number: str, service: Annotated[Orders, Depends(orders)]) -> Order:
+async def get_order(
+    number: OrderNumber, service: Annotated[Orders, Depends(orders)]
+) -> Order:
     try:
         return await service.get(number)
     except UnknownOrder as error:
@@ -43,7 +58,7 @@ async def get_order(number: str, service: Annotated[Orders, Depends(orders)]) ->
 
 @router.post("/{number}/shipment", operation_id="ship_order")
 async def ship_order(
-    number: str,
+    number: OrderNumber,
     shipment: ShipmentRequest,
     service: Annotated[Shipments, Depends(shipments)],
 ) -> Order:

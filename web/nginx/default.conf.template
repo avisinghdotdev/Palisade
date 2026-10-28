@@ -5,6 +5,30 @@ map $uri $cache_control {
   default "no-cache";
 }
 
+# Cloudflare names the visitor in CF-Connecting-IP and sets it on every request it proxies; the
+# app's ingress takes traffic only from Cloudflare's ranges, so the header is trustworthy there.
+# Without Cloudflare in front, as on a laptop, the connecting address is the visitor.
+map $http_cf_connecting_ip $client_ip {
+  "" $remote_addr;
+  default $http_cf_connecting_ip;
+}
+
+# Reads leave the key empty, which nginx does not count, so only changes use the write budget.
+map $request_method $client_writes {
+  GET "";
+  HEAD "";
+  default $client_ip;
+}
+
+# Per visitor and per replica. Reads cover a console that polls; writes cover an agent's tool
+# calls; a request that makes PayPal calls (linking a wallet, paying, shipping, replaying an
+# event) is held to a few a minute; PayPal's own deliveries get room for bursts of retries.
+limit_req_zone $client_ip zone=api_reads:10m rate=20r/s;
+limit_req_zone $client_writes zone=api_writes:10m rate=1r/s;
+limit_req_zone $client_ip zone=paypal_calls:10m rate=12r/m;
+limit_req_zone $client_ip zone=paypal_webhooks:10m rate=10r/s;
+limit_req_status 429;
+
 server {
   listen 8080;
   server_tokens off;
@@ -30,15 +54,43 @@ server {
   # Cloudflare injects its Web Analytics beacon, which loads from and posts to the two cloudflareinsights hosts.
   add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://cloudflareinsights.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" always;
 
+  # A limited request is answered in the API's own error shape, which the shop shows as is.
+  error_page 429 = @too_many_requests;
+  location @too_many_requests {
+    default_type application/json;
+    return 429 '{"detail":"Too many requests. Wait a few seconds and try again."}';
+  }
+
   # API_UPSTREAM is substituted at container start; the API owns the /api prefix.
   # ^~ keeps the file-name rule below from claiming API paths that end in an extension.
+  # Every API body is small: chat messages, cart changes, passkey answers.
   location ^~ /api/ {
+    client_max_body_size 64k;
+    limit_req zone=api_reads burst=100 nodelay;
+    limit_req zone=api_writes burst=30 nodelay;
+    proxy_pass http://${API_UPSTREAM};
+
+    # Nested, because ^~ above keeps nginx from trying regular expressions at the server level.
+    location ~ ^/api/(shop/carts/[^/]+/checkout|shop/wallets/(link|confirm)|orders/[^/]+/shipment|webhooks/events/[^/]+/replay)$ {
+      limit_req zone=api_reads burst=100 nodelay;
+      limit_req zone=api_writes burst=30 nodelay;
+      limit_req zone=paypal_calls burst=6 nodelay;
+      proxy_pass http://${API_UPSTREAM};
+    }
+  }
+
+  # PayPal's deliveries; a dispute event with its messages can run to some size.
+  location = /api/webhooks/paypal {
+    client_max_body_size 1m;
+    limit_req zone=paypal_webhooks burst=100 nodelay;
     proxy_pass http://${API_UPSTREAM};
   }
 
   # The agent's replies stream as server-sent events: each event is passed on as it arrives,
-  # and a turn with several tool calls may stay open well past the default minute.
+  # and a turn with several tool calls may stay open well past the default minute. The chat
+  # has no request limit: it sits behind the judges' access code (owner's decision).
   location ^~ /api/assistant/ {
+    client_max_body_size 64k;
     proxy_pass http://${API_UPSTREAM};
     proxy_buffering off;
     proxy_read_timeout 300s;
@@ -47,6 +99,9 @@ server {
   # MCP clients post here; a reply may stream as server-sent events, and a tool call that
   # pays takes a few seconds.
   location = /api/shop/mcp {
+    client_max_body_size 64k;
+    limit_req zone=api_reads burst=100 nodelay;
+    limit_req zone=api_writes burst=30 nodelay;
     proxy_pass http://${API_UPSTREAM};
     proxy_buffering off;
     proxy_read_timeout 300s;

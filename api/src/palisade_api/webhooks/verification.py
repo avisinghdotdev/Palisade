@@ -3,12 +3,15 @@
 import json
 from dataclasses import dataclass
 from typing import Literal, final
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel
 
 from palisade_api.paypal.client import PayPalClient
 
 VERIFY_PATH = "/v1/notifications/verify-webhook-signature"
+# The only algorithm PayPal signs deliveries with.
+AUTH_ALGO = "SHA256withRSA"
 
 
 @dataclass(frozen=True)
@@ -20,6 +23,19 @@ class Transmission:
     signature: str
     cert_url: str
     auth_algo: str
+
+    def plausible(self) -> bool:
+        """Whether the headers could be PayPal's at all, checked before PayPal is asked.
+
+        Each check by postback costs a PayPal call, so a delivery that names a certificate off
+        PayPal's hosts or another algorithm is refused without one.
+        """
+        cert = urlsplit(self.cert_url)
+        return (
+            self.auth_algo == AUTH_ALGO
+            and cert.scheme == "https"
+            and (cert.hostname or "").endswith(".paypal.com")
+        )
 
 
 class VerificationResponse(BaseModel):

@@ -21,6 +21,7 @@ import { Link } from "react-router";
 
 import type { Mandate } from "@/api/client";
 
+import { statusOf } from "@/api-errors";
 import {
   approveMandate,
   declineMandate,
@@ -38,7 +39,7 @@ import { Button } from "@/components/ui/button";
 import { useHydrated } from "@/hooks/use-hydrated";
 import { formatAmount, formatLocal } from "@/money";
 import { pageTitle } from "@/page-title";
-import { errorDetail, passkey } from "@/shopper";
+import { errorDetail, passkeys } from "@/shopper";
 
 import type { Route } from "./+types/shop-approve";
 
@@ -56,34 +57,73 @@ const SIGNER_LABELS: Record<NonNullable<Mandate["signed_by"]>, string> = {
   demo_signer: "the demo signer (simulated)",
 };
 
-/** Registers a passkey the first time, then signs the mandate's hash with it. */
-async function signWithPasskey(mandateId: string): Promise<void> {
-  let passkeyId = passkey.get();
-  if (passkeyId === null) {
-    const start = await startPasskeyRegistration({ throwOnError: true });
-    // The API hands the WebAuthn JSON through untyped; the library knows its exact shape.
-    const credential = await startRegistration({
-      optionsJSON: start.data
-        .options as unknown as PublicKeyCredentialCreationOptionsJSON,
-    });
-    const registered = await registerPasskey({
-      body: { challenge: start.data.challenge, credential: { ...credential } },
-      throwOnError: true,
-    });
-    passkeyId = registered.data.id;
-    passkey.set(passkeyId);
-  }
+/** The header that opens the mandate: the key its agent got, carried in the link after `#key=`. */
+type Opened = Record<"X-Mandate-Key", string>;
+
+/** The key in the consent link. It sits after `#`, so the browser never sent it to a server. */
+function linkKey(): null | string {
+  return new URLSearchParams(window.location.hash.slice(1)).get("key");
+}
+
+/** A new passkey that signs for the mandate's wallet; its id. */
+async function registerFor(mandateId: string, opened: Opened): Promise<string> {
+  const start = await startPasskeyRegistration({
+    path: { mandate_id: mandateId },
+    headers: opened,
+    throwOnError: true,
+  });
+  // The API hands the WebAuthn JSON through untyped; the library knows its exact shape.
+  const credential = await startRegistration({
+    optionsJSON: start.data
+      .options as unknown as PublicKeyCredentialCreationOptionsJSON,
+  });
+  const registered = await registerPasskey({
+    body: { challenge: start.data.challenge, credential: { ...credential } },
+    throwOnError: true,
+  });
+  return registered.data.id;
+}
+
+async function signingOptions(
+  mandateId: string,
+  passkeyId: string,
+  opened: Opened,
+): Promise<PublicKeyCredentialRequestOptionsJSON> {
   const options = await mandatePasskeyOptions({
     path: { mandate_id: mandateId },
     query: { passkey_id: passkeyId },
+    headers: opened,
     throwOnError: true,
   });
-  const assertion = await startAuthentication({
-    optionsJSON:
-      options.data as unknown as PublicKeyCredentialRequestOptionsJSON,
-  });
+  return options.data as unknown as PublicKeyCredentialRequestOptionsJSON;
+}
+
+/**
+ * Signs the mandate's hash with the passkey this browser keeps for the mandate's wallet, after
+ * registering one when there is none or the API no longer lets it sign for that wallet.
+ */
+async function signWithPasskey(
+  mandate: Mandate,
+  opened: Opened,
+): Promise<void> {
+  let passkeyId = passkeys.get(mandate.wallet_email);
+  let options: null | PublicKeyCredentialRequestOptionsJSON = null;
+  if (passkeyId !== null) {
+    try {
+      options = await signingOptions(mandate.id, passkeyId, opened);
+    } catch (error) {
+      if (statusOf(error) !== 404) throw error;
+    }
+  }
+  if (passkeyId === null || options === null) {
+    passkeyId = await registerFor(mandate.id, opened);
+    passkeys.set(mandate.wallet_email, passkeyId);
+    options = await signingOptions(mandate.id, passkeyId, opened);
+  }
+  const assertion = await startAuthentication({ optionsJSON: options });
   await approveMandate({
-    path: { mandate_id: mandateId },
+    path: { mandate_id: mandate.id },
+    headers: opened,
     body: {
       signed_by: "passkey",
       passkey_id: passkeyId,
@@ -91,6 +131,18 @@ async function signWithPasskey(mandateId: string): Promise<void> {
     },
     throwOnError: true,
   });
+}
+
+/** What the buyer reads when an answer is refused, by the API's status. */
+function refusal(error: unknown): string {
+  const status = statusOf(error);
+  if (status === 403) {
+    return "This link's approval key does not match the request. Open the full link your agent gave you.";
+  }
+  if (status === 409) {
+    return "The cart changed after this request was made, so approving it would not match what gets paid. Ask your agent to request it again.";
+  }
+  return errorDetail(error);
 }
 
 /** What the agent asks for, in the buyer's words. */
@@ -232,6 +284,14 @@ export default function ShopApprove({ params }: Route.ComponentProps) {
       query.state.data?.status === "pending" ? PENDING_REFETCH_MS : false,
   });
   const [problem, setProblem] = useState<null | string>(null);
+  // This route is never prerendered, so the link is there to read on the first render.
+  const [key] = useState(linkKey);
+  const opened: null | Opened = key === null ? null : { "X-Mandate-Key": key };
+  const reread = async () => {
+    await queryClient.invalidateQueries({
+      queryKey: mandateQueryKey({ path: { mandate_id: params.mandateId } }),
+    });
+  };
   const refresh = async (updated: Mandate) => {
     queryClient.setQueryData(
       mandateQueryKey({ path: { mandate_id: updated.id } }),
@@ -239,57 +299,67 @@ export default function ShopApprove({ params }: Route.ComponentProps) {
     );
     await Promise.resolve();
   };
+  const refused = async (error: unknown) => {
+    setProblem(refusal(error));
+    // An answer given in another tab shows here as the outcome instead of an error.
+    await reread();
+  };
 
   const withPasskey = useMutation({
-    mutationFn: async () => {
-      await signWithPasskey(params.mandateId);
+    mutationFn: async ({
+      mandate,
+      opened,
+    }: {
+      mandate: Mandate;
+      opened: Opened;
+    }) => {
+      await signWithPasskey(mandate, opened);
     },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: mandateQueryKey({ path: { mandate_id: params.mandateId } }),
-      });
-    },
-    onError: (error) => {
-      setProblem(
-        error instanceof Error && error.name === "NotAllowedError"
-          ? "The passkey prompt was closed. Try again, or use the demo signer."
-          : error instanceof Error && error.name === "SecurityError"
-            ? "Passkeys do not work at this web address. Use the demo signer here, or open the hosted site."
-            : errorDetail(error),
-      );
+    onSuccess: reread,
+    onError: async (error) => {
+      if (error instanceof Error && error.name === "NotAllowedError") {
+        setProblem(
+          "The passkey prompt was closed, or this device has no passkey for this wallet. Try again.",
+        );
+      } else if (error instanceof Error && error.name === "SecurityError") {
+        setProblem(
+          "Passkeys do not work at this web address. Open the hosted site to use one.",
+        );
+      } else {
+        await refused(error);
+      }
     },
   });
   const withDemoSigner = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (opened: Opened) => {
       const approved = await approveMandate({
         path: { mandate_id: params.mandateId },
+        headers: opened,
         body: { signed_by: "demo_signer" },
         throwOnError: true,
       });
       return approved.data;
     },
     onSuccess: refresh,
-    onError: (error) => {
-      setProblem(errorDetail(error));
-    },
+    onError: refused,
   });
   const decline = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (opened: Opened) => {
       const declined = await declineMandate({
         path: { mandate_id: params.mandateId },
+        headers: opened,
         throwOnError: true,
       });
       return declined.data;
     },
     onSuccess: refresh,
-    onError: (error) => {
-      setProblem(errorDetail(error));
-    },
+    onError: refused,
   });
 
   const busy =
     withPasskey.isPending || withDemoSigner.isPending || decline.isPending;
   const passkeysAvailable = hydrated && browserSupportsWebAuthn();
+  const pending = mandate.data?.status === "pending" ? mandate.data : undefined;
 
   return (
     <div className="theme-shop flex min-h-dvh flex-col bg-secondary text-foreground">
@@ -320,82 +390,100 @@ export default function ShopApprove({ params }: Route.ComponentProps) {
           {mandate.data !== undefined && mandate.data.status !== "pending" && (
             <Outcome mandate={mandate.data} />
           )}
-          {mandate.data?.status === "pending" && (
+          {pending !== undefined && (
             <>
               <h1 className="text-lg font-semibold tracking-tight">
-                {mandate.data.kind === "cart"
+                {pending.kind === "cart"
                   ? "Approve this Purchase"
                   : "Let Your Agent Shop for You"}
               </h1>
               <div className="mt-2">
-                <Request mandate={mandate.data} />
+                <Request mandate={pending} />
               </div>
               <p className="mt-3 text-xs text-muted-foreground">
                 Ridgeline Running uses Palisade to keep your signed approval
                 with the order, so a dispute can show what you agreed to.
-                Expires {formatLocal(mandate.data.expires_at)}.
+                Expires {formatLocal(pending.expires_at)}.
               </p>
               {problem !== null && (
                 <p className="mt-4 text-sm text-destructive" role="alert">
                   {problem}
                 </p>
               )}
-              <div className="mt-6 flex flex-col gap-3">
-                {passkeysAvailable && (
+              {opened === null ? (
+                <p className="mt-6 text-sm text-destructive" role="alert">
+                  This link is missing its approval key, so it can only show the
+                  request. Open the full link your agent gave you to answer it.
+                </p>
+              ) : (
+                <div className="mt-6 flex flex-col gap-3">
+                  {passkeysAvailable && (
+                    <Button
+                      className="h-11"
+                      disabled={busy}
+                      onClick={() => {
+                        setProblem(null);
+                        withPasskey.mutate({ mandate: pending, opened });
+                      }}
+                    >
+                      {withPasskey.isPending ? (
+                        <LoaderCircle
+                          aria-hidden
+                          className="motion-safe:animate-spin"
+                        />
+                      ) : (
+                        <KeyRound aria-hidden />
+                      )}
+                      Approve with Passkey
+                    </Button>
+                  )}
+                  {pending.demo_wallet ? (
+                    <>
+                      <Button
+                        className="h-11"
+                        disabled={busy}
+                        onClick={() => {
+                          setProblem(null);
+                          withDemoSigner.mutate(opened);
+                        }}
+                        variant={passkeysAvailable ? "outline" : "default"}
+                      >
+                        {withDemoSigner.isPending && (
+                          <LoaderCircle
+                            aria-hidden
+                            className="motion-safe:animate-spin"
+                          />
+                        )}
+                        Approve with Demo Signer (Simulated)
+                      </Button>
+                      <p className="text-xs text-muted-foreground">
+                        The demo signer is a key Palisade holds for the demo
+                        buyer, not a passkey of yours; the record says so.
+                        {!passkeysAvailable &&
+                          " Passkeys are not available in this browser."}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Only your own passkey can approve a payment from your
+                      wallet.
+                      {!passkeysAvailable &&
+                        " Passkeys are not available in this browser, so open this link where they are."}
+                    </p>
+                  )}
                   <Button
                     className="h-11"
                     disabled={busy}
                     onClick={() => {
                       setProblem(null);
-                      withPasskey.mutate();
+                      decline.mutate(opened);
                     }}
+                    variant="outline"
                   >
-                    {withPasskey.isPending ? (
-                      <LoaderCircle
-                        aria-hidden
-                        className="motion-safe:animate-spin"
-                      />
-                    ) : (
-                      <KeyRound aria-hidden />
-                    )}
-                    Approve with Passkey
+                    Decline
                   </Button>
-                )}
-                <Button
-                  className="h-11"
-                  disabled={busy}
-                  onClick={() => {
-                    setProblem(null);
-                    withDemoSigner.mutate();
-                  }}
-                  variant={passkeysAvailable ? "outline" : "default"}
-                >
-                  {withDemoSigner.isPending && (
-                    <LoaderCircle
-                      aria-hidden
-                      className="motion-safe:animate-spin"
-                    />
-                  )}
-                  Approve with Demo Signer (Simulated)
-                </Button>
-                <p className="text-xs text-muted-foreground">
-                  The demo signer is a key Palisade holds for this demo, not a
-                  passkey of yours; the record says so.
-                  {!passkeysAvailable &&
-                    " Passkeys are not available in this browser."}
-                </p>
-                <Button
-                  className="h-11"
-                  disabled={busy}
-                  onClick={() => {
-                    setProblem(null);
-                    decline.mutate();
-                  }}
-                  variant="outline"
-                >
-                  Decline
-                </Button>
-              </div>
+                </div>
+              )}
             </>
           )}
         </section>

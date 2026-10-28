@@ -1,5 +1,7 @@
 import { useSyncExternalStore } from "react";
 
+import type { Auth } from "@/api/client/core/auth.gen";
+
 /**
  * What the browser remembers about its shopper: their linked wallet, who pays, the open cart,
  * the chat with the assistant, and the code that opens it.
@@ -8,7 +10,7 @@ const WALLET_KEY = "palisade.wallet";
 const PAYS_WITH_DEMO_KEY = "palisade.pays-with-demo";
 const CART_KEY = "palisade.cart";
 const PENDING_LINK_KEY = "palisade.pending-wallet-link";
-const PASSKEY_KEY = "palisade.passkey";
+const PASSKEYS_KEY = "palisade.passkeys";
 const CONVERSATION_KEY = "palisade.conversation";
 const CHAT_KEY_KEY = "palisade.chat-key";
 const CHATS_KEY = "palisade.chats";
@@ -142,9 +144,14 @@ export function useShopper() {
   };
 }
 
-/** The chat code for the API client, which sends it on every chat request. */
-export function storedChatKey(): string | undefined {
-  return localStorage.getItem(CHAT_KEY_KEY) ?? undefined;
+/**
+ * The API client's answer for a security scheme: the stored chat code for the chat's own scheme,
+ * nothing for any other, so the code never travels as a mandate's or a conversation's key.
+ */
+export function storedChatKey(scheme: Auth): string | undefined {
+  return scheme.name === "X-Chat-Key"
+    ? (localStorage.getItem(CHAT_KEY_KEY) ?? undefined)
+    : undefined;
 }
 
 /** PayPal came back with a wallet link this browser, at this web address, did not start. */
@@ -178,13 +185,30 @@ export const pendingLink = {
   },
 };
 
-/** The passkey this browser registered to sign mandates; the API knows it by this id. */
-export const passkey = {
-  get(): null | string {
-    return localStorage.getItem(PASSKEY_KEY);
+function storedPasskeys(): Record<string, string> {
+  const raw = localStorage.getItem(PASSKEYS_KEY);
+  const parsed: unknown = raw === null ? {} : JSON.parse(raw);
+  if (typeof parsed !== "object" || parsed === null) return {};
+  return Object.fromEntries(
+    Object.entries(parsed).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string",
+    ),
+  );
+}
+
+/**
+ * The passkeys this browser registered, one per wallet it signs for, keyed by the wallet's email
+ * as the consent page shows it; the API knows each by its id.
+ */
+export const passkeys = {
+  get(walletEmail: string): null | string {
+    return storedPasskeys()[walletEmail] ?? null;
   },
-  set(id: string) {
-    localStorage.setItem(PASSKEY_KEY, id);
+  set(walletEmail: string, id: string) {
+    localStorage.setItem(
+      PASSKEYS_KEY,
+      JSON.stringify({ ...storedPasskeys(), [walletEmail]: id }),
+    );
   },
 };
 

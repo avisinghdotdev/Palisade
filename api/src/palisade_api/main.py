@@ -28,6 +28,7 @@ from palisade_api.assistant.service import Assistant
 from palisade_api.database import create_engine
 from palisade_api.jobs import run_worker
 from palisade_api.logging import RequestLogMiddleware
+from palisade_api.maintenance import Housekeeping
 from palisade_api.mandates import router as mandates_router
 from palisade_api.mandates.passkeys import Passkeys
 from palisade_api.mandates.service import Mandates
@@ -170,6 +171,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[State]:
                             "webhook_store": store,
                             "webhook_handlers": handlers,
                             "repairs": repairs,
+                            "housekeeping": Housekeeping(sessions),
                         },
                     )
                 )

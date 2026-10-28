@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { ActivityData, ActivityErrors, ActivityResponses, ApproveMandateData, ApproveMandateErrors, ApproveMandateResponses, AssistantAccessData, AssistantAccessResponses, CartData, CartErrors, CartResponses, CheckoutData, CheckoutErrors, CheckoutResponses, ConfirmWalletLinkData, ConfirmWalletLinkErrors, ConfirmWalletLinkResponses, ConversationData, ConversationErrors, ConversationResponses, CreateCartData, CreateCartErrors, CreateCartResponses, CreateConversationData, CreateConversationErrors, CreateConversationResponses, CreateMandateData, CreateMandateErrors, CreateMandateResponses, DeclineMandateData, DeclineMandateErrors, DeclineMandateResponses, DemoWalletData, DemoWalletResponses, HealthData, HealthResponses, MandateData, MandateErrors, MandatePasskeyOptionsData, MandatePasskeyOptionsErrors, MandatePasskeyOptionsResponses, MandateResponses, OrderActivityData, OrderActivityErrors, OrderActivityResponses, OrderData, OrderErrors, OrderResponses, OrdersData, OrdersResponses, PaypalHealthData, PaypalHealthResponses, PaypalWebhookData, PaypalWebhookErrors, PaypalWebhookResponses, ProductData, ProductErrors, ProductResponses, ProductsData, ProductsResponses, ReadyData, ReadyErrors, ReadyResponses, RegisterPasskeyData, RegisterPasskeyErrors, RegisterPasskeyResponses, ReplayWebhookEventData, ReplayWebhookEventErrors, ReplayWebhookEventResponses, SendMessageData, SendMessageErrors, SendMessageResponse, SendMessageResponses, SetCartLineData, SetCartLineErrors, SetCartLineResponses, SetCartWalletData, SetCartWalletErrors, SetCartWalletResponses, ShipOrderData, ShipOrderErrors, ShipOrderResponses, StartPasskeyRegistrationData, StartPasskeyRegistrationResponses, StartWalletLinkData, StartWalletLinkResponses, WalletData, WalletErrors, WalletResponses, WebhookEventsData, WebhookEventsResponses } from './types.gen';
+import type { ActivityData, ActivityErrors, ActivityResponses, ApproveMandateData, ApproveMandateErrors, ApproveMandateResponses, AssistantAccessData, AssistantAccessResponses, CartData, CartErrors, CartResponses, CheckoutData, CheckoutErrors, CheckoutResponses, ConfirmWalletLinkData, ConfirmWalletLinkErrors, ConfirmWalletLinkResponses, ConversationData, ConversationErrors, ConversationResponses, CreateCartData, CreateCartErrors, CreateCartResponses, CreateConversationData, CreateConversationErrors, CreateConversationResponses, CreateMandateData, CreateMandateErrors, CreateMandateResponses, DeclineMandateData, DeclineMandateErrors, DeclineMandateResponses, DemoWalletData, DemoWalletResponses, HealthData, HealthResponses, MandateData, MandateErrors, MandatePasskeyOptionsData, MandatePasskeyOptionsErrors, MandatePasskeyOptionsResponses, MandateResponses, OrderActivityData, OrderActivityErrors, OrderActivityResponses, OrderData, OrderErrors, OrderResponses, OrdersData, OrdersResponses, PaypalHealthData, PaypalHealthResponses, PaypalWebhookData, PaypalWebhookErrors, PaypalWebhookResponses, ProductData, ProductErrors, ProductResponses, ProductsData, ProductsResponses, ReadyData, ReadyErrors, ReadyResponses, RegisterPasskeyData, RegisterPasskeyErrors, RegisterPasskeyResponses, ReplayWebhookEventData, ReplayWebhookEventErrors, ReplayWebhookEventResponses, SendMessageData, SendMessageErrors, SendMessageResponse, SendMessageResponses, SetCartLineData, SetCartLineErrors, SetCartLineResponses, SetCartWalletData, SetCartWalletErrors, SetCartWalletResponses, ShipOrderData, ShipOrderErrors, ShipOrderResponses, StartPasskeyRegistrationData, StartPasskeyRegistrationErrors, StartPasskeyRegistrationResponses, StartWalletLinkData, StartWalletLinkResponses, WalletData, WalletErrors, WalletResponses, WebhookEventsData, WebhookEventsResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -29,7 +29,8 @@ export const paypalHealth = <ThrowOnError extends boolean = false>(options?: Opt
  * Accept a delivery once PayPal confirms its signature; a repeat delivery is a no-op.
  *
  * The event is stored and its processing queued in one transaction before the 2xx that stops
- * PayPal's retries. A 400 answers a signature PayPal rejects, and an error reaching PayPal or the
+ * PayPal's retries. A 400 answers headers or a body that cannot be PayPal's, checked first so
+ * they cost no PayPal call, or a signature PayPal rejects; an error reaching PayPal or the
  * database surfaces as a 500 so PayPal delivers the event again later.
  */
 export const paypalWebhook = <ThrowOnError extends boolean = false>(options: Options<PaypalWebhookData, ThrowOnError>): RequestResult<PaypalWebhookResponses, PaypalWebhookErrors, ThrowOnError> => (options.client ?? client).post<PaypalWebhookResponses, PaypalWebhookErrors, ThrowOnError>({ url: '/api/webhooks/paypal', ...options });
@@ -182,9 +183,10 @@ export const shipOrder = <ThrowOnError extends boolean = false>(options: Options
 /**
  * Create Mandate
  *
- * An agent asks the buyer for a mandate; the answer holds the consent page's path.
+ * An agent asks the buyer for a mandate; the answer holds the key and the consent link.
  *
- * Only a signed agent request may ask; a 404 names a wallet or cart that cannot be used.
+ * Only a signed agent request may ask. A 404 names a wallet or cart that cannot be used; a 422
+ * a request that does not fit its kind, such as a cart mandate whose cap is not the cart total.
  */
 export const createMandate = <ThrowOnError extends boolean = false>(options: Options<CreateMandateData, ThrowOnError>): RequestResult<CreateMandateResponses, CreateMandateErrors, ThrowOnError> => (options.client ?? client).post<CreateMandateResponses, CreateMandateErrors, ThrowOnError>({
     url: '/api/mandates',
@@ -201,18 +203,41 @@ export const createMandate = <ThrowOnError extends boolean = false>(options: Opt
 export const mandate = <ThrowOnError extends boolean = false>(options: Options<MandateData, ThrowOnError>): RequestResult<MandateResponses, MandateErrors, ThrowOnError> => (options.client ?? client).get<MandateResponses, MandateErrors, ThrowOnError>({ url: '/api/mandates/{mandate_id}', ...options });
 
 /**
+ * Start Passkey Registration
+ *
+ * A challenge and the options for a new passkey that signs for this mandate's wallet.
+ *
+ * The options are for `navigator.credentials.create()`. A 403 means the mandate key is
+ * missing or wrong.
+ */
+export const startPasskeyRegistration = <ThrowOnError extends boolean = false>(options: Options<StartPasskeyRegistrationData, ThrowOnError>): RequestResult<StartPasskeyRegistrationResponses, StartPasskeyRegistrationErrors, ThrowOnError> => (options.client ?? client).post<StartPasskeyRegistrationResponses, StartPasskeyRegistrationErrors, ThrowOnError>({
+    security: [{ name: 'X-Mandate-Key', type: 'apiKey' }],
+    url: '/api/mandates/{mandate_id}/passkey-registration',
+    ...options
+});
+
+/**
  * Mandate Passkey Options
  *
  * The browser options that make the given passkey sign this mandate.
+ *
+ * A 404 names a passkey that does not sign for this mandate's wallet; register a new one.
  */
-export const mandatePasskeyOptions = <ThrowOnError extends boolean = false>(options: Options<MandatePasskeyOptionsData, ThrowOnError>): RequestResult<MandatePasskeyOptionsResponses, MandatePasskeyOptionsErrors, ThrowOnError> => (options.client ?? client).get<MandatePasskeyOptionsResponses, MandatePasskeyOptionsErrors, ThrowOnError>({ url: '/api/mandates/{mandate_id}/passkey-options', ...options });
+export const mandatePasskeyOptions = <ThrowOnError extends boolean = false>(options: Options<MandatePasskeyOptionsData, ThrowOnError>): RequestResult<MandatePasskeyOptionsResponses, MandatePasskeyOptionsErrors, ThrowOnError> => (options.client ?? client).get<MandatePasskeyOptionsResponses, MandatePasskeyOptionsErrors, ThrowOnError>({
+    security: [{ name: 'X-Mandate-Key', type: 'apiKey' }],
+    url: '/api/mandates/{mandate_id}/passkey-options',
+    ...options
+});
 
 /**
  * Approve Mandate
  *
- * The buyer signs the mandate with a passkey or the demo signer (simulated).
+ * The buyer signs the mandate with a passkey, or the demo signer (simulated) for the demo buyer.
+ *
+ * A 409 means it is answered already or its cart changed since the request.
  */
 export const approveMandate = <ThrowOnError extends boolean = false>(options: Options<ApproveMandateData, ThrowOnError>): RequestResult<ApproveMandateResponses, ApproveMandateErrors, ThrowOnError> => (options.client ?? client).post<ApproveMandateResponses, ApproveMandateErrors, ThrowOnError>({
+    security: [{ name: 'X-Mandate-Key', type: 'apiKey' }],
     url: '/api/mandates/{mandate_id}/approval',
     ...options,
     headers: {
@@ -224,19 +249,16 @@ export const approveMandate = <ThrowOnError extends boolean = false>(options: Op
 /**
  * Decline Mandate
  */
-export const declineMandate = <ThrowOnError extends boolean = false>(options: Options<DeclineMandateData, ThrowOnError>): RequestResult<DeclineMandateResponses, DeclineMandateErrors, ThrowOnError> => (options.client ?? client).post<DeclineMandateResponses, DeclineMandateErrors, ThrowOnError>({ url: '/api/mandates/{mandate_id}/decline', ...options });
-
-/**
- * Start Passkey Registration
- *
- * A challenge and the options for `navigator.credentials.create()`.
- */
-export const startPasskeyRegistration = <ThrowOnError extends boolean = false>(options?: Options<StartPasskeyRegistrationData, ThrowOnError>): RequestResult<StartPasskeyRegistrationResponses, unknown, ThrowOnError> => (options?.client ?? client).post<StartPasskeyRegistrationResponses, unknown, ThrowOnError>({ url: '/api/passkeys/registration', ...options });
+export const declineMandate = <ThrowOnError extends boolean = false>(options: Options<DeclineMandateData, ThrowOnError>): RequestResult<DeclineMandateResponses, DeclineMandateErrors, ThrowOnError> => (options.client ?? client).post<DeclineMandateResponses, DeclineMandateErrors, ThrowOnError>({
+    security: [{ name: 'X-Mandate-Key', type: 'apiKey' }],
+    url: '/api/mandates/{mandate_id}/decline',
+    ...options
+});
 
 /**
  * Register Passkey
  *
- * Keep the passkey the browser created; its id signs mandates from now on.
+ * Keep the passkey the browser created; its id signs that wallet's mandates from now on.
  */
 export const registerPasskey = <ThrowOnError extends boolean = false>(options: Options<RegisterPasskeyData, ThrowOnError>): RequestResult<RegisterPasskeyResponses, RegisterPasskeyErrors, ThrowOnError> => (options.client ?? client).post<RegisterPasskeyResponses, RegisterPasskeyErrors, ThrowOnError>({
     url: '/api/passkeys',
@@ -293,7 +315,9 @@ export const createConversation = <ThrowOnError extends boolean = false>(options
 /**
  * Get Conversation
  *
- * The conversation, for the holder of its key; a 401 without it.
+ * The conversation, for the holder of its key.
+ *
+ * A 401 means the chat access code is wrong; a 403 means the conversation key is.
  */
 export const conversation = <ThrowOnError extends boolean = false>(options: Options<ConversationData, ThrowOnError>): RequestResult<ConversationResponses, ConversationErrors, ThrowOnError> => (options.client ?? client).get<ConversationResponses, ConversationErrors, ThrowOnError>({
     security: [{ name: 'X-Chat-Key', type: 'apiKey' }, { name: 'X-Conversation-Key', type: 'apiKey' }],
@@ -306,8 +330,9 @@ export const conversation = <ThrowOnError extends boolean = false>(options: Opti
  *
  * Send the shopper's message, or the outcome of a consent page, and stream the agent's turn.
  *
- * A 401 means the conversation's key is missing or wrong. A 409 means the agent is still
- * answering the last message, or the mandate named has no answer yet.
+ * A 401 means the chat access code is wrong; a 403 means the conversation's key is missing
+ * or wrong. A 404 names a conversation, mandate, or cart that cannot be used. A 409 means the
+ * agent is still answering the last message, or the mandate named has no answer yet.
  */
 export const sendMessage = <ThrowOnError extends boolean = false>(options: Options<SendMessageData, ThrowOnError, SendMessageResponse>): Promise<ServerSentEventsResult<SendMessageResponses>> => (options.client ?? client).sse.post<SendMessageResponses, SendMessageErrors, ThrowOnError>({
     security: [{ name: 'X-Chat-Key', type: 'apiKey' }, { name: 'X-Conversation-Key', type: 'apiKey' }],

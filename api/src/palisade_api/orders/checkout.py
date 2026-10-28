@@ -7,12 +7,14 @@ from datetime import datetime
 from typing import final
 from uuid import UUID, uuid7
 
+import structlog
 from pydantic import BaseModel, JsonValue
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from palisade_api.activity.store import Activities
+from palisade_api.agents.models import AgentRecord
 from palisade_api.agents.registry import Agent
 from palisade_api.mandates.service import MandateRefused, Mandates
 from palisade_api.orders.calls import PayPalCalls
@@ -40,6 +42,9 @@ from palisade_api.wallets.models import WalletRecord
 NUMBER_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 NUMBER_LENGTH = 6
 CREATE_PATH = "/v2/checkout/orders"
+# Authorization statuses that hold the amount: CREATED can be captured now, PENDING once
+# PayPal finishes reviewing it.
+HOLDING = ("CREATED", "PENDING")
 
 
 class EmptyCart(Exception):
@@ -117,6 +122,14 @@ class Started:
     order_id: UUID
     number: str
     create_body: dict[str, JsonValue]
+
+
+@dataclass(frozen=True)
+class MandateClaim:
+    """The mandate an agent names at checkout, with the key its requester was given."""
+
+    id: UUID
+    key: str
 
 
 def order_number() -> str:
@@ -211,47 +224,49 @@ class Checkout:
         self._source: EventSource = source
 
     async def place_order(
-        self, cart_id: UUID, agent: Agent | None, mandate_id: UUID | None
+        self, cart_id: UUID, agent: Agent | None, mandate: MandateClaim | None
     ) -> Order:
         """Turn the cart into a paid order; a repeat call returns the order already placed.
 
         `agent` is the signed agent checking out, or None for the buyer's own browser; an agent
-        names the buyer-signed `mandate_id` that covers the purchase.
+        names the buyer-signed mandate that covers the purchase.
 
         Raises:
             UnknownCart, EmptyCart, CartChanged, WalletUnavailable: nothing was sent to PayPal.
             MandateRefused, PolicyRefused: the mandate or the merchant's policy refuses the
                 agent's purchase; the cart stays open.
             CheckoutDeclined: PayPal refused the payment; the cart is open again.
-            CheckoutFailed: PayPal did not answer; the order stays with status `failed`.
+            CheckoutFailed: PayPal's answer is unknown; the repair job finishes the order.
         """
         try:
-            started = await self._begin(cart_id, agent, mandate_id)
+            started = await self._begin(cart_id, agent, mandate)
         except (PolicyRefused, MandateRefused) as refusal:
             if agent is not None:
-                # The id the agent named may be nobody's mandate; the row links only one that
-                # exists and keeps the named id as text either way.
-                known = (
-                    isinstance(refusal, MandateRefused)
-                    and "MANDATE_UNKNOWN" not in refusal.reasons
-                )
+                # The id the agent named may be no mandate at all, even a cart id it mixed up,
+                # so the public row links only a mandate whose key the agent holds.
+                proven = isinstance(refusal, MandateRefused) and not {
+                    "MANDATE_UNKNOWN",
+                    "MANDATE_KEY_INVALID",
+                } & set(refusal.reasons)
                 await self._activities.record(
                     "policy_refused"
                     if isinstance(refusal, PolicyRefused)
                     else "mandate_refused",
                     agent_id=agent.id,
-                    mandate_id=mandate_id if known else None,
+                    mandate_id=mandate.id if proven and mandate else None,
                     reasons=list(refusal.reasons),
-                    named_mandate=None if mandate_id is None else str(mandate_id),
                 )
             raise
         if isinstance(started, Order):
             return started
+        structlog.contextvars.bind_contextvars(
+            order_id=str(started.order_id), order_number=started.number
+        )
         if agent is not None:
             await self._activities.record(
                 "checkout_accepted",
                 agent_id=agent.id,
-                mandate_id=mandate_id,
+                mandate_id=None if mandate is None else mandate.id,
                 order_id=started.order_id,
                 number=started.number,
             )
@@ -264,8 +279,9 @@ class Checkout:
 
         Raises:
             CheckoutDeclined: PayPal refused the payment or placed no hold; the cart is open again.
-            CheckoutFailed: PayPal did not answer, or holds the amount but refused both the
-                capture and the void; the order is `failed` or `authorized` for the repair job.
+            CheckoutFailed: PayPal's answer is unknown, the hold is still pending, or PayPal
+                holds the amount but refused both the capture and the void; the order is
+                `failed` or `authorized` for the repair job.
         """
         try:
             response = await self._calls.once(order_id, "create", CREATE_PATH, body)
@@ -273,7 +289,7 @@ class Checkout:
             raise await self._refused(order_id, number, error) from error
         created = CreatedOrder.model_validate(response.body)
         authorization = created.authorization()
-        if authorization is None or authorization.status != "CREATED":
+        if authorization is None or authorization.status not in HOLDING:
             issue = (
                 f"ORDER_{created.status}"
                 if authorization is None
@@ -290,17 +306,21 @@ class Checkout:
         await self._transition(
             order_id, "authorized", apply=note_created(created, authorization)
         )
+        if authorization.status == "PENDING":
+            # PayPal is still reviewing the hold; it cannot be captured yet.
+            raise CheckoutFailed(number)
         try:
             return await self.capture(order_id, authorization.id)
         except PayPalError as error:
             raise CheckoutFailed(number) from error
 
     async def capture(self, order_id: UUID, authorization_id: str) -> Order:
-        """Capture the whole authorization; a capture that does not complete voids the hold.
+        """Capture the whole authorization; a capture PayPal refused voids the hold.
 
         Raises:
             CheckoutDeclined: the capture did not complete and the hold is voided.
-            PayPalError: the void was refused too; the order stays `authorized`.
+            PayPalError: the capture's outcome is unknown, or the void was refused too; the
+                order stays `authorized` for the repair job.
         """
         try:
             response = await self._calls.once(
@@ -310,6 +330,8 @@ class Checkout:
                 {"final_capture": True},
             )
         except PayPalError as error:
+            if error.outcome_unknown:
+                raise
             await self.void(order_id, authorization_id, error.issues)
             raise CheckoutDeclined(error.issues) from error
         capture = Capture.model_validate(response.body)
@@ -355,12 +377,16 @@ class Checkout:
             order_id, "voided", detail=", ".join(issues), cart_status="open"
         )
 
+    async def capture_declined(self, order_id: UUID, issue: str) -> None:
+        """Record a capture PayPal declined after it was pending; the cart is open again."""
+        await self._transition(order_id, "declined", detail=issue, cart_status="open")
+
     async def give_up(self, order_id: UUID, issue: str) -> None:
         """Close an order whose outcome PayPal can no longer tell: `failed`, the cart open again."""
         await self._transition(order_id, "failed", detail=issue, cart_status="open")
 
     async def _begin(
-        self, cart_id: UUID, agent: Agent | None, mandate_id: UUID | None
+        self, cart_id: UUID, agent: Agent | None, mandate: MandateClaim | None
     ) -> Order | Started:
         """Freeze the cart and write the order before anything is sent to PayPal."""
         async with self._sessions.begin() as session:
@@ -409,6 +435,13 @@ class Checkout:
             policy_hash = None
             custom_id = None
             if agent is not None:
+                # One checkout per agent at a time, so its daily total cannot be read twice
+                # before either order is written.
+                _ = await session.execute(
+                    select(AgentRecord.id)
+                    .where(AgentRecord.id == agent.id)
+                    .with_for_update()
+                )
                 policy = await self._policies.current(session)
                 categories = {products[line.product_id].category for line in cart.lines}
                 reasons = evaluate(
@@ -424,13 +457,19 @@ class Checkout:
                 )
                 if reasons:
                     raise PolicyRefused(reasons)
-                if mandate_id is None:
+                if mandate is None:
                     raise MandateRefused(["MANDATE_REQUIRED"])
-                mandate = await self._mandates.claim(
-                    session, mandate_id, agent, cart, categories, policy.hash
+                claimed = await self._mandates.claim(
+                    session,
+                    mandate.id,
+                    mandate.key,
+                    agent,
+                    cart,
+                    categories,
+                    policy.hash,
                 )
                 policy_hash = policy.hash
-                custom_id = f"{mandate.id}:{mandate.token_hash}"
+                custom_id = f"{claimed.id}:{claimed.token_hash}"
             record = OrderRecord(
                 id=uuid7(),
                 number=await self._unused_number(session),
@@ -439,7 +478,7 @@ class Checkout:
                 channel="human" if agent is None else "agent",
                 agent_id=None if agent is None else agent.id,
                 policy_hash=policy_hash,
-                mandate_id=mandate_id if agent is not None else None,
+                mandate_id=None if mandate is None or agent is None else mandate.id,
                 custom_id=custom_id,
                 status="creating",
                 currency="USD",
@@ -488,7 +527,7 @@ class Checkout:
         self, order_id: UUID, number: str, error: PayPalError
     ) -> Exception:
         """Record a create call PayPal refused or never answered; the exception to raise."""
-        if error.status_code >= 500:
+        if error.outcome_unknown:
             await self._transition(order_id, "failed", detail=", ".join(error.issues))
             return CheckoutFailed(number)
         await self._transition(
@@ -526,5 +565,4 @@ class Checkout:
             if cart_status is not None:
                 cart = await session.get_one(CartRecord, record.cart_id)
                 cart.status = cart_status
-                if cart_status == "completed":
-                    cart.completed_at = func.now()
+                cart.completed_at = func.now() if cart_status == "completed" else None

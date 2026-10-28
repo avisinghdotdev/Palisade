@@ -17,6 +17,7 @@ param federatedCredentials = [
   }
 ]
 param vaultOfficerPrincipalId = 'a4db2292-7f75-4aac-8b2c-74d57c9c181f'
+param originCertificateName = 'cert-palisade-origin-prod'
 // cravisingh, owned by the avisinghdotdev shared stack in az-sub-avisingh-shared.
 param registrySubscriptionId = 'cc24a8b0-cb74-4ebb-8532-75e6064a349a'
 param registryResourceGroupName = 'rg-avisingh-shared'

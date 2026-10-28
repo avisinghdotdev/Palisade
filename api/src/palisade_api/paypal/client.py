@@ -9,7 +9,7 @@ import httpx2
 import structlog
 from pydantic import BaseModel, JsonValue, ValidationError
 
-from palisade_api.paypal.auth import PayPalAuth, log_call
+from palisade_api.paypal.auth import PayPalAuth, TokenUnavailable, log_call
 
 # PayPal asks for one repeat of a call that timed out or answered 5xx, with the same request id,
 # and for a later retry of a 409; the repeat follows after this pause.
@@ -58,6 +58,15 @@ class PayPalError(Exception):
     @property
     def issues(self) -> list[str]:
         return [detail.issue for detail in self.error.details] or [self.error.name]
+
+    @property
+    def outcome_unknown(self) -> bool:
+        """Whether PayPal may still have done what was asked.
+
+        A 5xx or no answer says nothing about the outcome. A 409 that lasts past the repeat means
+        PayPal was still working on the first request: it may finish it.
+        """
+        return self.status_code >= 500 or self.status_code == 409
 
 
 def no_answer(message: str) -> ErrorBody:
@@ -128,7 +137,7 @@ class PayPalClient:
     ) -> httpx2.Response | None:
         """One attempt; None when PayPal could not be reached or did not answer in time.
 
-        The token call is inside the attempt: a network failure there is the same outage.
+        The token call is inside the attempt: a network failure or a 5xx there is the same outage.
         """
         try:
             token = await self._auth.token()
@@ -139,7 +148,7 @@ class PayPalClient:
                 json=json,
                 headers={"Authorization": f"Bearer {token.value}", **headers},
             )
-        except httpx2.TransportError as error:
+        except (httpx2.TransportError, TokenUnavailable) as error:
             logger.warning(
                 "paypal_unreachable",
                 method=method,

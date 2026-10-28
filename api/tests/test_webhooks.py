@@ -221,6 +221,48 @@ async def test_repeat_delivery_is_stored_and_queued_once(
     assert len(await queued_jobs(sessions, event_id)) == 1
 
 
+@pytest.mark.parametrize(
+    "changed",
+    [
+        {"paypal-auth-algo": "SHA1withRSA"},
+        {
+            "paypal-cert-url": "http://api.sandbox.paypal.com/v1/notifications/certs/CERT-1"
+        },
+        {
+            "paypal-cert-url": "https://api.sandbox.paypal.com.attacker.test/certs/CERT-1"
+        },
+    ],
+    ids=["algorithm", "plain-http", "foreign-host"],
+)
+async def test_signature_headers_that_cannot_be_paypals_cost_no_postback(
+    paypal: PayPalStub,
+    client: httpx2.AsyncClient,
+    event_id: str,
+    changed: dict[str, str],
+) -> None:
+    response = await client.post(
+        "/api/webhooks/paypal",
+        content=delivery(event_id),
+        headers={**SIGNATURE_HEADERS, **changed},
+    )
+
+    assert response.status_code == 400
+    assert paypal.postbacks == []
+
+
+async def test_a_body_that_is_not_an_event_costs_no_postback(
+    paypal: PayPalStub, client: httpx2.AsyncClient, event_id: str
+) -> None:
+    response = await client.post(
+        "/api/webhooks/paypal",
+        content=json.dumps({"id": event_id}).encode(),
+        headers=SIGNATURE_HEADERS,
+    )
+
+    assert response.status_code == 400
+    assert paypal.postbacks == []
+
+
 async def test_delivery_without_signature_headers_is_a_422(
     paypal: PayPalStub, client: httpx2.AsyncClient, event_id: str
 ) -> None:
