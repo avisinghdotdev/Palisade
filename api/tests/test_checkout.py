@@ -27,7 +27,7 @@ from palisade_api.orders.checkout import Checkout
 from palisade_api.orders.models import OrderRecord
 from palisade_api.orders.router import orders as orders_dependency
 from palisade_api.orders.store import Order, Orders, OrderSummary
-from palisade_api.paypal.auth import PayPalAuth
+from palisade_api.paypal.auth import OAUTH_PATH, PayPalAuth
 from palisade_api.paypal.client import PayPalClient
 from palisade_api.policy.engine import Policies
 from palisade_api.shop.cart import Cart, Carts
@@ -280,6 +280,71 @@ async def test_paypal_out_of_reach_leaves_the_order_failed(
 
 
 @pytest.mark.usefixtures("shop")
+async def test_a_create_paypal_is_still_working_on_after_the_repeat_is_left_for_repair(
+    paypal: PayPalStub,
+    client: httpx2.AsyncClient,
+    wallet_id: UUID,
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    paypal.on("POST", CREATE_PATH, json_answer(409, {"name": "RESOURCE_CONFLICT"}))
+    cart = await cart_with_shoes(client, wallet_id)
+
+    response = await checkout(client, cart.id)
+
+    assert response.status_code == 502
+    first, second = paypal.sent("POST", CREATE_PATH)
+    assert first.headers["PayPal-Request-Id"] == second.headers["PayPal-Request-Id"]
+    assert await cart_status(client, cart.id) == "checking_out"
+    [order] = await orders_for(client, sessions, cart.id)
+    assert (order.status, order.events[-1].detail) == ("failed", "RESOURCE_CONFLICT")
+
+
+@pytest.mark.usefixtures("shop")
+async def test_a_token_paypal_will_not_issue_ends_like_an_unanswered_create(
+    paypal: PayPalStub,
+    client: httpx2.AsyncClient,
+    wallet_id: UUID,
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    paypal.on(
+        "POST", OAUTH_PATH, json_answer(503, {"error": "temporarily_unavailable"})
+    )
+    cart = await cart_with_shoes(client, wallet_id)
+
+    response = await checkout(client, cart.id)
+
+    assert response.status_code == 502
+    assert len(paypal.sent("POST", OAUTH_PATH)) == 2
+    assert paypal.sent("POST", CREATE_PATH) == []
+    assert await cart_status(client, cart.id) == "checking_out"
+    [order] = await orders_for(client, sessions, cart.id)
+    assert (order.status, order.events[-1].detail) == ("failed", "NO_ANSWER")
+
+
+@pytest.mark.usefixtures("shop")
+async def test_a_hold_paypal_is_still_reviewing_is_not_captured(
+    paypal: PayPalStub,
+    client: httpx2.AsyncClient,
+    wallet_id: UUID,
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    paypal.on(
+        "POST",
+        CREATE_PATH,
+        json_answer(201, created_order(authorization_status="PENDING")),
+    )
+    cart = await cart_with_shoes(client, wallet_id)
+
+    response = await checkout(client, cart.id)
+
+    assert response.status_code == 502
+    assert paypal.sent("POST", CAPTURE_PATH) == []
+    assert await cart_status(client, cart.id) == "checking_out"
+    [order] = await orders_for(client, sessions, cart.id)
+    assert (order.status, order.authorization_id) == ("authorized", "AUTH-1")
+
+
+@pytest.mark.usefixtures("shop")
 async def test_an_order_waiting_on_the_payer_is_declined(
     paypal: PayPalStub,
     client: httpx2.AsyncClient,
@@ -305,6 +370,26 @@ async def test_an_order_waiting_on_the_payer_is_declined(
         "PP-ORDER-2",
         None,
     )
+
+
+@pytest.mark.usefixtures("shop")
+async def test_a_capture_with_no_known_outcome_keeps_the_hold(
+    paypal: PayPalStub,
+    client: httpx2.AsyncClient,
+    wallet_id: UUID,
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    paypal.on("POST", CAPTURE_PATH, json_answer(500, {"name": "INTERNAL_SERVER_ERROR"}))
+    cart = await cart_with_shoes(client, wallet_id)
+
+    response = await checkout(client, cart.id)
+
+    assert response.status_code == 502
+    assert len(paypal.sent("POST", CAPTURE_PATH)) == 2
+    assert paypal.sent("POST", VOID_PATH) == []
+    [order] = await orders_for(client, sessions, cart.id)
+    assert order.status == "authorized"
+    assert await cart_status(client, cart.id) == "checking_out"
 
 
 @pytest.mark.usefixtures("shop")

@@ -28,7 +28,8 @@ class PayPal:
         self,
         method: str,
         path: str,
-        body: dict[str, Any] | None = None,
+        # A JSON Patch (RFC 6902) body is a list of operations.
+        body: dict[str, Any] | list[Any] | None = None,
         *,
         expect: int,
         files: dict[str, Any] | None = None,

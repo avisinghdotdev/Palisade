@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from typing import Literal, final
 from uuid import UUID, uuid7
 
-from pydantic import BaseModel, Field, JsonValue, TypeAdapter
+from pydantic import BaseModel, Field, JsonValue, TypeAdapter, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import joinedload, selectinload
@@ -13,12 +13,13 @@ from sqlalchemy.orm import joinedload, selectinload
 from palisade_api.activity.store import Activities
 from palisade_api.agents.keys import private_key
 from palisade_api.agents.registry import Agent
+from palisade_api.bearer import key_hash, key_matches, new_key
 from palisade_api.mandates.models import MandateRecord
-from palisade_api.mandates.passkeys import Passkeys
+from palisade_api.mandates.passkeys import Passkeys, RegistrationStart
 from palisade_api.mandates.tokens import MandateTokens, token_hash
 from palisade_api.orders.models import OrderRecord
-from palisade_api.policy.engine import SPENDING_STATUSES, Policies
-from palisade_api.shop.catalog import Money, money
+from palisade_api.policy.engine import Policies, spending
+from palisade_api.shop.catalog import CATEGORIES, Category, Money, cents_of, money
 from palisade_api.shop.models import CartLineRecord, CartRecord
 from palisade_api.wallets.models import WalletRecord
 
@@ -41,23 +42,34 @@ class MandateLine(BaseModel):
     unit_price: Money
 
 
+LINES = TypeAdapter(list[MandateLine])
+
+
 class MandateRequest(BaseModel):
     """What an agent asks the buyer to allow."""
 
     kind: MandateKind
     wallet_id: UUID
+    # A cart mandate's cap is its cart's total.
     cap: Money
     # Intent mandates only; empty allows every category.
-    categories: list[str] = Field(default_factory=list)
+    categories: list[Category] = Field(default_factory=list, max_length=len(CATEGORIES))
     # Cart mandates only: the exact cart the buyer approves.
     cart_id: UUID | None = None
 
+    @field_validator("cap")
+    @classmethod
+    def cap_in_range(cls, cap: Money) -> Money:
+        _ = cents_of(cap)
+        return cap
+
 
 class Mandate(BaseModel):
-    """A mandate as the consent page and the agent read it.
+    """A mandate as the consent page and the agent read it; anyone holding its id may read it.
 
     The cart it covers stays server-side, as on orders: an open cart's id is all it takes to
-    change it or check it out, and a mandate id is public on the activity feed.
+    change it or check it out, and a mandate id is public on the activity feed. Answering or
+    spending the mandate takes the key only its requesting agent got.
     """
 
     id: UUID
@@ -65,28 +77,43 @@ class Mandate(BaseModel):
     status: MandateStatus
     agent: Agent
     wallet_email: str
+    # True when the demo buyer's wallet pays: the only wallet the demo signer signs for.
+    demo_wallet: bool
     cap: Money
     categories: list[str]
+    # The cart lines as signed, which is what the buyer approves and the checkout must match.
     lines: list[MandateLine]
     policy_hash: str
     token_hash: str
     signed_by: SignedBy | None
     signed_at: datetime | None
     expires_at: datetime
-    # Cents the mandate's orders hold or took; a cart mandate is used once any exist.
+    # Cents the mandate's orders hold or may hold; a cart mandate is used once any exist.
     spent: Money
-    consent_path: str
     created_at: datetime
 
 
+class IssuedMandate(Mandate):
+    """A new mandate as its requesting agent gets it: the one time its key is handed out.
+
+    `consent_path` carries the key after `#`, so browsers send it to no server and no Referer.
+    """
+
+    key: str
+    consent_path: str
+
+
 class MandateSummary(BaseModel):
-    """The mandate as an order carries it."""
+    """The mandate as an order carries it, decoded for the console."""
 
     id: UUID
     kind: MandateKind
     signed_by: SignedBy | None
     signed_at: datetime | None
     cap: Money
+    categories: list[str]
+    lines: list[MandateLine]
+    expires_at: datetime
     token_hash: str
 
 
@@ -102,9 +129,30 @@ class UnknownMandate(LookupError):
         super().__init__(f"no mandate has the id {mandate_id}")
 
 
+class MandateKeyRefused(Exception):
+    def __init__(self, mandate_id: UUID) -> None:
+        super().__init__(
+            f"the key does not open mandate {mandate_id}; use the full link the agent gave"
+        )
+
+
 class MandateNotPending(Exception):
     def __init__(self, mandate_id: UUID, status: str) -> None:
         super().__init__(f"mandate {mandate_id} is {status}, so it cannot be answered")
+
+
+class MandateCartChanged(Exception):
+    """The cart no longer holds what the token names, so the buyer would sign something else."""
+
+    def __init__(self, mandate_id: UUID) -> None:
+        super().__init__(
+            f"the cart changed after mandate {mandate_id} was requested; ask the agent to request it again"
+        )
+
+
+class DemoSignerRefused(Exception):
+    def __init__(self) -> None:
+        super().__init__("the demo signer signs only for the demo buyer's wallet")
 
 
 class MandateRefused(Exception):
@@ -134,6 +182,17 @@ def lines_of(cart: CartRecord) -> list[MandateLine]:
     ]
 
 
+def same_lines(signed: list[MandateLine], lines: list[CartLineRecord]) -> bool:
+    """Whether the cart holds exactly the signed lines."""
+    return {(line.product_id, line.size, line.quantity) for line in signed} == {
+        (line.product_id, line.size, line.quantity) for line in lines
+    }
+
+
+def consent_path(mandate_id: UUID, key: str) -> str:
+    return f"/shop/approve/{mandate_id}#key={key}"
+
+
 def summary(record: MandateRecord) -> MandateSummary:
     return MandateSummary(
         id=record.id,
@@ -143,6 +202,9 @@ def summary(record: MandateRecord) -> MandateSummary:
         else SIGNED_BY.validate_python(record.signed_by),
         signed_at=record.signed_at,
         cap=money(record.cap_cents),
+        categories=list(record.categories),
+        lines=LINES.validate_python(record.lines),
+        expires_at=record.expires_at,
         token_hash=record.token_hash,
     )
 
@@ -167,28 +229,24 @@ class Mandates:
         self._demo_signer = private_key(demo_signer_seed)
         self._public_origin = public_origin
 
-    async def create(self, agent: Agent, request: MandateRequest) -> Mandate:
+    async def create(self, agent: Agent, request: MandateRequest) -> IssuedMandate:
         """Issue a pending mandate for the agent; the buyer answers it on the consent page.
 
         Raises:
-            LookupError: the wallet or the cart does not exist, or the cart is not open.
+            LookupError: the wallet cannot pay, or the cart is not the wallet's, open, and filled.
+            ValueError: the request does not fit its kind.
         """
+        key = new_key()
+        cap_cents = cents_of(request.cap)
         async with self._sessions.begin() as session:
             wallet = await session.get(WalletRecord, request.wallet_id)
             if wallet is None or wallet.status != "active":
                 raise LookupError(f"wallet {request.wallet_id} cannot pay")
             lines: list[MandateLine] = []
             if request.kind == "cart":
-                if request.cart_id is None:
-                    raise LookupError("a cart mandate names the cart it approves")
-                cart = await session.get(
-                    CartRecord,
-                    request.cart_id,
-                    options=[selectinload(CartRecord.lines)],
-                )
-                if cart is None or cart.status != "open" or not cart.lines:
-                    raise LookupError(f"cart {request.cart_id} is not open with lines")
-                lines = lines_of(cart)
+                lines = await self._cart_lines(session, request, cap_cents)
+            elif request.cart_id is not None:
+                raise ValueError("an intent mandate names no cart")
             policy = await self._policies.current(session)
             mandate_id = uuid7()
             window = CART_WINDOW if request.kind == "cart" else INTENT_WINDOW
@@ -197,7 +255,7 @@ class Mandates:
             if now is None:
                 raise RuntimeError("the database returned no clock")
             expires_at = now + window
-            cap_cents = round(float(request.cap.value) * 100)
+            signed_lines = [line.model_dump(mode="json") for line in lines]
             token = self._tokens.issue(
                 request.kind,
                 {
@@ -206,30 +264,33 @@ class Mandates:
                     "merchant": MERCHANT,
                     "agent": agent.id,
                     "wallet": str(request.wallet_id),
-                    "cap": request.cap.model_dump(),
+                    "cap": money(cap_cents).model_dump(),
                     "categories": list(request.categories),
-                    "lines": [line.model_dump() for line in lines],
+                    "lines": list(signed_lines),
                     "policy_hash": policy.hash,
                     "iat": int(now.timestamp()),
                     "exp": int(expires_at.timestamp()),
                 },
             )
-            record = MandateRecord(
-                id=mandate_id,
-                kind=request.kind,
-                agent_id=agent.id,
-                wallet_id=request.wallet_id,
-                cart_id=request.cart_id if request.kind == "cart" else None,
-                cap_cents=cap_cents,
-                currency=request.cap.currency_code,
-                categories=list(request.categories),
-                policy_hash=policy.hash,
-                token=token,
-                token_hash=token_hash(token),
-                status="pending",
-                expires_at=expires_at,
+            session.add(
+                MandateRecord(
+                    id=mandate_id,
+                    kind=request.kind,
+                    agent_id=agent.id,
+                    wallet_id=request.wallet_id,
+                    cart_id=request.cart_id,
+                    cap_cents=cap_cents,
+                    currency=request.cap.currency_code,
+                    categories=list(request.categories),
+                    lines=signed_lines,
+                    policy_hash=policy.hash,
+                    token=token,
+                    token_hash=token_hash(token),
+                    key_hash=key_hash(key),
+                    status="pending",
+                    expires_at=expires_at,
+                )
             )
-            session.add(record)
             await session.flush()
             self._activities.add(
                 session,
@@ -237,10 +298,17 @@ class Mandates:
                 agent_id=agent.id,
                 mandate_id=mandate_id,
                 mandate_kind=request.kind,
-                cap=request.cap.value,
+                cap=money(cap_cents).value,
                 categories=list(request.categories),
             )
-            return await self._load(session, mandate_id)
+            mandate = await self._load(session, mandate_id)
+        return IssuedMandate.model_validate(
+            {
+                **mandate.model_dump(),
+                "key": key,
+                "consent_path": consent_path(mandate_id, key),
+            }
+        )
 
     async def get(self, mandate_id: UUID) -> Mandate:
         """The mandate as it stands; one whose time ran out is marked expired on this read."""
@@ -251,28 +319,49 @@ class Mandates:
             await self._settle_expiry(session, record)
             return await self._load(session, mandate_id)
 
-    async def passkey_options(
-        self, mandate_id: UUID, passkey_id: UUID
-    ) -> dict[str, JsonValue]:
-        """The browser options that make the passkey sign this mandate's hash."""
+    async def passkey_registration(
+        self, mandate_id: UUID, key: str | None
+    ) -> RegistrationStart:
+        """Options for a new passkey that signs for the mandate's wallet.
+
+        Raises:
+            UnknownMandate, MandateKeyRefused: the key does not open the mandate.
+        """
         async with self._sessions() as session:
-            record = await session.get(MandateRecord, mandate_id)
-        if record is None:
-            raise UnknownMandate(mandate_id)
+            record = await self._opened(session, mandate_id, key)
+        return await self._passkeys.start_registration(record.wallet_id)
+
+    async def passkey_options(
+        self, mandate_id: UUID, key: str | None, passkey_id: UUID
+    ) -> dict[str, JsonValue]:
+        """The browser options that make the given passkey sign this mandate's hash.
+
+        Raises:
+            UnknownMandate, MandateKeyRefused: the key does not open the mandate.
+            UnknownPasskey: the passkey does not sign for the mandate's wallet.
+        """
+        async with self._sessions() as session:
+            record = await self._opened(session, mandate_id, key)
         return await self._passkeys.assertion_options(
-            passkey_id, bytes.fromhex(record.token_hash)
+            passkey_id, record.wallet_id, bytes.fromhex(record.token_hash)
         )
 
-    async def approve(self, mandate_id: UUID, approval: Approval) -> Mandate:
+    async def approve(
+        self, mandate_id: UUID, key: str | None, approval: Approval
+    ) -> Mandate:
         """Record the buyer's proof over the token hash; the mandate is signed.
 
         Raises:
-            UnknownMandate, MandateNotPending: nothing to answer.
+            UnknownMandate, MandateKeyRefused, MandateNotPending: nothing to answer.
+            MandateCartChanged: the cart no longer holds the signed lines.
+            DemoSignerRefused: the demo signer was asked to sign for a buyer's own wallet.
             UnknownPasskey, PasskeyRefused: the passkey proof does not verify.
             ValueError: a passkey approval without its passkey or assertion.
         """
         async with self._sessions.begin() as session:
-            record = await self._pending(session, mandate_id)
+            record = await self._pending(session, mandate_id, key)
+            if record.kind == "cart":
+                await self._cart_unchanged(session, record)
             digest = bytes.fromhex(record.token_hash)
             if approval.signed_by == "passkey":
                 if approval.passkey_id is None or approval.credential is None:
@@ -280,13 +369,16 @@ class Mandates:
                         "a passkey approval carries the passkey id and its assertion"
                     )
                 await self._passkeys.verify(
-                    approval.passkey_id, digest, approval.credential
+                    approval.passkey_id, record.wallet_id, digest, approval.credential
                 )
                 proof: dict[str, JsonValue] = {
                     "passkey_id": str(approval.passkey_id),
                     "assertion": approval.credential,
                 }
             else:
+                wallet = await session.get_one(WalletRecord, record.wallet_id)
+                if not wallet.demo:
+                    raise DemoSignerRefused
                 proof = {
                     "signature": base64.b64encode(
                         self._demo_signer.sign(digest)
@@ -309,9 +401,9 @@ class Mandates:
             )
             return await self._load(session, mandate_id)
 
-    async def decline(self, mandate_id: UUID) -> Mandate:
+    async def decline(self, mandate_id: UUID, key: str | None) -> Mandate:
         async with self._sessions.begin() as session:
-            record = await self._pending(session, mandate_id)
+            record = await self._pending(session, mandate_id, key)
             record.status = "declined"
             self._activities.add(
                 session,
@@ -325,6 +417,7 @@ class Mandates:
         self,
         session: AsyncSession,
         mandate_id: UUID,
+        key: str,
         agent: Agent,
         cart: CartRecord,
         categories: set[str],
@@ -333,7 +426,8 @@ class Mandates:
         """The mandate that covers checking out `cart`, locked for the caller's transaction.
 
         Raises:
-            MandateRefused: it does not exist, is not signed, has expired, or does not fit.
+            MandateRefused: it does not exist, the key is not its, it is not signed, has
+                expired, or does not fit.
         """
         record = await session.scalar(
             select(MandateRecord)
@@ -342,6 +436,8 @@ class Mandates:
         )
         if record is None:
             raise MandateRefused(["MANDATE_UNKNOWN"])
+        if not key_matches(key, record.key_hash):
+            raise MandateRefused(["MANDATE_KEY_INVALID"])
         await self._settle_expiry(session, record)
         status = status_of(record)
         reasons: list[str] = []
@@ -356,7 +452,8 @@ class Mandates:
         total = sum(line.unit_price_cents * line.quantity for line in cart.lines)
         spent = await self.spent(session, mandate_id)
         if record.kind == "cart":
-            if record.cart_id != cart.id or not self._same_lines(record, cart.lines):
+            signed = LINES.validate_python(self._tokens.verify(record.token)["lines"])
+            if record.cart_id != cart.id or not same_lines(signed, cart.lines):
                 reasons.append("MANDATE_CART_MISMATCH")
             if spent > 0:
                 reasons.append("MANDATE_USED")
@@ -376,23 +473,64 @@ class Mandates:
 
     @staticmethod
     async def spent(session: AsyncSession, mandate_id: UUID) -> int:
-        """Cents the mandate's orders hold or took."""
-        total = await session.scalar(
-            select(func.coalesce(func.sum(OrderRecord.total_cents), 0)).where(
-                OrderRecord.mandate_id == mandate_id,
-                OrderRecord.status.in_(SPENDING_STATUSES),
-            )
-        )
+        """Cents the mandate's orders hold or may hold."""
+        total = await session.scalar(spending(OrderRecord.mandate_id == mandate_id))
         return int(total or 0)
 
-    def _same_lines(self, record: MandateRecord, lines: list[CartLineRecord]) -> bool:
-        """Whether the cart still holds exactly the lines the signed token names."""
-        claims = self._tokens.verify(record.token)
-        signed_lines = TypeAdapter(list[MandateLine]).validate_python(claims["lines"])
-        signed = {(line.product_id, line.size, line.quantity) for line in signed_lines}
-        return signed == {(line.product_id, line.size, line.quantity) for line in lines}
+    @staticmethod
+    async def _cart_lines(
+        session: AsyncSession, request: MandateRequest, cap_cents: int
+    ) -> list[MandateLine]:
+        """The lines a cart mandate signs: the wallet's open cart as it is, at its total."""
+        if request.cart_id is None:
+            raise ValueError("a cart mandate names the cart it approves")
+        if request.categories:
+            raise ValueError("a cart mandate covers its cart, not categories")
+        cart = await session.get(
+            CartRecord, request.cart_id, options=[selectinload(CartRecord.lines)]
+        )
+        if (
+            cart is None
+            or cart.wallet_id != request.wallet_id
+            or cart.status != "open"
+            or not cart.lines
+        ):
+            raise LookupError(
+                f"cart {request.cart_id} is not an open cart with lines for that wallet"
+            )
+        total = sum(line.unit_price_cents * line.quantity for line in cart.lines)
+        if cap_cents != total:
+            raise ValueError(
+                f"a cart mandate's cap is the cart total, {money(total).value}"
+            )
+        return lines_of(cart)
 
-    async def _pending(self, session: AsyncSession, mandate_id: UUID) -> MandateRecord:
+    @staticmethod
+    async def _cart_unchanged(session: AsyncSession, record: MandateRecord) -> None:
+        cart = await session.get(
+            CartRecord, record.cart_id, options=[selectinload(CartRecord.lines)]
+        )
+        if (
+            cart is None
+            or cart.status != "open"
+            or not same_lines(LINES.validate_python(record.lines), cart.lines)
+        ):
+            raise MandateCartChanged(record.id)
+
+    @staticmethod
+    async def _opened(
+        session: AsyncSession, mandate_id: UUID, key: str | None
+    ) -> MandateRecord:
+        record = await session.get(MandateRecord, mandate_id)
+        if record is None:
+            raise UnknownMandate(mandate_id)
+        if not key_matches(key, record.key_hash):
+            raise MandateKeyRefused(mandate_id)
+        return record
+
+    async def _pending(
+        self, session: AsyncSession, mandate_id: UUID, key: str | None
+    ) -> MandateRecord:
         record = await session.scalar(
             select(MandateRecord)
             .where(MandateRecord.id == mandate_id)
@@ -400,6 +538,8 @@ class Mandates:
         )
         if record is None:
             raise UnknownMandate(mandate_id)
+        if not key_matches(key, record.key_hash):
+            raise MandateKeyRefused(mandate_id)
         await self._settle_expiry(session, record)
         status = status_of(record)
         if status != "pending":
@@ -433,22 +573,16 @@ class Mandates:
         )
         if record is None:
             raise UnknownMandate(mandate_id)
-        lines: list[MandateLine] = []
-        if record.cart_id is not None:
-            cart = await session.get(
-                CartRecord, record.cart_id, options=[selectinload(CartRecord.lines)]
-            )
-            if cart is not None:
-                lines = lines_of(cart)
         return Mandate(
             id=record.id,
             kind=MANDATE_KIND.validate_python(record.kind),
             status=status_of(record),
             agent=Agent(id=record.agent.id, name=record.agent.name),
             wallet_email=record.wallet.email,
+            demo_wallet=record.wallet.demo,
             cap=money(record.cap_cents),
             categories=list(record.categories),
-            lines=lines,
+            lines=LINES.validate_python(record.lines),
             policy_hash=record.policy_hash,
             token_hash=record.token_hash,
             signed_by=None
@@ -457,6 +591,5 @@ class Mandates:
             signed_at=record.signed_at,
             expires_at=record.expires_at,
             spent=money(await self.spent(session, mandate_id)),
-            consent_path=f"/shop/approve/{record.id}",
             created_at=record.created_at,
         )

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Palisade API",
-    "version": "0.15.1"
+    "version": "0.16.0"
   },
   "paths": {
     "/api/paypal/health": {
@@ -32,7 +32,7 @@
           "webhooks"
         ],
         "summary": "Receive Paypal Webhook",
-        "description": "Accept a delivery once PayPal confirms its signature; a repeat delivery is a no-op.\n\nThe event is stored and its processing queued in one transaction before the 2xx that stops\nPayPal's retries. A 400 answers a signature PayPal rejects, and an error reaching PayPal or the\ndatabase surfaces as a 500 so PayPal delivers the event again later.",
+        "description": "Accept a delivery once PayPal confirms its signature; a repeat delivery is a no-op.\n\nThe event is stored and its processing queued in one transaction before the 2xx that stops\nPayPal's retries. A 400 answers headers or a body that cannot be PayPal's, checked first so\nthey cost no PayPal call, or a signature PayPal rejects; an error reaching PayPal or the\ndatabase surfaces as a 500 so PayPal delivers the event again later.",
         "operationId": "paypal_webhook",
         "parameters": [
           {
@@ -740,7 +740,7 @@
           "mandates"
         ],
         "summary": "Create Mandate",
-        "description": "An agent asks the buyer for a mandate; the answer holds the consent page's path.\n\nOnly a signed agent request may ask; a 404 names a wallet or cart that cannot be used.",
+        "description": "An agent asks the buyer for a mandate; the answer holds the key and the consent link.\n\nOnly a signed agent request may ask. A 404 names a wallet or cart that cannot be used; a 422\na request that does not fit its kind, such as a cart mandate whose cap is not the cart total.",
         "operationId": "create_mandate",
         "requestBody": {
           "content": {
@@ -758,7 +758,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Mandate"
+                  "$ref": "#/components/schemas/IssuedMandate"
                 }
               }
             }
@@ -819,14 +819,68 @@
         }
       }
     },
+    "/api/mandates/{mandate_id}/passkey-registration": {
+      "post": {
+        "tags": [
+          "mandates"
+        ],
+        "summary": "Start Passkey Registration",
+        "description": "A challenge and the options for a new passkey that signs for this mandate's wallet.\n\nThe options are for `navigator.credentials.create()`. A 403 means the mandate key is\nmissing or wrong.",
+        "operationId": "start_passkey_registration",
+        "security": [
+          {
+            "MandateKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "mandate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Mandate Id"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationStart"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/mandates/{mandate_id}/passkey-options": {
       "get": {
         "tags": [
           "mandates"
         ],
         "summary": "Mandate Passkey Options",
-        "description": "The browser options that make the given passkey sign this mandate.",
+        "description": "The browser options that make the given passkey sign this mandate.\n\nA 404 names a passkey that does not sign for this mandate's wallet; register a new one.",
         "operationId": "mandate_passkey_options",
+        "security": [
+          {
+            "MandateKey": []
+          }
+        ],
         "parameters": [
           {
             "name": "mandate_id",
@@ -883,8 +937,13 @@
           "mandates"
         ],
         "summary": "Approve Mandate",
-        "description": "The buyer signs the mandate with a passkey or the demo signer (simulated).",
+        "description": "The buyer signs the mandate with a passkey, or the demo signer (simulated) for the demo buyer.\n\nA 409 means it is answered already or its cart changed since the request.",
         "operationId": "approve_mandate",
+        "security": [
+          {
+            "MandateKey": []
+          }
+        ],
         "parameters": [
           {
             "name": "mandate_id",
@@ -938,6 +997,11 @@
         ],
         "summary": "Decline Mandate",
         "operationId": "decline_mandate",
+        "security": [
+          {
+            "MandateKey": []
+          }
+        ],
         "parameters": [
           {
             "name": "mandate_id",
@@ -974,35 +1038,13 @@
         }
       }
     },
-    "/api/passkeys/registration": {
-      "post": {
-        "tags": [
-          "mandates"
-        ],
-        "summary": "Start Passkey Registration",
-        "description": "A challenge and the options for `navigator.credentials.create()`.",
-        "operationId": "start_passkey_registration",
-        "responses": {
-          "201": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RegistrationStart"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/passkeys": {
       "post": {
         "tags": [
           "mandates"
         ],
         "summary": "Register Passkey",
-        "description": "Keep the passkey the browser created; its id signs mandates from now on.",
+        "description": "Keep the passkey the browser created; its id signs that wallet's mandates from now on.",
         "operationId": "register_passkey",
         "requestBody": {
           "content": {
@@ -1226,7 +1268,7 @@
           "assistant"
         ],
         "summary": "Get Conversation",
-        "description": "The conversation, for the holder of its key; a 401 without it.",
+        "description": "The conversation, for the holder of its key.\n\nA 401 means the chat access code is wrong; a 403 means the conversation key is.",
         "operationId": "conversation",
         "security": [
           {
@@ -1278,7 +1320,7 @@
           "assistant"
         ],
         "summary": "Send Message",
-        "description": "Send the shopper's message, or the outcome of a consent page, and stream the agent's turn.\n\nA 401 means the conversation's key is missing or wrong. A 409 means the agent is still\nanswering the last message, or the mandate named has no answer yet.",
+        "description": "Send the shopper's message, or the outcome of a consent page, and stream the agent's turn.\n\nA 401 means the chat access code is wrong; a 403 means the conversation's key is missing\nor wrong. A 404 names a conversation, mandate, or cart that cannot be used. A 409 means the\nagent is still answering the last message, or the mandate named has no answer yet.",
         "operationId": "send_message",
         "security": [
           {
@@ -1516,7 +1558,7 @@
           "at"
         ],
         "title": "Activity",
-        "description": "An activity row as the console reads it.\n\nThe conversation it belongs to stays server-side: a conversation id plus the shared chat\ncode would open another shopper's chat. Mandate and order ids are safe to show, because\nneither can be acted on without a signature or a signed mandate."
+        "description": "An activity row as the console reads it.\n\nThe conversation it belongs to stays server-side: a conversation id plus the shared chat\ncode would open another shopper's chat. Mandate and order ids are safe to show, because\nneither can be acted on without the mandate's key or a signed mandate."
       },
       "Agent": {
         "properties": {
@@ -1728,14 +1770,21 @@
             "type": "string",
             "format": "uuid",
             "title": "Mandate Id"
+          },
+          "mandate_key": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Mandate Key"
           }
         },
         "type": "object",
         "required": [
-          "mandate_id"
+          "mandate_id",
+          "mandate_key"
         ],
         "title": "CheckoutRequest",
-        "description": "What an agent sends with a checkout: the buyer-signed mandate that covers it."
+        "description": "What an agent sends with a checkout: the buyer-signed mandate that covers it.\n\nThe key is the one the agent got when it asked for the mandate."
       },
       "Conversation": {
         "properties": {
@@ -1918,6 +1967,140 @@
         ],
         "title": "Health"
       },
+      "IssuedMandate": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "intent",
+              "cart"
+            ],
+            "title": "Kind"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "signed",
+              "declined",
+              "expired"
+            ],
+            "title": "Status"
+          },
+          "agent": {
+            "$ref": "#/components/schemas/Agent"
+          },
+          "wallet_email": {
+            "type": "string",
+            "title": "Wallet Email"
+          },
+          "demo_wallet": {
+            "type": "boolean",
+            "title": "Demo Wallet"
+          },
+          "cap": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Categories"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/MandateLine"
+            },
+            "type": "array",
+            "title": "Lines"
+          },
+          "policy_hash": {
+            "type": "string",
+            "title": "Policy Hash"
+          },
+          "token_hash": {
+            "type": "string",
+            "title": "Token Hash"
+          },
+          "signed_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "passkey",
+                  "demo_signer"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signed By"
+          },
+          "signed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signed At"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          },
+          "spent": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "consent_path": {
+            "type": "string",
+            "title": "Consent Path"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "agent",
+          "wallet_email",
+          "demo_wallet",
+          "cap",
+          "categories",
+          "lines",
+          "policy_hash",
+          "token_hash",
+          "signed_by",
+          "signed_at",
+          "expires_at",
+          "spent",
+          "created_at",
+          "key",
+          "consent_path"
+        ],
+        "title": "IssuedMandate",
+        "description": "A new mandate as its requesting agent gets it: the one time its key is handed out.\n\n`consent_path` carries the key after `#`, so browsers send it to no server and no Referer."
+      },
       "JsonValue": {},
       "LineChange": {
         "properties": {
@@ -2009,6 +2192,10 @@
             "type": "string",
             "title": "Wallet Email"
           },
+          "demo_wallet": {
+            "type": "boolean",
+            "title": "Demo Wallet"
+          },
           "cap": {
             "$ref": "#/components/schemas/Money"
           },
@@ -2069,10 +2256,6 @@
           "spent": {
             "$ref": "#/components/schemas/Money"
           },
-          "consent_path": {
-            "type": "string",
-            "title": "Consent Path"
-          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -2086,6 +2269,7 @@
           "status",
           "agent",
           "wallet_email",
+          "demo_wallet",
           "cap",
           "categories",
           "lines",
@@ -2095,11 +2279,10 @@
           "signed_at",
           "expires_at",
           "spent",
-          "consent_path",
           "created_at"
         ],
         "title": "Mandate",
-        "description": "A mandate as the consent page and the agent read it.\n\nThe cart it covers stays server-side, as on orders: an open cart's id is all it takes to\nchange it or check it out, and a mandate id is public on the activity feed."
+        "description": "A mandate as the consent page and the agent read it; anyone holding its id may read it.\n\nThe cart it covers stays server-side, as on orders: an open cart's id is all it takes to\nchange it or check it out, and a mandate id is public on the activity feed. Answering or\nspending the mandate takes the key only its requesting agent got."
       },
       "MandateAttachment": {
         "properties": {
@@ -2148,7 +2331,14 @@
             "$ref": "#/components/schemas/Money"
           },
           "consent_path": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Consent Path"
           },
           "expires_at": {
@@ -2163,7 +2353,6 @@
           "kind",
           "status",
           "cap",
-          "consent_path",
           "expires_at"
         ],
         "title": "MandateCard"
@@ -2241,9 +2430,16 @@
           },
           "categories": {
             "items": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "Road",
+                "Tempo",
+                "Trail",
+                "Stability"
+              ]
             },
             "type": "array",
+            "maxItems": 4,
             "title": "Categories"
           },
           "cart_id": {
@@ -2313,6 +2509,25 @@
           "cap": {
             "$ref": "#/components/schemas/Money"
           },
+          "categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Categories"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/MandateLine"
+            },
+            "type": "array",
+            "title": "Lines"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          },
           "token_hash": {
             "type": "string",
             "title": "Token Hash"
@@ -2325,10 +2540,13 @@
           "signed_by",
           "signed_at",
           "cap",
+          "categories",
+          "lines",
+          "expires_at",
           "token_hash"
         ],
         "title": "MandateSummary",
-        "description": "The mandate as an order carries it."
+        "description": "The mandate as an order carries it, decoded for the console."
       },
       "Money": {
         "properties": {
@@ -2386,11 +2604,6 @@
           "number": {
             "type": "string",
             "title": "Number"
-          },
-          "cart_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Cart Id"
           },
           "channel": {
             "type": "string",
@@ -2565,7 +2778,6 @@
         "required": [
           "id",
           "number",
-          "cart_id",
           "channel",
           "agent",
           "policy_hash",
@@ -2586,7 +2798,8 @@
           "shipment",
           "created_at"
         ],
-        "title": "Order"
+        "title": "Order",
+        "description": "An order as its public page shows it.\n\nThe cart it came from stays server-side: a declined order reopens its cart, and an open\ncart's id is all it takes to fill it and pay from its wallet."
       },
       "OrderAttachment": {
         "properties": {
@@ -3282,6 +3495,18 @@
             "maxLength": 2000,
             "minLength": 1,
             "title": "Text"
+          },
+          "cart_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cart Id"
           }
         },
         "type": "object",
@@ -3659,6 +3884,12 @@
       }
     },
     "securitySchemes": {
+      "MandateKey": {
+        "type": "apiKey",
+        "description": "The key the requesting agent got with the mandate, in its consent link after `#key=`.",
+        "in": "header",
+        "name": "X-Mandate-Key"
+      },
       "ChatKey": {
         "type": "apiKey",
         "description": "The access code the chat panel asks for, sent with every chat request.",

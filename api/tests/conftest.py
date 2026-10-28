@@ -43,9 +43,9 @@ async def sessions() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
     await engine.dispose()
 
 
-@pytest.fixture
-async def wallet_id(sessions: async_sessionmaker[AsyncSession]) -> UUID:
-    """A saved wallet inside the test's transaction, for carts and orders to use."""
+async def saved_wallet(
+    sessions: async_sessionmaker[AsyncSession], *, demo: bool
+) -> UUID:
     identifier = uuid7()
     async with sessions.begin() as session:
         session.add(
@@ -56,11 +56,26 @@ async def wallet_id(sessions: async_sessionmaker[AsyncSession]) -> UUID:
                 payer_id="PAYER-TEST",
                 email="buyer@palisade.test",
                 first_name="Test",
-                demo=False,
+                demo=demo,
                 status="active",
             )
         )
     return identifier
+
+
+@pytest.fixture
+async def wallet_id(sessions: async_sessionmaker[AsyncSession]) -> UUID:
+    """The demo buyer's wallet inside the test's transaction, for carts and orders to use.
+
+    The demo signer approves its mandates.
+    """
+    return await saved_wallet(sessions, demo=True)
+
+
+@pytest.fixture
+async def own_wallet_id(sessions: async_sessionmaker[AsyncSession]) -> UUID:
+    """A buyer's own linked wallet, which only that buyer's passkey may approve for."""
+    return await saved_wallet(sessions, demo=False)
 
 
 @pytest.fixture

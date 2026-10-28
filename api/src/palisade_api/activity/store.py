@@ -30,8 +30,23 @@ ActivityKind = Literal[
 ]
 ACTIVITY_KIND = TypeAdapter(ActivityKind)
 ACTIVITY_LISTED = 200
+# Details carry what callers typed, such as a search query; the public feed keeps only this much
+# of any one text or list, so nobody can fill it with megabytes.
+TEXT_KEPT = 300
+ITEMS_KEPT = 20
 
 logger = structlog.stdlib.get_logger(__name__)
+
+
+def bounded(value: JsonValue) -> JsonValue:
+    """The value with every text cut to TEXT_KEPT characters and every list to ITEMS_KEPT items."""
+    if isinstance(value, str):
+        return value if len(value) <= TEXT_KEPT else f"{value[:TEXT_KEPT]}…"
+    if isinstance(value, list):
+        return [bounded(item) for item in value[:ITEMS_KEPT]]
+    if isinstance(value, dict):
+        return {key: bounded(item) for key, item in value.items()}
+    return value
 
 
 class Activity(BaseModel):
@@ -39,7 +54,7 @@ class Activity(BaseModel):
 
     The conversation it belongs to stays server-side: a conversation id plus the shared chat
     code would open another shopper's chat. Mandate and order ids are safe to show, because
-    neither can be acted on without a signature or a signed mandate.
+    neither can be acted on without the mandate's key or a signed mandate.
     """
 
     id: UUID
@@ -85,6 +100,7 @@ class Activities:
         **details: JsonValue,
     ) -> None:
         """Write the row inside the caller's transaction, so it lands with what it describes."""
+        kept = {name: bounded(value) for name, value in details.items()}
         session.add(
             ActivityRecord(
                 id=uuid7(),
@@ -93,7 +109,7 @@ class Activities:
                 conversation_id=conversation_id,
                 mandate_id=mandate_id,
                 order_id=order_id,
-                details=details,
+                details=kept,
             )
         )
         logger.info(
@@ -102,7 +118,7 @@ class Activities:
             conversation_id=None if conversation_id is None else str(conversation_id),
             mandate_id=None if mandate_id is None else str(mandate_id),
             order_id=None if order_id is None else str(order_id),
-            **details,
+            **kept,
         )
 
     async def record(

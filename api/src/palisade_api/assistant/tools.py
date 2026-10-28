@@ -33,7 +33,7 @@ from palisade_api.assistant.events import (
     TurnEvent,
 )
 from palisade_api.assistant.model import Tool, ToolFunction
-from palisade_api.mandates.service import Mandate
+from palisade_api.mandates.service import IssuedMandate, Mandate
 from palisade_api.orders.store import Order
 from palisade_api.shop.cart import MAX_PER_LINE, Cart
 from palisade_api.shop.catalog import Money, Product
@@ -42,12 +42,17 @@ PRODUCTS = TypeAdapter(list[Product])
 PRODUCT = TypeAdapter(Product)
 CART = TypeAdapter(Cart)
 MANDATE = TypeAdapter(Mandate)
+ISSUED_MANDATE = TypeAdapter(IssuedMandate)
 ORDER = TypeAdapter(Order)
 # How many product cards a search shows the shopper; Claude gets every match.
 CARDS_SHOWN = 6
+# Arguments the activity log never keeps: a key opens a mandate, and an id the agent typed may
+# be a cart id it mixed up. The row links a mandate only once the store has matched it.
+UNLOGGED_ARGUMENTS = frozenset({"mandate_id", "mandate_key"})
 # What Claude should do about a refusal, by the reason code the store gives.
 NEXT_STEPS = {
     "MANDATE_UNKNOWN": "That is not a mandate id. Pass the id request_mandate or check_mandate returned.",
+    "MANDATE_KEY_INVALID": "That is not the mandate_key request_mandate returned with this mandate. Pass that key exactly.",
     "MANDATE_REQUIRED": "Call request_mandate first; nothing is paid before the shopper approves.",
     "MANDATE_PENDING": "The shopper has not approved yet. Ask them to approve on the consent page, then wait.",
     "MANDATE_DECLINED": "The shopper declined. Ask what they would like to change; do not retry.",
@@ -67,6 +72,7 @@ NEXT_STEPS = {
 # What the shopper reads when the store refuses, by reason code: plain words, no codes.
 REFUSALS = {
     "MANDATE_UNKNOWN": "The store does not know that approval.",
+    "MANDATE_KEY_INVALID": "The store could not match that approval to this request.",
     "MANDATE_REQUIRED": "The store needs your approval before anything is paid.",
     "MANDATE_PENDING": "The store is still waiting for your approval.",
     "MANDATE_DECLINED": "You declined this request.",
@@ -185,7 +191,7 @@ SPECS: tuple[Spec, ...] = (
     ),
     Spec(
         "request_mandate",
-        """Ask the shopper to approve a purchase on the store's consent page. A 'cart' mandate covers the current cart exactly, once; the cart must hold something, and its cap is the cart total. An 'intent' mandate lets you buy without asking again, up to cap_usd in total, limited to the categories given, for 24 hours; use it only when the shopper asked to shop without approving each purchase. After calling it, tell the shopper to use the Approve button and wait; you are told when they answer.""",
+        """Ask the shopper to approve a purchase on the store's consent page. A 'cart' mandate covers the current cart exactly, once; the cart must hold something, and its cap is the cart total. An 'intent' mandate lets you buy without asking again, up to cap_usd in total, limited to the categories given, for 24 hours; use it only when the shopper asked to shop without approving each purchase. The result holds the mandate_id and the mandate_key that checkout needs; keep both. After calling it, tell the shopper to use the Approve button and wait; you are told when they answer.""",
         (
             Parameter("kind", "string", "'cart' or 'intent'."),
             Parameter(
@@ -213,6 +219,11 @@ SPECS: tuple[Spec, ...] = (
                 "mandate_id",
                 "string",
                 "The id of the signed mandate that covers this purchase, as request_mandate or check_mandate returned it; never a cart id.",
+            ),
+            Parameter(
+                "mandate_key",
+                "string",
+                "The mandate_key request_mandate returned with that mandate.",
             ),
         ),
     ),
@@ -312,7 +323,14 @@ def mandate_result(mandate: Mandate) -> dict[str, JsonValue]:
         "spent_usd": mandate.spent.value,
         "categories": list(mandate.categories),
         "expires_at": mandate.expires_at.isoformat(),
-        "consent_path": mandate.consent_path,
+    }
+
+
+def logged(arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
+    return {
+        name: value
+        for name, value in arguments.items()
+        if name not in UNLOGGED_ARGUMENTS
     }
 
 
@@ -413,7 +431,7 @@ class Shopping:
             mandate_id=outcome.mandate_id,
             order_id=outcome.order_id,
             tool=name,
-            input=arguments,
+            input=logged(arguments),
             ok=True,
             summary=outcome.summary,
         )
@@ -503,10 +521,14 @@ class Shopping:
             body["cart_id"] = str(cart.id)
         else:
             body["cap"] = usd(cap_usd).model_dump()
-        mandate = MANDATE.validate_python(await self._shop.post("/api/mandates", body))
+        mandate = ISSUED_MANDATE.validate_python(
+            await self._shop.post("/api/mandates", body)
+        )
         return Outcome(
             result={
                 **mandate_result(mandate),
+                "mandate_key": mandate.key,
+                "consent_path": mandate.consent_path,
                 "next_step": "The shopper now sees an Approve button for this request in the chat. Ask them to approve it there, then wait; you are told when they answer.",
             },
             summary="Waiting for the shopper's approval",
@@ -525,12 +547,13 @@ class Shopping:
             mandate_id=mandate.id,
         )
 
-    async def checkout(self, mandate_id: str) -> Outcome:
+    async def checkout(self, mandate_id: str, mandate_key: str) -> Outcome:
         if self.cart_id is None:
             raise ToolError("There is no cart to pay for; add shoes first.")
         order = ORDER.validate_python(
             await self._shop.post(
-                f"/api/shop/carts/{self.cart_id}/checkout", {"mandate_id": mandate_id}
+                f"/api/shop/carts/{self.cart_id}/checkout",
+                {"mandate_id": mandate_id, "mandate_key": mandate_key},
             )
         )
         # The cart is spent; the next pair the shopper wants starts a new one.
@@ -642,7 +665,7 @@ class Shopping:
             agent_id=self._agent_id,
             conversation_id=self._conversation_id,
             tool=name,
-            input=arguments,
+            input=logged(arguments),
             ok=False,
             summary=shown,
             told=told,

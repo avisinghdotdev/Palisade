@@ -12,7 +12,11 @@ VOID_PATH = "/v2/payments/authorizations/AUTH-1/void"
 ORDER_PATH = "/v2/checkout/orders/PP-ORDER-1"
 
 
-def created_order(expiration_time: str = "2026-11-21T10:00:00Z") -> dict[str, object]:
+def created_order(
+    expiration_time: str = "2026-11-21T10:00:00Z",
+    *,
+    authorization_status: str = "CREATED",
+) -> dict[str, object]:
     return {
         "id": "PP-ORDER-1",
         "status": "COMPLETED",
@@ -23,7 +27,7 @@ def created_order(expiration_time: str = "2026-11-21T10:00:00Z") -> dict[str, ob
                     "authorizations": [
                         {
                             "id": "AUTH-1",
-                            "status": "CREATED",
+                            "status": authorization_status,
                             "expiration_time": expiration_time,
                         }
                     ]

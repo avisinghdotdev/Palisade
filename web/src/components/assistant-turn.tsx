@@ -104,6 +104,9 @@ function Mandate({
         : false,
   });
   const status = answer ?? current.data?.status ?? mandate.status;
+  // Only the card of the request itself carries the consent link with its key; a later check
+  // of the same mandate shows its state without one.
+  const link = mandate.consent_path;
 
   return (
     <div className="rounded-lg border bg-card p-3 text-sm">
@@ -113,17 +116,22 @@ function Mandate({
         {mandate.kind === "intent" && " in all, for 24 hours"}. Signed on
         Palisade&apos;s consent page and kept with the order.
       </p>
-      {status === "pending" ? (
+      {status === "pending" && typeof link === "string" ? (
         <Button
           className="mt-3 h-9 w-full"
           onClick={() => {
-            window.open(mandate.consent_path, CONSENT_WINDOW);
+            window.open(link, CONSENT_WINDOW);
           }}
         >
           Review and Approve
           <ExternalLink aria-hidden />
           <span className="sr-only">(opens in a new window)</span>
         </Button>
+      ) : status === "pending" ? (
+        <p className="mt-3 flex items-center gap-1.5 font-medium">
+          <Clock aria-hidden className="size-4 text-muted-foreground" />
+          Waiting for Your Approval
+        </p>
       ) : (
         <p className="mt-3 flex items-center gap-1.5 font-medium">
           {status === "signed" ? (

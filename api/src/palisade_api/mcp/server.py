@@ -22,13 +22,14 @@ from palisade_api.activity.store import Activities
 from palisade_api.agents.client import AgentHttp
 from palisade_api.assistant.events import ToolName
 from palisade_api.assistant.tools import Outcome, Shopping
+from palisade_api.shop.catalog import CATEGORIES, Category
 from palisade_api.wallets.service import NoDemoWallet, Wallets
 
 # The API mounts the server at MOUNT; the endpoint any client connects to is MOUNT + ENDPOINT.
 MOUNT = "/api/shop"
 ENDPOINT = "/mcp"
 
-INSTRUCTIONS = """Ridgeline Running sells running shoes from Nike, Adidas, Hoka, Brooks, New Balance, and Asics. Palisade, the trust layer the store uses, verifies you and keeps the shopper's signed approval with each order. Shop in this order: search_products; set_cart_line for each shoe the shopper confirmed (the first call creates the cart and returns its cart_id; pass that id to every later cart call); request_mandate, which returns a consent_url the shopper must open in their browser and approve; check_mandate until it reports signed; then checkout with that mandate_id. Nothing is paid before the shopper approves, and a checkout cannot be undone. A cart mandate covers the cart as it is, once. An intent mandate lets you buy without asking again, up to its cap, for 24 hours; use it only when the shopper asked for that. The demo buyer's PayPal sandbox wallet pays, with test money."""
+INSTRUCTIONS = """Ridgeline Running sells running shoes from Nike, Adidas, Hoka, Brooks, New Balance, and Asics. Palisade, the trust layer the store uses, verifies you and keeps the shopper's signed approval with each order. Shop in this order: search_products; set_cart_line for each shoe the shopper confirmed (the first call creates the cart and returns its cart_id; pass that id to every later cart call); request_mandate, which returns a mandate_id, a mandate_key, and a consent_url the shopper must open in their browser and approve; check_mandate until it reports signed; then checkout with that mandate_id and mandate_key. Keep the mandate_key to yourself: it is what lets you spend the approval. Nothing is paid before the shopper approves, and a checkout cannot be undone. A cart mandate covers the cart as it is, once. An intent mandate lets you buy without asking again, up to its cap, for 24 hours; use it only when the shopper asked for that. The demo buyer's PayPal sandbox wallet pays, with test money."""
 
 READS = ToolAnnotations(read_only_hint=True, open_world_hint=False)
 CHANGES = ToolAnnotations(
@@ -44,16 +45,33 @@ PAYS = ToolAnnotations(
     open_world_hint=False,
 )
 
+# Every text has a ceiling: what an agent sends can land on the public activity feed.
+ID_LENGTH = 64
 CartId = Annotated[
     str,
     Field(
-        description="The cart_id a cart call returned; empty when there is no cart yet."
+        max_length=ID_LENGTH,
+        description="The cart_id a cart call returned; empty when there is no cart yet.",
     ),
 ]
 MandateId = Annotated[
-    str, Field(description="The mandate_id request_mandate or check_mandate returned.")
+    str,
+    Field(
+        max_length=ID_LENGTH,
+        description="The mandate_id request_mandate or check_mandate returned.",
+    ),
 ]
-ProductId = Annotated[str, Field(description="The product id from search_products.")]
+MandateKey = Annotated[
+    str,
+    Field(
+        max_length=ID_LENGTH,
+        description="The mandate_key request_mandate returned with that mandate.",
+    ),
+]
+ProductId = Annotated[
+    str,
+    Field(max_length=ID_LENGTH, description="The product id from search_products."),
+]
 
 
 def cart(cart_id: str) -> UUID | None:
@@ -100,11 +118,12 @@ class ShopTools:
         query: Annotated[
             str,
             Field(
-                description="Words from the shopper's request, such as 'trail cushioned' or 'Hoka'; empty lists everything."
+                max_length=200,
+                description="Words from the shopper's request, such as 'trail cushioned' or 'Hoka'; empty lists everything.",
             ),
         ],
         category: Annotated[
-            str,
+            Category | Literal[""],
             Field(
                 description="Road, Tempo, Trail, or Stability to limit the search; empty for all."
             ),
@@ -127,7 +146,8 @@ class ShopTools:
         self,
         product_id: ProductId,
         size: Annotated[
-            str, Field(description="The US size as listed, such as '9.5'.")
+            str,
+            Field(max_length=8, description="The US size as listed, such as '9.5'."),
         ],
         quantity: Annotated[
             int,
@@ -158,17 +178,19 @@ class ShopTools:
         cap_usd: Annotated[
             str,
             Field(
-                description="For an intent mandate, the most the shopper allows in total, such as '300.00'; empty for a cart mandate."
+                max_length=16,
+                description="For an intent mandate, the most the shopper allows in total, such as '300.00'; empty for a cart mandate.",
             ),
         ] = "",
         categories: Annotated[
-            tuple[str, ...],
+            tuple[Category, ...],
             Field(
-                description="For an intent mandate, the categories it allows (Road, Tempo, Trail, Stability); empty allows all."
+                max_length=len(CATEGORIES),
+                description="For an intent mandate, the categories it allows; empty allows all.",
             ),
         ] = (),
     ) -> dict[str, JsonValue]:
-        """Ask the shopper to approve a purchase on the store's consent page. Give the shopper the consent_url to open in their browser, then call check_mandate until it reports signed. A cart mandate needs the cart_id of a cart with lines in it."""
+        """Ask the shopper to approve a purchase on the store's consent page. Give the shopper the consent_url to open in their browser, then call check_mandate until it reports signed. Keep the mandate_id and mandate_key for checkout. A cart mandate needs the cart_id of a cart with lines in it."""
         # The endpoint keeps no cart between calls, so a missing id is the agent's slip, not an empty cart.
         if kind == "cart" and cart_id == "":
             raise ToolError(
@@ -191,16 +213,19 @@ class ShopTools:
         return (await self._call("check_mandate", "", mandate_id=mandate_id)).result
 
     async def checkout(
-        self, cart_id: CartId, mandate_id: MandateId
+        self, cart_id: CartId, mandate_id: MandateId, mandate_key: MandateKey
     ) -> dict[str, JsonValue]:
         """Pay for the cart from the shopper's wallet under a signed mandate and place the order. The store checks the mandate and its policy first and refuses with a reason when either does not allow it. Paying cannot be undone."""
-        outcome = await self._call("checkout", cart_id, mandate_id=mandate_id)
+        outcome = await self._call(
+            "checkout", cart_id, mandate_id=mandate_id, mandate_key=mandate_key
+        )
         return linked(outcome.result, self._origin, "receipt_path", "receipt_url")
 
     async def get_order(
         self,
         order_number: Annotated[
-            str, Field(description="The order number, such as 'RR-MQYD7P'.")
+            str,
+            Field(max_length=16, description="The order number, such as 'RR-MQYD7P'."),
         ],
     ) -> dict[str, JsonValue]:
         """The state of an order placed earlier: paid, pending, or declined, with its total and receipt."""

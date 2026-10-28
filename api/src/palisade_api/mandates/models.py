@@ -26,11 +26,15 @@ class MandateRecord(Base):
     currency: Mapped[str] = mapped_column(Text)
     # Categories an intent mandate allows; empty means any.
     categories: Mapped[list[str]] = mapped_column(ARRAY(Text))
+    # The cart lines the token names, as signed; empty on an intent mandate.
+    lines: Mapped[list[dict[str, JsonValue]]] = mapped_column(JSONB)
     policy_hash: Mapped[str] = mapped_column(Text)
     # The SD-JWT Palisade issued, and its SHA-256, which the buyer's proof signs and the PayPal
     # order carries in `custom_id`.
     token: Mapped[str] = mapped_column(Text)
     token_hash: Mapped[str] = mapped_column(Text)
+    # The key handed to the requesting agent only; answering or spending the mandate needs it.
+    key_hash: Mapped[str] = mapped_column(Text)
     # "pending" until the buyer answers, then "signed" or "declined".
     status: Mapped[str] = mapped_column(Text)
     # "passkey" or "demo_signer" once signed.
@@ -47,11 +51,13 @@ class MandateRecord(Base):
 
 
 class PasskeyRecord(Base):
-    """A passkey a buyer's browser registered to sign mandates; no account stands behind it."""
+    """A passkey a buyer's browser registered to sign one wallet's mandates; no account behind it."""
 
     __tablename__: str = "passkeys"
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    # The wallet it signs for: the one whose mandate the buyer was answering when it was made.
+    wallet_id: Mapped[UUID] = mapped_column(ForeignKey("wallets.id"), index=True)
     # WebAuthn's credential id and COSE public key, both base64url.
     credential_id: Mapped[str] = mapped_column(Text, unique=True)
     public_key: Mapped[str] = mapped_column(Text)
@@ -67,6 +73,8 @@ class PasskeyChallengeRecord(Base):
     __tablename__: str = "passkey_challenges"
 
     challenge: Mapped[str] = mapped_column(Text, primary_key=True)
+    # The wallet the passkey will sign for once registered.
+    wallet_id: Mapped[UUID] = mapped_column(ForeignKey("wallets.id"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

@@ -66,7 +66,8 @@ class RegistryKeys(HTTPSignatureKeyResolver):
     def resolve_public_key(self, key_id: str) -> Ed25519PublicKey:
         encoded = self._keys.get(key_id)
         if encoded is None:
-            raise InvalidSignature(f"no agent has the key id {key_id}")
+            # The id is the caller's text; the reason lands on the public feed without it.
+            raise InvalidSignature("no agent has that key id")
         return public_key(encoded)
 
 
@@ -136,7 +137,8 @@ class AgentSignatures:
         covered = {identifier.strip('"') for identifier in result.covered_components}
         if not covered >= REQUIRED_COMPONENTS:
             raise InvalidAgentSignature("the method and target URI must be signed")
-        if body and (
+        # A signed digest is checked even over an empty body, so a body cannot be stripped off.
+        if (body or BODY_COMPONENT in covered) and (
             BODY_COMPONENT not in covered
             or request.headers.get(BODY_COMPONENT) != content_digest(body)
         ):
@@ -182,7 +184,10 @@ async def caller(
     A request that claims to be an agent but fails the check is a 401 with the reason.
     """
     try:
-        return await signatures.verify(request, await request.body())
+        agent = await signatures.verify(request, await request.body())
     except (UnsignedAgentRequest, InvalidAgentSignature) as error:
         logger.info("agent_request_refused", reason=str(error))
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(error)) from error
+    if agent is not None:
+        structlog.contextvars.bind_contextvars(agent_id=agent.id)
+    return agent

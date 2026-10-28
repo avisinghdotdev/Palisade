@@ -158,6 +158,19 @@ async def uncaptured_hold(
     return cart.id, order
 
 
+async def pending_capture(
+    shop: Shop, paypal: PayPalStub, client: httpx2.AsyncClient, wallet_id: UUID
+) -> tuple[UUID, Order]:
+    """An order whose capture PayPal accepted as pending; its cart counts as complete meanwhile."""
+    paypal.on(
+        "POST", CAPTURE_PATH, json_answer(201, {"id": "CAP-1", "status": "PENDING"})
+    )
+    cart = await cart_with_shoes(client, wallet_id)
+    order = await shop.checkout.place_order(cart.id, None, None)
+    assert order.status == "capture_pending"
+    return cart.id, order
+
+
 async def test_a_create_paypal_never_answered_is_repeated_and_finished(
     shop: Shop, paypal: PayPalStub, client: httpx2.AsyncClient, wallet_id: UUID
 ) -> None:
@@ -293,3 +306,106 @@ async def test_a_hold_near_its_expiry_is_voided(
         "AUTHORIZATION_NEAR_EXPIRY",
     )
     assert await shop.cart_status(cart_id) == "open"
+
+
+async def test_a_hold_paypal_is_still_reviewing_waits_uncaptured(
+    shop: Shop, paypal: PayPalStub, client: httpx2.AsyncClient, wallet_id: UUID
+) -> None:
+    paypal.on(
+        "POST",
+        CREATE_PATH,
+        json_answer(201, created_order(authorization_status="PENDING")),
+    )
+    cart = await cart_with_shoes(client, wallet_id)
+    with pytest.raises(CheckoutFailed):
+        await shop.checkout.place_order(cart.id, None, None)
+    order = await shop.order_of(cart.id)
+    await shop.age(order.id)
+    paypal.on("GET", ORDER_PATH, json_answer(200, held("PENDING", [])))
+
+    assert await shop.repair(order.number)
+
+    assert (await shop.orders.get(order.number)).status == "authorized"
+    assert paypal.sent("POST", CAPTURE_PATH) == []
+
+
+async def test_a_pending_capture_paypal_completed_is_recorded(
+    shop: Shop, paypal: PayPalStub, client: httpx2.AsyncClient, wallet_id: UUID
+) -> None:
+    cart_id, order = await pending_capture(shop, paypal, client, wallet_id)
+    await shop.age(order.id)
+    paypal.on(
+        "GET",
+        ORDER_PATH,
+        json_answer(200, held("CAPTURED", [{"id": "CAP-1", "status": "COMPLETED"}])),
+    )
+
+    assert await shop.repair(order.number)
+
+    repaired = await shop.orders.get(order.number)
+    assert (repaired.status, repaired.events[-1].source) == ("captured", "repair")
+    assert await shop.cart_status(cart_id) == "completed"
+    assert len(paypal.sent("POST", CAPTURE_PATH)) == 1
+
+
+async def test_a_pending_capture_paypal_declined_reopens_the_cart(
+    shop: Shop, paypal: PayPalStub, client: httpx2.AsyncClient, wallet_id: UUID
+) -> None:
+    cart_id, order = await pending_capture(shop, paypal, client, wallet_id)
+    await shop.age(order.id)
+    paypal.on(
+        "GET",
+        ORDER_PATH,
+        json_answer(200, held("CREATED", [{"id": "CAP-1", "status": "DECLINED"}])),
+    )
+
+    assert await shop.repair(order.number)
+
+    repaired = await shop.orders.get(order.number)
+    assert (repaired.status, repaired.events[-1].detail) == (
+        "declined",
+        "CAPTURE_DECLINED",
+    )
+    assert await shop.cart_status(cart_id) == "open"
+
+
+async def test_a_capture_paypal_is_still_reviewing_waits_for_a_later_run(
+    shop: Shop, paypal: PayPalStub, client: httpx2.AsyncClient, wallet_id: UUID
+) -> None:
+    _, order = await pending_capture(shop, paypal, client, wallet_id)
+    await shop.age(order.id)
+    paypal.on(
+        "GET",
+        ORDER_PATH,
+        json_answer(200, held("CAPTURED", [{"id": "CAP-1", "status": "PENDING"}])),
+    )
+
+    assert await shop.repair(order.number)
+
+    assert (await shop.orders.get(order.number)).status == "capture_pending"
+    assert not await shop.repair(order.number)
+
+
+async def test_the_order_untouched_longest_is_repaired_first(
+    shop: Shop, paypal: PayPalStub, client: httpx2.AsyncClient, wallet_id: UUID
+) -> None:
+    _, placed_first = await unanswered_create(shop, paypal, client, wallet_id)
+    _, placed_second = await unanswered_create(shop, paypal, client, wallet_id)
+    async with shop.sessions.begin() as session:
+        # The first order was placed earlier but looked at more recently.
+        for order_id, placed, touched in (
+            (placed_first.id, 60, 10),
+            (placed_second.id, 30, 20),
+        ):
+            await session.execute(
+                update(OrderRecord)
+                .where(OrderRecord.id == order_id)
+                .values(
+                    created_at=func.now() - timedelta(minutes=placed),
+                    updated_at=func.now() - timedelta(minutes=touched),
+                )
+            )
+
+    numbers = [order.number for order in await shop.repairs.stuck()]
+
+    assert numbers.index(placed_second.number) < numbers.index(placed_first.number)
