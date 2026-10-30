@@ -60,6 +60,8 @@ from palisade_api.webhooks.verification import WebhookVerifier
 
 # A hung connection fails within this and is logged, instead of holding the caller.
 READY_TIMEOUT_SECONDS = 2
+# How long a stopping replica waits for running chat turns, inside the platform's 30 s grace.
+TURN_GRACE_SECONDS = 20
 SHOPPER_AGENT = "palisade-shopper"
 MCP_AGENT = "palisade-mcp"
 
@@ -202,6 +204,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[State]:
             )
             mcp_app = asgi(mcp)
             await stack.enter_async_context(mcp.session_manager.run())
+            assistant = Assistant(
+                sessions,
+                ClaudeModel(claude, SYSTEM_PROMPT),
+                AgentHttp(
+                    shop_http,
+                    AgentSigner(
+                        SHOPPER_AGENT, settings.shopper_agent_key.get_secret_value()
+                    ),
+                ),
+                mandates,
+                activities,
+                SHOPPER_AGENT,
+            )
+            # An answer on the consent page carries the chat that asked for it on.
+            mandates.on_answer(assistant.continue_after)
             state = State(
                 engine=engine,
                 paypal_auth=auth,
@@ -230,23 +247,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[State]:
                 passkeys=passkeys,
                 activities=activities,
                 chat_access=ChatAccess(settings.chat_access_key.get_secret_value()),
-                assistant=Assistant(
-                    sessions,
-                    ClaudeModel(claude, SYSTEM_PROMPT),
-                    AgentHttp(
-                        shop_http,
-                        AgentSigner(
-                            SHOPPER_AGENT, settings.shopper_agent_key.get_secret_value()
-                        ),
-                    ),
-                    mandates,
-                    activities,
-                    SHOPPER_AGENT,
-                ),
+                assistant=assistant,
                 mcp_app=mcp_app,
             )
             local_state.update(state)
             yield state
+            # Turns run on after their responses; a stopping replica lets them end first.
+            try:
+                async with asyncio.timeout(TURN_GRACE_SECONDS):
+                    await assistant.idle()
+            except TimeoutError:
+                logger.warning("assistant_turns_cut_short")
     finally:
         await engine.dispose()
 

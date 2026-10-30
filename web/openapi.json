@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Palisade API",
-    "version": "0.16.0"
+    "version": "0.17.0"
   },
   "paths": {
     "/api/paypal/health": {
@@ -1320,7 +1320,7 @@
           "assistant"
         ],
         "summary": "Send Message",
-        "description": "Send the shopper's message, or the outcome of a consent page, and stream the agent's turn.\n\nA 401 means the chat access code is wrong; a 403 means the conversation's key is missing\nor wrong. A 404 names a conversation, mandate, or cart that cannot be used. A 409 means the\nagent is still answering the last message, or the mandate named has no answer yet.",
+        "description": "Send the shopper's message and stream the agent's turn.\n\nAn answer on the consent page needs no message: the API carries the conversation on by\nitself, and the conversation shows that turn as it runs. A 401 means the chat access code\nis wrong; a 403 means the conversation's key is missing or wrong. A 404 names a\nconversation or cart that cannot be used. A 409 means the agent is still answering.",
         "operationId": "send_message",
         "security": [
           {
@@ -1347,22 +1347,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "oneOf": [
-                  {
-                    "$ref": "#/components/schemas/ShopperMessage"
-                  },
-                  {
-                    "$ref": "#/components/schemas/MandateOutcome"
-                  }
-                ],
-                "discriminator": {
-                  "propertyName": "type",
-                  "mapping": {
-                    "message": "#/components/schemas/ShopperMessage",
-                    "mandate": "#/components/schemas/MandateOutcome"
-                  }
-                },
-                "title": "Incoming"
+                "$ref": "#/components/schemas/ShopperMessage"
               }
             }
           }
@@ -1816,6 +1801,28 @@
             "type": "array",
             "title": "Turns"
           },
+          "live": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LiveTurn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "awaiting": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Awaiting"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -1828,6 +1835,8 @@
           "cart_id",
           "busy",
           "turns",
+          "live",
+          "awaiting",
           "created_at"
         ],
         "title": "Conversation"
@@ -1862,6 +1871,28 @@
             "type": "array",
             "title": "Turns"
           },
+          "live": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LiveTurn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "awaiting": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Awaiting"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -1878,6 +1909,8 @@
           "cart_id",
           "busy",
           "turns",
+          "live",
+          "awaiting",
           "created_at",
           "key"
         ],
@@ -1905,16 +1938,29 @@
               }
             ],
             "title": "Cart Id"
+          },
+          "awaiting": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Awaiting"
           }
         },
         "type": "object",
         "required": [
           "type",
           "turn",
-          "cart_id"
+          "cart_id",
+          "awaiting"
         ],
         "title": "DoneEvent",
-        "description": "The turn as stored, and the cart the agent is filling, so the browser can show both."
+        "description": "The turn as stored, the cart the agent is filling, and the mandate it now waits on."
       },
       "ErrorEvent": {
         "properties": {
@@ -2160,6 +2206,45 @@
         "title": "LinkStart",
         "description": "Where to send the buyer to approve the link, and the token to confirm with afterwards."
       },
+      "LiveTurn": {
+        "properties": {
+          "request": {
+            "$ref": "#/components/schemas/TurnRequest"
+          },
+          "events": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/TextEvent"
+                },
+                {
+                  "$ref": "#/components/schemas/ToolCallEvent"
+                },
+                {
+                  "$ref": "#/components/schemas/ToolResultEvent"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "type",
+                "mapping": {
+                  "text": "#/components/schemas/TextEvent",
+                  "tool_call": "#/components/schemas/ToolCallEvent",
+                  "tool_result": "#/components/schemas/ToolResultEvent"
+                }
+              }
+            },
+            "type": "array",
+            "title": "Events"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request",
+          "events"
+        ],
+        "title": "LiveTurn",
+        "description": "The turn still running, as far as it got: saved at each tool call, so any reader sees it."
+      },
       "Mandate": {
         "properties": {
           "id": {
@@ -2388,27 +2473,6 @@
           "unit_price"
         ],
         "title": "MandateLine"
-      },
-      "MandateOutcome": {
-        "properties": {
-          "type": {
-            "type": "string",
-            "const": "mandate",
-            "title": "Type"
-          },
-          "mandate_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Mandate Id"
-          }
-        },
-        "type": "object",
-        "required": [
-          "type",
-          "mandate_id"
-        ],
-        "title": "MandateOutcome",
-        "description": "The shopper answered a mandate on the consent page; the agent carries on from the answer."
       },
       "MandateRequest": {
         "properties": {
@@ -3485,11 +3549,6 @@
       },
       "ShopperMessage": {
         "properties": {
-          "type": {
-            "type": "string",
-            "const": "message",
-            "title": "Type"
-          },
           "text": {
             "type": "string",
             "maxLength": 2000,
@@ -3511,7 +3570,6 @@
         },
         "type": "object",
         "required": [
-          "type",
           "text"
         ],
         "title": "ShopperMessage"
