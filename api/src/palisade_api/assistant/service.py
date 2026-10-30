@@ -1,15 +1,15 @@
 """Conversations with the in-page agent: starting one, replaying it, and running each turn."""
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import final
 from uuid import UUID, uuid7
 
 import structlog
 from pydantic import JsonValue, TypeAdapter
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
@@ -21,7 +21,8 @@ from palisade_api.assistant.events import (
     CreatedConversation,
     DoneEvent,
     ErrorEvent,
-    Incoming,
+    LiveTurn,
+    MandateAttachment,
     NewConversation,
     ShopperMessage,
     TextEvent,
@@ -58,6 +59,13 @@ FAILED = "The assistant could not finish answering. Send your message again."
 STOPPED = (
     "The assistant stopped partway. What it did is kept above; ask it to carry on."
 )
+# The last words of a turn the API ran by itself that failed before doing anything.
+HALTED = (
+    "The assistant could not carry on from your answer. Send a message to continue."
+)
+
+# Where a turn's events go as they happen: the response streaming it; None closes the stream.
+Deliver = Callable[[AssistantEvent | None], None]
 
 logger = structlog.stdlib.get_logger(__name__)
 
@@ -86,11 +94,6 @@ class ForeignCart(LookupError):
         super().__init__(f"no cart {cart_id} belongs to this wallet")
 
 
-class MandateUnanswered(Exception):
-    def __init__(self, mandate_id: UUID) -> None:
-        super().__init__(f"mandate {mandate_id} has not been answered yet")
-
-
 @dataclass(frozen=True)
 class Started:
     """A turn the conversation has taken on: what runs it, and what the model is told."""
@@ -102,6 +105,8 @@ class Started:
     request: TurnRequest
     # The user message the model gets; the shopper's words, or a note on what they did.
     prompt: str
+    # When the turn took the conversation; it saves its progress only while this still holds.
+    lease: datetime
 
 
 def turn(record: TurnRecord) -> Turn:
@@ -114,18 +119,38 @@ def turn(record: TurnRecord) -> Turn:
     )
 
 
-def conversation(record: ConversationRecord) -> Conversation:
+def running(record: ConversationRecord, now: datetime) -> bool:
+    """Whether a turn holds the conversation; one that outlived its lease crashed."""
+    return record.busy_since is not None and record.busy_since > now - STALE_TURN
+
+
+def conversation(record: ConversationRecord, now: datetime) -> Conversation:
+    busy = running(record, now)
     return Conversation(
         id=record.id,
         cart_id=record.cart_id,
-        busy=record.busy_since is not None,
+        busy=busy,
         turns=[turn(item) for item in record.turns],
+        live=LiveTurn.model_validate(record.live)
+        if busy and record.live is not None
+        else None,
+        awaiting=record.awaiting_mandate_id,
         created_at=record.created_at,
     )
 
 
 def steps_taken(events: list[TurnEvent]) -> list[ToolResultEvent]:
     return [event for event in events if isinstance(event, ToolResultEvent)]
+
+
+def awaited(events: list[TurnEvent]) -> UUID | None:
+    """The mandate the turn's last mandate card leaves waiting for the shopper, if it does."""
+    cards = [
+        step.attachment.mandate
+        for step in steps_taken(events)
+        if isinstance(step.attachment, MandateAttachment)
+    ]
+    return cards[-1].id if cards and cards[-1].status == "pending" else None
 
 
 def merged(events: list[TurnEvent]) -> list[TurnEvent]:
@@ -193,14 +218,11 @@ class Assistant:
                 conversation_id=record.id,
                 with_cart=request.cart_id is not None,
             )
-            created = conversation(await self._load(session, record.id))
-            return CreatedConversation(
-                id=created.id,
-                cart_id=created.cart_id,
-                busy=created.busy,
-                turns=created.turns,
-                created_at=created.created_at,
-                key=key,
+            created = conversation(
+                await self._load(session, record.id), await self._clock(session)
+            )
+            return CreatedConversation.model_validate(
+                {**created.model_dump(), "key": key}
             )
 
     async def get(self, conversation_id: UUID, key: str | None) -> Conversation:
@@ -214,10 +236,10 @@ class Assistant:
             record = await self._load(session, conversation_id)
             if not key_matches(key, record.key_hash):
                 raise ConversationRefused(conversation_id)
-            return conversation(record)
+            return conversation(record, await self._clock(session))
 
     async def start_turn(
-        self, conversation_id: UUID, key: str | None, incoming: Incoming
+        self, conversation_id: UUID, key: str | None, message: ShopperMessage
     ) -> Started:
         """Take the conversation for one turn and note what the shopper sent.
 
@@ -226,9 +248,7 @@ class Assistant:
             ConversationRefused: the key is not the conversation's.
             ConversationBusy: another turn is still running.
             ForeignCart: the message names a cart the conversation's wallet does not pay for.
-            UnknownMandate, MandateUnanswered: the mandate outcome names no answered mandate.
         """
-        request, prompt = await self._compose(incoming)
         async with self._sessions.begin() as session:
             record = await session.get(
                 ConversationRecord, conversation_id, with_for_update=True
@@ -237,32 +257,36 @@ class Assistant:
                 raise UnknownConversation(conversation_id)
             if not key_matches(key, record.key_hash):
                 raise ConversationRefused(conversation_id)
-            now = await session.scalar(select(func.now()))
-            if now is None:
-                raise RuntimeError("the database returned no clock")
-            if record.busy_since is not None and record.busy_since > now - STALE_TURN:
+            now = await self._clock(session)
+            if running(record, now):
                 raise ConversationBusy(conversation_id)
             # The bag the shopper sees now, which may be one they filled in the shop since.
-            if isinstance(incoming, ShopperMessage) and incoming.cart_id is not None:
-                await self._own_cart(session, incoming.cart_id, record.wallet_id)
-                record.cart_id = incoming.cart_id
-            record.busy_since = now
-            self._activities.add(
+            if message.cart_id is not None:
+                await self._own_cart(session, message.cart_id, record.wallet_id)
+                record.cart_id = message.cart_id
+            return self._take(
                 session,
-                "shopper_message",
-                agent_id=self._agent_id,
-                conversation_id=conversation_id,
-                request_kind=request.kind,
-                text=request.text,
+                record,
+                now,
+                TurnRequest(kind="message", text=message.text),
+                message.text,
             )
-            return Started(
-                conversation_id=conversation_id,
-                wallet_id=record.wallet_id,
-                cart_id=record.cart_id,
-                history=list(record.history),
-                request=request,
-                prompt=prompt,
-            )
+
+    async def continue_after(self, mandate_id: UUID) -> None:
+        """Carry on the conversation waiting on the mandate once it is answered, in a turn of its own.
+
+        The mandates service calls this after storing an answer, and the turn that asked for the
+        mandate calls it as it ends, in case the answer came first. The answer is stored either
+        way, so a failure here is logged and not passed back to whoever answered; the shopper's
+        next message carries the conversation on instead.
+        """
+        try:
+            started = await self._take_answered(mandate_id)
+        except Exception:
+            logger.exception("assistant_continue_failed", mandate_id=str(mandate_id))
+            return
+        if started is not None:
+            self._spawn(started, None)
 
     async def events(self, started: Started) -> AsyncIterator[AssistantEvent]:
         """Run the turn and hand out its events as they happen; the last is `done` or `error`.
@@ -271,20 +295,37 @@ class Assistant:
         still reading.
         """
         queue: asyncio.Queue[AssistantEvent | None] = asyncio.Queue()
-        task = asyncio.create_task(self._run(started, queue))
-        self._turns.add(task)
-        task.add_done_callback(self._turns.discard)
+        self._spawn(started, queue.put_nowait)
         while (event := await queue.get()) is not None:
             yield event
 
-    async def _run(
-        self, started: Started, queue: asyncio.Queue[AssistantEvent | None]
-    ) -> None:
+    async def idle(self) -> None:
+        """Wait until no turn runs, including one a finishing turn starts."""
+        while self._turns:
+            _ = await asyncio.wait(set(self._turns))
+
+    def _spawn(self, started: Started, deliver: Deliver | None) -> None:
+        task = asyncio.create_task(self._run(started, deliver))
+        self._turns.add(task)
+        task.add_done_callback(self._turns.discard)
+
+    async def _run(self, started: Started, deliver: Deliver | None) -> None:
+        """Run the turn to its end; `deliver` is None when the API runs it with nobody streaming."""
         events: list[TurnEvent] = []
 
-        def emit(event: TurnEvent) -> None:
+        def stream(event: AssistantEvent | None) -> None:
+            if deliver is not None:
+                deliver(event)
+
+        def on_text(text: str) -> None:
+            event = TextEvent(type="text", text=text)
             events.append(event)
-            queue.put_nowait(event)
+            stream(event)
+
+        async def emit(event: TurnEvent) -> None:
+            events.append(event)
+            stream(event)
+            await self._show(started, merged(events))
 
         shopping = Shopping(
             self._shop,
@@ -299,12 +340,9 @@ class Assistant:
             *started.history,
             {"role": "user", "content": started.prompt},
         ]
+        watched = deliver is not None
         try:
-            reply = await self._model.reply(
-                history,
-                shopping.tools(),
-                lambda text: emit(TextEvent(type="text", text=text)),
-            )
+            reply = await self._model.reply(history, shopping.tools(), on_text)
             finished = await self._finish(
                 started,
                 shopping.cart_id,
@@ -316,41 +354,105 @@ class Assistant:
             logger.warning(
                 "assistant_refused", conversation_id=str(started.conversation_id)
             )
-            stopped = await self._stopped(started, shopping.cart_id, history, events)
-            queue.put_nowait(
-                ErrorEvent(type="error", detail=STOPPED if stopped else REFUSED)
+            shown = await self._stopped(
+                started, shopping.cart_id, history, events, REFUSED, watched=watched
             )
+            stream(ErrorEvent(type="error", detail=shown))
         except Exception:
             # The task is the last line of defence: an error here would otherwise vanish with
             # it and leave the conversation marked busy.
             logger.exception(
                 "assistant_turn_failed", conversation_id=str(started.conversation_id)
             )
-            stopped = await self._stopped(started, shopping.cart_id, history, events)
-            queue.put_nowait(
-                ErrorEvent(type="error", detail=STOPPED if stopped else FAILED)
+            shown = await self._stopped(
+                started, shopping.cart_id, history, events, FAILED, watched=watched
             )
+            stream(ErrorEvent(type="error", detail=shown))
         else:
-            queue.put_nowait(
-                DoneEvent(type="done", turn=finished, cart_id=shopping.cart_id)
+            waiting = awaited(finished.events)
+            if waiting is not None:
+                await self.continue_after(waiting)
+            stream(
+                DoneEvent(
+                    type="done",
+                    turn=finished,
+                    cart_id=shopping.cart_id,
+                    awaiting=waiting,
+                )
             )
         finally:
-            queue.put_nowait(None)
+            stream(None)
 
-    async def _compose(self, incoming: Incoming) -> tuple[TurnRequest, str]:
-        """The shopper's side of the turn: what the panel shows, and what the model is told."""
-        if isinstance(incoming, ShopperMessage):
-            return TurnRequest(kind="message", text=incoming.text), incoming.text
-        mandate = await self._mandates.get(incoming.mandate_id)
+    async def _take_answered(self, mandate_id: UUID) -> Started | None:
+        """The conversation waiting on the mandate, taken for a turn that carries on from its answer.
+
+        None while the mandate is unanswered, or when no conversation waits on it.
+        """
+        # Read before the conversation is locked: a read that finds the mandate expired tells
+        # the listeners, which take the conversation themselves.
+        mandate = await self._mandates.get(mandate_id)
         if mandate.status == "pending":
-            raise MandateUnanswered(incoming.mandate_id)
+            return None
         request = ANSWERED[mandate.status].model_copy(update={"mandate_id": mandate.id})
         signer = f", signed by {mandate.signed_by}" if mandate.signed_by else ""
         prompt = (
             f"[The shopper answered mandate {mandate.id} on the consent page: it is now "
             f"{mandate.status}{signer}. Continue from here.]"
         )
-        return request, prompt
+        async with self._sessions.begin() as session:
+            record = await session.scalar(
+                select(ConversationRecord)
+                .where(ConversationRecord.awaiting_mandate_id == mandate_id)
+                .with_for_update()
+            )
+            if record is None:
+                return None
+            return self._take(
+                session, record, await self._clock(session), request, prompt
+            )
+
+    def _take(
+        self,
+        session: AsyncSession,
+        record: ConversationRecord,
+        now: datetime,
+        request: TurnRequest,
+        prompt: str,
+    ) -> Started:
+        """Mark the locked conversation busy with a new turn and log what started it."""
+        record.busy_since = now
+        record.awaiting_mandate_id = None
+        record.live = LiveTurn(request=request, events=[]).model_dump(mode="json")
+        self._activities.add(
+            session,
+            "shopper_message",
+            agent_id=self._agent_id,
+            conversation_id=record.id,
+            request_kind=request.kind,
+            text=request.text,
+        )
+        return Started(
+            conversation_id=record.id,
+            wallet_id=record.wallet_id,
+            cart_id=record.cart_id,
+            history=list(record.history),
+            request=request,
+            prompt=prompt,
+            lease=now,
+        )
+
+    async def _show(self, started: Started, events: list[TurnEvent]) -> None:
+        """Save the running turn as far as it got, unless another turn took the conversation over."""
+        live = LiveTurn(request=started.request, events=events)
+        async with self._sessions.begin() as session:
+            _ = await session.execute(
+                update(ConversationRecord)
+                .where(
+                    ConversationRecord.id == started.conversation_id,
+                    ConversationRecord.busy_since == started.lease,
+                )
+                .values(live=live.model_dump(mode="json"))
+            )
 
     async def _stopped(
         self,
@@ -358,27 +460,38 @@ class Assistant:
         cart_id: UUID | None,
         history: list[JsonValue],
         events: list[TurnEvent],
-    ) -> bool:
-        """End a turn that failed; whether it had already changed something.
+        failure: str,
+        *,
+        watched: bool,
+    ) -> str:
+        """End a turn that failed; what the shopper is shown.
 
         A turn that ran a tool may have filled the cart or paid, so it is stored as far as it
         got, and the model's history notes what happened, so neither the shopper's screen nor
-        the model's memory loses a purchase. Otherwise the conversation is only freed.
+        the model's memory loses a purchase. A turn nobody streams is stored even when it did
+        nothing, ending in the words the shopper is shown, since no response is there to show
+        them. Otherwise the conversation is only freed, and the shopper sends the message again.
         """
         steps = steps_taken(events)
-        if not steps:
+        if watched and not steps:
             await self._release(started.conversation_id)
-            return False
-        done = "; ".join(f"{step.tool}: {step.summary}" for step in steps)
+            return failure
+        shown = STOPPED if steps else HALTED
+        before = (
+            f"Before it stopped: {'; '.join(f'{step.tool}: {step.summary}' for step in steps)}."
+            if steps
+            else "Nothing was done before it stopped."
+        )
         note: JsonValue = {
             "role": "assistant",
-            "content": f"[My answer stopped partway because of an error. Before it stopped: {done}. I tell the shopper what happened and carry on from there.]",
+            "content": f"[My answer stopped partway because of an error. {before} I tell the shopper what happened and carry on from there.]",
         }
+        stored = merged(events)
+        if not watched:
+            stored.append(TextEvent(type="text", text=shown))
         # The usage of a failed run is not known; the turn records none.
-        _ = await self._finish(
-            started, cart_id, [*history, note], merged(events), Usage()
-        )
-        return True
+        _ = await self._finish(started, cart_id, [*history, note], stored, Usage())
+        return shown
 
     async def _finish(
         self,
@@ -395,6 +508,8 @@ class Assistant:
             record.history = history
             record.cart_id = cart_id
             record.busy_since = None
+            record.live = None
+            record.awaiting_mandate_id = awaited(events)
             # Counted under the conversation's lock, so a turn that outlived its lease and the
             # one that took over never claim the same place.
             taken = await session.scalar(
@@ -423,6 +538,14 @@ class Assistant:
         async with self._sessions.begin() as session:
             record = await session.get_one(ConversationRecord, conversation_id)
             record.busy_since = None
+            record.live = None
+
+    @staticmethod
+    async def _clock(session: AsyncSession) -> datetime:
+        now = await session.scalar(select(func.now()))
+        if now is None:
+            raise RuntimeError("the database returned no clock")
+        return now
 
     @staticmethod
     async def _own_cart(session: AsyncSession, cart_id: UUID, wallet_id: UUID) -> None:

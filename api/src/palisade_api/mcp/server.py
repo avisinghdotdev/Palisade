@@ -20,7 +20,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from palisade_api.activity.store import Activities
 from palisade_api.agents.client import AgentHttp
-from palisade_api.assistant.events import ToolName
+from palisade_api.assistant.events import ToolName, TurnEvent
 from palisade_api.assistant.tools import Outcome, Shopping
 from palisade_api.shop.catalog import CATEGORIES, Category
 from palisade_api.wallets.service import NoDemoWallet, Wallets
@@ -93,6 +93,10 @@ def linked(
 ) -> dict[str, JsonValue]:
     """The result with the page at `path` spelled out as a full link under `url`."""
     return {**result, url: f"{origin}{result[path]}"}
+
+
+async def unshown(_event: TurnEvent) -> None:
+    """MCP has no panel; only the activity log sees a call."""
 
 
 @final
@@ -246,7 +250,7 @@ class ShopTools:
             None,
             wallet.id,
             cart(cart_id),
-            lambda _: None,
+            unshown,
         )
         try:
             return await shopping.call(name, **arguments)

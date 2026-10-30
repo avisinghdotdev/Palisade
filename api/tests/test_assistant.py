@@ -1,6 +1,6 @@
 """The in-page agent's conversations, with a scripted model standing in for Claude."""
 
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import final
@@ -31,14 +31,16 @@ from palisade_api.assistant.events import (
     ErrorEvent,
     MandateCard,
     ShopperMessage,
+    TextEvent,
     ToolCallEvent,
     ToolResultEvent,
 )
 from palisade_api.assistant.model import OnText, Refused, Reply, Tool, Usage
 from palisade_api.assistant.models import ConversationRecord
 from palisade_api.assistant.router import assistant as assistant_dependency
-from palisade_api.assistant.service import STALE_TURN, Assistant
+from palisade_api.assistant.service import HALTED, STALE_TURN, Assistant
 from palisade_api.main import app
+from palisade_api.mandates.models import MandateRecord
 from palisade_api.mandates.passkeys import Passkeys
 from palisade_api.mandates.router import mandates as mandates_dependency
 from palisade_api.mandates.service import Mandates
@@ -62,6 +64,7 @@ CHAT_KEY = "judges-only"
 HEADERS = {"X-Chat-Key": CHAT_KEY}
 EVENT = TypeAdapter(AssistantEvent)
 ACTIVITY = TypeAdapter(list[Activity])
+TOOL_RESULT = TypeAdapter(dict[str, JsonValue])
 
 
 @dataclass(frozen=True)
@@ -70,8 +73,11 @@ class Call:
     arguments: dict[str, JsonValue]
 
 
-# One step of a scripted reply: words to stream, a tool to call, or an error the model raises.
-Step = str | Call | Exception
+# Something the test does in the middle of a turn, given the tool results so far.
+Action = Callable[[list[JsonValue]], Awaitable[None]]
+# One step of a scripted reply: words to stream, a tool to call, an error the model raises, or
+# an action.
+Step = str | Call | Exception | Action
 
 
 @final
@@ -94,6 +100,9 @@ class ScriptedModel:
             if isinstance(step, str):
                 on_text(step)
                 content.append({"type": "text", "text": step})
+                continue
+            if callable(step):
+                await step(content)
                 continue
             try:
                 result: JsonValue = {
@@ -161,6 +170,7 @@ async def shop(
         activities,
         AGENT,
     )
+    mandates.on_answer(assistant.continue_after)
     app.dependency_overrides[catalog_dependency] = lambda: Catalog(sessions)
     app.dependency_overrides[carts_dependency] = lambda: Carts(sessions)
     app.dependency_overrides[checkout_dependency] = lambda: Checkout(
@@ -247,6 +257,37 @@ def mandate_key(card: MandateCard) -> str:
     return card.consent_path.split("#key=")[1]
 
 
+async def approve(client: httpx2.AsyncClient, mandate_id: UUID, key: str) -> None:
+    """Approve the mandate with the demo signer, as the consent page does."""
+    response = await client.post(
+        f"/api/mandates/{mandate_id}/approval",
+        json={"signed_by": "demo_signer"},
+        headers={"X-Mandate-Key": key},
+    )
+    assert response.status_code == 200, response.text
+
+
+async def asked_for(
+    client: httpx2.AsyncClient, wallet_id: UUID, model: ScriptedModel
+) -> tuple[CreatedConversation, MandateCard]:
+    """A conversation whose agent filled the cart and asked for a cart mandate, and its card."""
+    conversation = await start(client, wallet_id)
+    model.turns.append(
+        [
+            Call(
+                "set_cart_line",
+                {"product_id": "nike-free-rn-flyknit", "size": "10", "quantity": 1},
+            ),
+            Call("request_mandate", {"kind": "cart", "cap_usd": "", "categories": []}),
+        ]
+    )
+    events = await send(client, conversation, {"text": "Buy it"})
+    asked = tool_results(events)[-1].attachment
+    assert asked is not None
+    assert asked.type == "mandate"
+    return conversation, asked.mandate
+
+
 @pytest.mark.usefixtures("shop")
 async def test_the_chat_opens_only_with_the_access_code(
     client: httpx2.AsyncClient, wallet_id: UUID
@@ -287,9 +328,7 @@ async def test_a_turn_streams_the_agents_words_tools_and_cards(
         ]
     )
 
-    events = await send(
-        client, conversation, {"type": "message", "text": "Hoka Mach, size 9.5"}
-    )
+    events = await send(client, conversation, {"text": "Hoka Mach, size 9.5"})
 
     assert [event.type for event in events] == [
         "text",
@@ -320,6 +359,7 @@ async def test_a_turn_streams_the_agents_words_tools_and_cards(
     done = events[-1]
     assert isinstance(done, DoneEvent)
     assert done.cart_id == added.attachment.cart.id
+    assert done.awaiting == asked.attachment.mandate.id
     assert [event.type for event in done.turn.events] == [
         "text",
         "tool_call",
@@ -335,6 +375,7 @@ async def test_a_turn_streams_the_agents_words_tools_and_cards(
 
     stored = await fetched(client, conversation)
     assert (stored.busy, stored.cart_id, len(stored.turns)) == (False, done.cart_id, 1)
+    assert (stored.live, stored.awaiting) == (None, done.awaiting)
     assert stored.turns[0] == done.turn
     [history] = model.histories
     assert history == [{"role": "user", "content": "Hoka Mach, size 9.5"}]
@@ -379,68 +420,61 @@ async def test_a_conversation_opens_only_with_its_own_key(
     assert (await client.get(path, headers=opened(conversation))).status_code == 200
     stranger = await client.post(
         f"{path}/messages",
-        json={"type": "message", "text": "Buy everything"},
+        json={"text": "Buy everything"},
         headers=opened(other),
     )
     assert stranger.status_code == 403
 
 
-@pytest.mark.usefixtures("shop")
-async def test_the_shoppers_approval_lets_the_agent_pay(
+async def test_the_shoppers_approval_carries_the_chat_on_and_the_agent_pays(
+    shop: Assistant,
     client: httpx2.AsyncClient,
     wallet_id: UUID,
     model: ScriptedModel,
     sessions: async_sessionmaker[AsyncSession],
 ) -> None:
-    conversation = await start(client, wallet_id)
-    model.turns.append(
-        [
-            Call(
-                "set_cart_line",
-                {"product_id": "nike-free-rn-flyknit", "size": "10", "quantity": 1},
-            ),
-            Call("request_mandate", {"kind": "cart", "cap_usd": "", "categories": []}),
-        ]
-    )
-    first = await send(client, conversation, {"type": "message", "text": "Buy it"})
-    [_, asked] = tool_results(first)
-    assert asked.attachment is not None
-    assert asked.attachment.type == "mandate"
-    mandate_id = asked.attachment.mandate.id
+    conversation, card = await asked_for(client, wallet_id, model)
+    mandate_id = card.id
+    assert (await fetched(client, conversation)).awaiting == mandate_id
+    key = mandate_key(card)
+    seen: list[Conversation] = []
 
-    unanswered = await client.post(
-        f"/api/assistant/conversations/{conversation.id}/messages",
-        json={"type": "mandate", "mandate_id": str(mandate_id)},
-        headers=opened(conversation),
-    )
-    assert unanswered.status_code == 409
+    async def peek(_results: list[JsonValue]) -> None:
+        seen.append(await fetched(client, conversation))
 
-    key = mandate_key(asked.attachment.mandate)
     model.turns.append(
         [
             Call("checkout", {"mandate_id": str(mandate_id), "mandate_key": key}),
+            peek,
             "Done.",
         ]
     )
-    approved = await client.post(
-        f"/api/mandates/{mandate_id}/approval",
-        json={"signed_by": "demo_signer"},
-        headers={"X-Mandate-Key": key},
-    )
-    assert approved.status_code == 200
-    events = await send(
-        client, conversation, {"type": "mandate", "mandate_id": str(mandate_id)}
-    )
+    await approve(client, mandate_id, key)
+    await shop.idle()
 
-    [paid] = tool_results(events)
+    # The turn nobody streams is followed through the conversation while it runs.
+    [running] = seen
+    assert running.busy
+    assert running.live is not None
+    assert running.live.request.kind == "mandate_approved"
+    assert [event.type for event in running.live.events] == ["tool_call", "tool_result"]
+    stored = await fetched(client, conversation)
+    assert (stored.busy, stored.live, stored.awaiting, stored.cart_id) == (
+        False,
+        None,
+        None,
+        None,
+    )
+    answered = stored.turns[-1]
+    assert (answered.request.kind, answered.request.mandate_id) == (
+        "mandate_approved",
+        mandate_id,
+    )
+    [paid] = [event for event in answered.events if isinstance(event, ToolResultEvent)]
     assert paid.ok, paid.summary
     assert paid.attachment is not None
     assert paid.attachment.type == "order"
     assert paid.attachment.order.status == "captured"
-    done = events[-1]
-    assert isinstance(done, DoneEvent)
-    assert done.cart_id is None
-    assert done.turn.request.kind == "mandate_approved"
     history = model.histories[-1]
     assert isinstance(history[-1], dict)
     assert str(history[-1]["content"]).startswith(
@@ -474,15 +508,139 @@ async def test_the_shoppers_approval_lets_the_agent_pay(
     ]
 
 
+async def test_an_answer_given_while_the_agent_still_asks_is_taken_up_when_it_ends(
+    shop: Assistant,
+    client: httpx2.AsyncClient,
+    wallet_id: UUID,
+    model: ScriptedModel,
+) -> None:
+    conversation = await start(client, wallet_id)
+
+    async def approve_at_once(results: list[JsonValue]) -> None:
+        asked = results[-1]
+        assert isinstance(asked, dict)
+        issued = TOOL_RESULT.validate_json(str(asked["result"]))
+        await approve(
+            client, UUID(str(issued["mandate_id"])), str(issued["mandate_key"])
+        )
+
+    model.turns.extend(
+        [
+            [
+                Call(
+                    "set_cart_line",
+                    {"product_id": "nike-free-rn-flyknit", "size": "10", "quantity": 1},
+                ),
+                Call(
+                    "request_mandate", {"kind": "cart", "cap_usd": "", "categories": []}
+                ),
+                approve_at_once,
+                "Approve it on the consent page.",
+            ],
+            ["Approved, thank you."],
+        ]
+    )
+    _ = await send(client, conversation, {"text": "Buy it"})
+    await shop.idle()
+
+    stored = await fetched(client, conversation)
+    assert [turn.request.kind for turn in stored.turns] == [
+        "message",
+        "mandate_approved",
+    ]
+    assert (stored.busy, stored.awaiting) == (False, None)
+
+
+async def test_a_declined_request_carries_the_chat_on(
+    shop: Assistant,
+    client: httpx2.AsyncClient,
+    wallet_id: UUID,
+    model: ScriptedModel,
+) -> None:
+    conversation, card = await asked_for(client, wallet_id, model)
+    model.turns.append(["Nothing was bought. What should I change?"])
+
+    declined = await client.post(
+        f"/api/mandates/{card.id}/decline",
+        headers={"X-Mandate-Key": mandate_key(card)},
+    )
+    assert declined.status_code == 200
+    await shop.idle()
+
+    stored = await fetched(client, conversation)
+    assert stored.turns[-1].request.kind == "mandate_declined"
+    history = model.histories[-1]
+    assert isinstance(history[-1], dict)
+    assert "it is now declined" in str(history[-1]["content"])
+
+
+async def test_a_request_that_ran_out_unanswered_carries_the_chat_on_once_read(
+    shop: Assistant,
+    client: httpx2.AsyncClient,
+    wallet_id: UUID,
+    model: ScriptedModel,
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    conversation, card = await asked_for(client, wallet_id, model)
+    async with sessions.begin() as session:
+        _ = await session.execute(
+            update(MandateRecord)
+            .where(MandateRecord.id == card.id)
+            .values(expires_at=func.now() - timedelta(minutes=1))
+        )
+    model.turns.append(["That request ran out. Shall I ask again?"])
+
+    read = await client.get(f"/api/mandates/{card.id}")
+    assert read.status_code == 200
+    await shop.idle()
+
+    stored = await fetched(client, conversation)
+    assert stored.turns[-1].request.kind == "mandate_expired"
+
+
+async def test_a_message_moves_the_chat_on_from_an_unanswered_request(
+    shop: Assistant,
+    client: httpx2.AsyncClient,
+    wallet_id: UUID,
+    model: ScriptedModel,
+) -> None:
+    conversation, card = await asked_for(client, wallet_id, model)
+    model.turns.append(["Which size instead?"])
+    _ = await send(client, conversation, {"text": "Wait, another size"})
+    assert (await fetched(client, conversation)).awaiting is None
+
+    await approve(client, card.id, mandate_key(card))
+    await shop.idle()
+
+    assert len((await fetched(client, conversation)).turns) == 2
+
+
+async def test_a_turn_the_api_runs_that_fails_says_so_in_the_chat(
+    shop: Assistant,
+    client: httpx2.AsyncClient,
+    wallet_id: UUID,
+    model: ScriptedModel,
+) -> None:
+    conversation, card = await asked_for(client, wallet_id, model)
+    model.turns.append([RuntimeError("the model is overloaded")])
+
+    await approve(client, card.id, mandate_key(card))
+    await shop.idle()
+
+    stored = await fetched(client, conversation)
+    assert (stored.busy, stored.live) == (False, None)
+    halted = stored.turns[-1]
+    assert halted.request.kind == "mandate_approved"
+    assert halted.events == [TextEvent(type="text", text=HALTED)]
+
+
 @pytest.mark.usefixtures("shop")
 async def test_the_agent_reads_the_cart_the_shopper_filled(
     client: httpx2.AsyncClient, wallet_id: UUID, model: ScriptedModel
 ) -> None:
     fresh = await start(client, wallet_id)
     model.turns.append([Call("get_cart", {})])
-    [nothing] = tool_results(
-        await send(client, fresh, {"type": "message", "text": "What is in my bag?"})
-    )
+    [nothing] = tool_results(await send(client, fresh, {"text": "What is in my bag?"}))
     assert (nothing.ok, nothing.summary, nothing.attachment) == (
         True,
         "No cart yet",
@@ -504,9 +662,7 @@ async def test_the_agent_reads_the_cart_the_shopper_filled(
     model.turns.append([Call("get_cart", {})])
 
     [read] = tool_results(
-        await send(
-            client, conversation, {"type": "message", "text": "Check out my cart"}
-        )
+        await send(client, conversation, {"text": "Check out my cart"})
     )
 
     assert read.ok
@@ -533,9 +689,7 @@ async def test_a_refusal_reaches_the_shopper_and_the_log(
             Call("request_mandate", {"kind": "cart", "cap_usd": "", "categories": []}),
         ]
     )
-    [_, asked] = tool_results(
-        await send(client, conversation, {"type": "message", "text": "Buy it"})
-    )
+    [_, asked] = tool_results(await send(client, conversation, {"text": "Buy it"}))
     assert asked.attachment is not None
     assert asked.attachment.type == "mandate"
     model.turns.append(
@@ -550,7 +704,7 @@ async def test_a_refusal_reaches_the_shopper_and_the_log(
         ]
     )
 
-    events = await send(client, conversation, {"type": "message", "text": "Pay now"})
+    events = await send(client, conversation, {"text": "Pay now"})
 
     [refused] = tool_results(events)
     assert not refused.ok
@@ -617,7 +771,7 @@ async def test_a_turn_that_fails_after_a_step_keeps_what_it_did(
         ]
     )
 
-    events = await send(client, conversation, {"type": "message", "text": "Add it"})
+    events = await send(client, conversation, {"text": "Add it"})
 
     [added] = tool_results(events)
     assert added.attachment is not None
@@ -630,7 +784,7 @@ async def test_a_turn_that_fails_after_a_step_keeps_what_it_did(
     [turn] = stored.turns
     assert [event.type for event in turn.events] == ["tool_call", "tool_result"]
     model.turns.append(["It is in your bag."])
-    await send(client, conversation, {"type": "message", "text": "Did it work?"})
+    await send(client, conversation, {"text": "Did it work?"})
     note = model.histories[-1][-2]
     assert isinstance(note, dict)
     assert note["role"] == "assistant"
@@ -644,7 +798,7 @@ async def test_a_turn_that_fails_before_any_step_asks_for_the_message_again(
     conversation = await start(client, wallet_id)
     model.turns.append(["Let me look", RuntimeError("the model went away")])
 
-    events = await send(client, conversation, {"type": "message", "text": "Hoka?"})
+    events = await send(client, conversation, {"text": "Hoka?"})
 
     failed = events[-1]
     assert isinstance(failed, ErrorEvent)
@@ -669,7 +823,7 @@ async def test_a_message_hands_the_agent_the_bag_the_shopper_sees(
     events = await send(
         client,
         conversation,
-        {"type": "message", "text": "Check out my bag", "cart_id": str(cart_id)},
+        {"text": "Check out my bag", "cart_id": str(cart_id)},
     )
 
     [read] = tool_results(events)
@@ -699,7 +853,7 @@ async def test_a_cart_another_wallet_pays_for_is_refused(
         (
             await client.post(
                 f"/api/assistant/conversations/{conversation.id}/messages",
-                json={"type": "message", "text": "Pay for this", "cart_id": str(cart)},
+                json={"text": "Pay for this", "cart_id": str(cart)},
                 headers=opened(conversation),
             )
         ).status_code
@@ -721,7 +875,7 @@ async def test_a_turn_that_outlived_its_lease_takes_the_next_place(
     stalled = await shop.start_turn(
         conversation.id,
         conversation.key,
-        ShopperMessage(type="message", text="First"),
+        ShopperMessage(text="First"),
     )
     async with sessions.begin() as session:
         await session.execute(
@@ -729,10 +883,12 @@ async def test_a_turn_that_outlived_its_lease_takes_the_next_place(
             .where(ConversationRecord.id == conversation.id)
             .values(busy_since=func.now() - STALE_TURN - timedelta(minutes=1))
         )
+    # A crashed turn does not keep the chat answering forever.
+    assert not (await fetched(client, conversation)).busy
     took_over = await shop.start_turn(
         conversation.id,
         conversation.key,
-        ShopperMessage(type="message", text="Second"),
+        ShopperMessage(text="Second"),
     )
     model.turns.extend([["Second answer."], ["First answer."]])
 

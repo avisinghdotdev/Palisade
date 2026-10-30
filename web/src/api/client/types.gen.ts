@@ -211,6 +211,11 @@ export type Conversation = {
      * Turns
      */
     turns: Array<Turn>;
+    live: LiveTurn | null;
+    /**
+     * Awaiting
+     */
+    awaiting: string | null;
     /**
      * Created At
      */
@@ -239,6 +244,11 @@ export type CreatedConversation = {
      * Turns
      */
     turns: Array<Turn>;
+    live: LiveTurn | null;
+    /**
+     * Awaiting
+     */
+    awaiting: string | null;
     /**
      * Created At
      */
@@ -252,7 +262,7 @@ export type CreatedConversation = {
 /**
  * DoneEvent
  *
- * The turn as stored, and the cart the agent is filling, so the browser can show both.
+ * The turn as stored, the cart the agent is filling, and the mandate it now waits on.
  */
 export type DoneEvent = {
     /**
@@ -264,6 +274,10 @@ export type DoneEvent = {
      * Cart Id
      */
     cart_id: string | null;
+    /**
+     * Awaiting
+     */
+    awaiting: string | null;
 };
 
 /**
@@ -426,6 +440,19 @@ export type LinkStart = {
 };
 
 /**
+ * LiveTurn
+ *
+ * The turn still running, as far as it got: saved at each tool call, so any reader sees it.
+ */
+export type LiveTurn = {
+    request: TurnRequest;
+    /**
+     * Events
+     */
+    events: Array<TextEvent | ToolCallEvent | ToolResultEvent>;
+};
+
+/**
  * Mandate
  *
  * A mandate as the consent page and the agent read it; anyone holding its id may read it.
@@ -551,22 +578,6 @@ export type MandateLine = {
      */
     name: string;
     unit_price: Money;
-};
-
-/**
- * MandateOutcome
- *
- * The shopper answered a mandate on the consent page; the agent carries on from the answer.
- */
-export type MandateOutcome = {
-    /**
-     * Type
-     */
-    type: 'mandate';
-    /**
-     * Mandate Id
-     */
-    mandate_id: string;
 };
 
 /**
@@ -1143,10 +1154,6 @@ export type ShipmentRequest = {
  * ShopperMessage
  */
 export type ShopperMessage = {
-    /**
-     * Type
-     */
-    type: 'message';
     /**
      * Text
      */
@@ -2298,14 +2305,7 @@ export type ConversationResponses = {
 export type ConversationResponse = ConversationResponses[keyof ConversationResponses];
 
 export type SendMessageData = {
-    /**
-     * Incoming
-     */
-    body: ({
-        type: 'message';
-    } & ShopperMessage) | ({
-        type: 'mandate';
-    } & MandateOutcome);
+    body: ShopperMessage;
     path: {
         /**
          * Conversation Id

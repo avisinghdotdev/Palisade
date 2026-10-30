@@ -91,7 +91,7 @@ REFUSALS = {
 }
 
 MandateKindInput = Literal["cart", "intent"]
-Emit = Callable[[TurnEvent], None]
+Emit = Callable[[TurnEvent], Awaitable[None]]
 ParameterType = Literal["string", "integer", "array"]
 
 
@@ -400,7 +400,7 @@ class Shopping:
             ToolError: the store refused or the call was wrong; the message says what to do next.
         """
         call_id = uuid4().hex[:12]
-        self._emit(
+        await self._emit(
             ToolCallEvent(type="tool_call", id=call_id, tool=name, input=arguments)
         )
         try:
@@ -414,7 +414,7 @@ class Shopping:
         except ToolError as error:
             await self._failed(call_id, name, arguments, str(error), str(error))
             raise
-        self._emit(
+        await self._emit(
             ToolResultEvent(
                 type="tool_result",
                 id=call_id,
@@ -650,7 +650,7 @@ class Shopping:
         told: str,
     ) -> None:
         """Show the shopper why the call failed, in their words, and log that with Claude's."""
-        self._emit(
+        await self._emit(
             ToolResultEvent(
                 type="tool_result",
                 id=call_id,

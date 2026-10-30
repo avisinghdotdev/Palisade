@@ -328,11 +328,12 @@ export const conversation = <ThrowOnError extends boolean = false>(options: Opti
 /**
  * Send Message
  *
- * Send the shopper's message, or the outcome of a consent page, and stream the agent's turn.
+ * Send the shopper's message and stream the agent's turn.
  *
- * A 401 means the chat access code is wrong; a 403 means the conversation's key is missing
- * or wrong. A 404 names a conversation, mandate, or cart that cannot be used. A 409 means the
- * agent is still answering the last message, or the mandate named has no answer yet.
+ * An answer on the consent page needs no message: the API carries the conversation on by
+ * itself, and the conversation shows that turn as it runs. A 401 means the chat access code
+ * is wrong; a 403 means the conversation's key is missing or wrong. A 404 names a
+ * conversation or cart that cannot be used. A 409 means the agent is still answering.
  */
 export const sendMessage = <ThrowOnError extends boolean = false>(options: Options<SendMessageData, ThrowOnError, SendMessageResponse>): Promise<ServerSentEventsResult<SendMessageResponses>> => (options.client ?? client).sse.post<SendMessageResponses, SendMessageErrors, ThrowOnError>({
     security: [{ name: 'X-Chat-Key', type: 'apiKey' }, { name: 'X-Conversation-Key', type: 'apiKey' }],

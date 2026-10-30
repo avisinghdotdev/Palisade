@@ -34,6 +34,14 @@ class ConversationRecord(Base):
     history: Mapped[list[JsonValue]] = mapped_column(JSONB)
     # Set while a turn runs, so two turns never run at once; a stale value marks a crashed turn.
     busy_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The running turn as the panel shows it so far: its request and events, saved at each tool
+    # call so a browser that is not streaming the turn can follow it.
+    live: Mapped[dict[str, JsonValue] | None] = mapped_column(JSONB)
+    # The mandate the last turn asked for and nobody has answered yet; its answer on the consent
+    # page starts the next turn.
+    awaiting_mandate_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("mandates.id", ondelete="SET NULL"), index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
