@@ -1,6 +1,7 @@
 """Mandates: what a buyer allowed an agent to buy, from the agent's request to the checkout."""
 
 import base64
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 from typing import Literal, final
 from uuid import UUID, uuid7
@@ -209,6 +210,10 @@ def summary(record: MandateRecord) -> MandateSummary:
     )
 
 
+# Told the id of a mandate once the buyer's answer is stored, or once it expired unanswered.
+Answered = Callable[[UUID], Awaitable[None]]
+
+
 @final
 class Mandates:
     def __init__(
@@ -228,6 +233,11 @@ class Mandates:
         self._activities = activities
         self._demo_signer = private_key(demo_signer_seed)
         self._public_origin = public_origin
+        self._answered: list[Answered] = []
+
+    def on_answer(self, listener: Answered) -> None:
+        """Have `listener` told about every mandate answered from now on."""
+        self._answered.append(listener)
 
     async def create(self, agent: Agent, request: MandateRequest) -> IssuedMandate:
         """Issue a pending mandate for the agent; the buyer answers it on the consent page.
@@ -316,8 +326,13 @@ class Mandates:
             record = await session.get(MandateRecord, mandate_id)
             if record is None:
                 raise UnknownMandate(mandate_id)
+            unanswered = record.status == "pending"
             await self._settle_expiry(session, record)
-            return await self._load(session, mandate_id)
+            lapsed = unanswered and record.status == "expired"
+            mandate = await self._load(session, mandate_id)
+        if lapsed:
+            await self._announce(mandate)
+        return mandate
 
     async def passkey_registration(
         self, mandate_id: UUID, key: str | None
@@ -399,7 +414,9 @@ class Mandates:
                 mandate_id=mandate_id,
                 signed_by=approval.signed_by,
             )
-            return await self._load(session, mandate_id)
+            mandate = await self._load(session, mandate_id)
+        await self._announce(mandate)
+        return mandate
 
     async def decline(self, mandate_id: UUID, key: str | None) -> Mandate:
         async with self._sessions.begin() as session:
@@ -411,7 +428,9 @@ class Mandates:
                 agent_id=record.agent_id,
                 mandate_id=mandate_id,
             )
-            return await self._load(session, mandate_id)
+            mandate = await self._load(session, mandate_id)
+        await self._announce(mandate)
+        return mandate
 
     async def claim(
         self,
@@ -545,6 +564,11 @@ class Mandates:
         if status != "pending":
             raise MandateNotPending(mandate_id, status)
         return record
+
+    async def _announce(self, mandate: Mandate) -> None:
+        """Tell the listeners, after the answer is committed, so they read it as stored."""
+        for listener in self._answered:
+            await listener(mandate.id)
 
     async def _settle_expiry(
         self, session: AsyncSession, record: MandateRecord

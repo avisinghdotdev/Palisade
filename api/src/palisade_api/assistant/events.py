@@ -130,11 +130,22 @@ class Turn(BaseModel):
     finished_at: datetime
 
 
+class LiveTurn(BaseModel):
+    """The turn still running, as far as it got: saved at each tool call, so any reader sees it."""
+
+    request: TurnRequest
+    events: list[TurnEvent]
+
+
 class Conversation(BaseModel):
     id: UUID
     cart_id: UUID | None
     busy: bool
     turns: list[Turn]
+    live: LiveTurn | None
+    # The mandate the agent asked for and the shopper has not answered; the API carries the
+    # conversation on by itself once the consent page answers it.
+    awaiting: UUID | None
     created_at: datetime
 
 
@@ -145,11 +156,12 @@ class CreatedConversation(Conversation):
 
 
 class DoneEvent(BaseModel):
-    """The turn as stored, and the cart the agent is filling, so the browser can show both."""
+    """The turn as stored, the cart the agent is filling, and the mandate it now waits on."""
 
     type: Literal["done"]
     turn: Turn
     cart_id: UUID | None
+    awaiting: UUID | None
 
 
 class ErrorEvent(BaseModel):
@@ -164,20 +176,9 @@ AssistantEvent = Annotated[
 
 
 class ShopperMessage(BaseModel):
-    type: Literal["message"]
     text: str = Field(min_length=1, max_length=MESSAGE_LENGTH)
     # The browser's open cart, so the agent works on the bag the shopper sees now.
     cart_id: UUID | None = None
-
-
-class MandateOutcome(BaseModel):
-    """The shopper answered a mandate on the consent page; the agent carries on from the answer."""
-
-    type: Literal["mandate"]
-    mandate_id: UUID
-
-
-Incoming = Annotated[ShopperMessage | MandateOutcome, Field(discriminator="type")]
 
 
 class NewConversation(BaseModel):

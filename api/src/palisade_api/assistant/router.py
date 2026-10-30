@@ -10,18 +10,16 @@ from palisade_api.assistant.events import (
     AssistantEvent,
     Conversation,
     CreatedConversation,
-    Incoming,
     NewConversation,
+    ShopperMessage,
 )
 from palisade_api.assistant.service import (
     Assistant,
     ConversationBusy,
     ConversationRefused,
     ForeignCart,
-    MandateUnanswered,
     UnknownConversation,
 )
-from palisade_api.mandates.service import UnknownMandate
 
 router = APIRouter(
     prefix="/api/assistant",
@@ -113,21 +111,22 @@ async def get_conversation(
 async def send_message(
     conversation_id: UUID,
     key: Annotated[str | None, Depends(conversation_key)],
-    incoming: Incoming,
+    message: ShopperMessage,
     service: Annotated[Assistant, Depends(assistant)],
 ) -> EventStream:
-    """Send the shopper's message, or the outcome of a consent page, and stream the agent's turn.
+    """Send the shopper's message and stream the agent's turn.
 
-    A 401 means the chat access code is wrong; a 403 means the conversation's key is missing
-    or wrong. A 404 names a conversation, mandate, or cart that cannot be used. A 409 means the
-    agent is still answering the last message, or the mandate named has no answer yet.
+    An answer on the consent page needs no message: the API carries the conversation on by
+    itself, and the conversation shows that turn as it runs. A 401 means the chat access code
+    is wrong; a 403 means the conversation's key is missing or wrong. A 404 names a
+    conversation or cart that cannot be used. A 409 means the agent is still answering.
     """
     try:
-        started = await service.start_turn(conversation_id, key, incoming)
-    except (UnknownConversation, UnknownMandate, ForeignCart) as error:
+        started = await service.start_turn(conversation_id, key, message)
+    except (UnknownConversation, ForeignCart) as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
     except ConversationRefused as error:
         raise HTTPException(status.HTTP_403_FORBIDDEN, str(error)) from error
-    except (ConversationBusy, MandateUnanswered) as error:
+    except ConversationBusy as error:
         raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
     return EventStream(service.events(started))
