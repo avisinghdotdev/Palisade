@@ -1,4 +1,4 @@
-"""The agent activity log: every agent-side event, written where it happens and read by the console."""
+"""The activity log: every agent-side and dispute event, written where it happens and read by the console."""
 
 from datetime import datetime
 from typing import Literal, final
@@ -27,6 +27,11 @@ ActivityKind = Literal[
     "policy_refused",
     "mandate_refused",
     "checkout_accepted",
+    "dispute_opened",
+    "dispute_updated",
+    "dispute_resolved",
+    "sandbox_dispute_filed",
+    "sandbox_dispute_adjudicated",
 ]
 ACTIVITY_KIND = TypeAdapter(ActivityKind)
 ACTIVITY_LISTED = 200
@@ -64,6 +69,7 @@ class Activity(BaseModel):
     order_id: UUID | None
     # The number of the linked order, so the console can link to it without a second request.
     order_number: str | None
+    dispute_id: str | None
     details: dict[str, JsonValue]
     at: datetime
 
@@ -78,6 +84,7 @@ def activity(record: ActivityRecord, order_number: str | None) -> Activity:
         mandate_id=record.mandate_id,
         order_id=record.order_id,
         order_number=order_number,
+        dispute_id=record.dispute_id,
         details=record.details,
         at=record.created_at,
     )
@@ -97,6 +104,7 @@ class Activities:
         conversation_id: UUID | None = None,
         mandate_id: UUID | None = None,
         order_id: UUID | None = None,
+        dispute_id: str | None = None,
         **details: JsonValue,
     ) -> None:
         """Write the row inside the caller's transaction, so it lands with what it describes."""
@@ -109,6 +117,7 @@ class Activities:
                 conversation_id=conversation_id,
                 mandate_id=mandate_id,
                 order_id=order_id,
+                dispute_id=dispute_id,
                 details=kept,
             )
         )
@@ -118,6 +127,7 @@ class Activities:
             conversation_id=None if conversation_id is None else str(conversation_id),
             mandate_id=None if mandate_id is None else str(mandate_id),
             order_id=None if order_id is None else str(order_id),
+            dispute_id=dispute_id,
             **kept,
         )
 
@@ -129,6 +139,7 @@ class Activities:
         conversation_id: UUID | None = None,
         mandate_id: UUID | None = None,
         order_id: UUID | None = None,
+        dispute_id: str | None = None,
         **details: JsonValue,
     ) -> None:
         """Write the row in its own transaction: for events whose own work was refused or rolled back."""
@@ -140,6 +151,7 @@ class Activities:
                 conversation_id=conversation_id,
                 mandate_id=mandate_id,
                 order_id=order_id,
+                dispute_id=dispute_id,
                 **details,
             )
 
@@ -192,3 +204,16 @@ class Activities:
                 activity(record, number if record.order_id == order.id else None)
                 for record in records
             ]
+
+    async def for_dispute(self, dispute_id: str) -> list[Activity]:
+        """Everything recorded about the dispute, oldest first."""
+        statement = (
+            select(ActivityRecord, OrderRecord.number)
+            .outerjoin(OrderRecord, OrderRecord.id == ActivityRecord.order_id)
+            .options(joinedload(ActivityRecord.agent))
+            .where(ActivityRecord.dispute_id == dispute_id)
+            .order_by(ActivityRecord.id)
+        )
+        async with self._sessions() as session:
+            rows = (await session.execute(statement)).all()
+        return [activity(record, number) for record, number in rows]

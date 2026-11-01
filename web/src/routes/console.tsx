@@ -35,8 +35,9 @@ export default function Console() {
             Ridgeline Running uses Palisade to let AI agents buy safely. This
             console is the store&apos;s view of it: every order with its PayPal
             IDs and payment history, every PayPal event the store received,
-            every agent request, mandate, and policy decision, and in later
-            milestones every dispute with the evidence Palisade filed.
+            every agent request, mandate, and policy decision, and every dispute
+            PayPal opened, joined to its order and mandate. Buttons marked
+            sandbox simulator stand in for a buyer or PayPal&apos;s reviewer.
           </p>
         </AboutDialog>
       </ShopHeader>

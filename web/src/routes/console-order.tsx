@@ -4,11 +4,7 @@ import { Link } from "react-router";
 
 import type { Activity, MandateSummary, Order } from "@/api/client";
 
-import {
-  ACTIVITY_LABELS,
-  activityDetail,
-  activitySource,
-} from "@/activity-labels";
+import { activityEntry } from "@/activity-labels";
 import {
   orderActivityOptions,
   orderOptions,
@@ -16,9 +12,12 @@ import {
 import { AgentIcon } from "@/components/agent-icon";
 import { Channel } from "@/components/channel";
 import { CopyButton } from "@/components/copy-button";
+import { DetailField } from "@/components/detail-field";
+import { OrderDisputes } from "@/components/order-disputes";
 import { OrderLines } from "@/components/order-lines";
 import { OrderStatus } from "@/components/order-status";
 import { ShipOrderDialog } from "@/components/ship-order-dialog";
+import { Timeline, type TimelineEntry } from "@/components/timeline";
 import { Button } from "@/components/ui/button";
 import { formatAmount, formatUtc } from "@/money";
 import { EVENT_LABELS, WEBHOOK_LABELS } from "@/order-labels";
@@ -37,26 +36,9 @@ const SOURCES: Record<Order["events"][number]["source"], string> = {
   repair: "Repair Job",
 };
 
-interface Entry {
-  key: string;
-  at: string;
-  label: string;
-  source: string;
-  detail: null | string;
-  // PayPal's codes and ids read better in a fixed-width face; the agent's words do not.
-  code: boolean;
-}
-
-/** The agent's side, the order's own events, and its shipment, in the order they happened. */
-function timeline(order: Order, activity: Activity[]): Entry[] {
-  const entries: Entry[] = activity.map((row) => ({
-    key: row.id,
-    at: row.at,
-    label: ACTIVITY_LABELS[row.kind],
-    source: activitySource(row),
-    detail: activityDetail(row),
-    code: false,
-  }));
+/** The agent's side, the order's own events, its shipment, and its disputes. */
+function timeline(order: Order, activity: Activity[]): TimelineEntry[] {
+  const entries = activity.map(activityEntry);
   entries.push(
     ...order.events.map((event) => ({
       key: `${event.at}/${event.to_status}/${event.webhook_event_id ?? event.source}`,
@@ -80,42 +62,7 @@ function timeline(order: Order, activity: Activity[]): Entry[] {
       code: true,
     });
   }
-  // Stable, so events at the same instant keep the order they were recorded in.
-  return entries.toSorted((a, b) => Date.parse(a.at) - Date.parse(b.at));
-}
-
-/** A PayPal identifier with its name above it and a copy button beside it. */
-function PayPalId({
-  label,
-  value,
-  note,
-  mono = true,
-}: {
-  label: string;
-  value: null | string;
-  note?: string;
-  mono?: boolean;
-}) {
-  return (
-    <div className="py-3">
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="mt-0.5 flex min-h-6 items-center gap-1">
-        {value === null ? (
-          <span className="text-sm text-muted-foreground">None</span>
-        ) : (
-          <>
-            <span className={`text-sm break-all ${mono ? "font-mono" : ""}`}>
-              {value}
-            </span>
-            <CopyButton label={label} value={value} />
-          </>
-        )}
-      </dd>
-      {note !== undefined && (
-        <dd className="text-xs text-muted-foreground">{note}</dd>
-      )}
-    </div>
-  );
+  return entries;
 }
 
 /** The terms the buyer's signature covers, decoded from the mandate as it was issued. */
@@ -161,39 +108,6 @@ function SignedTerms({ mandate }: { mandate: MandateSummary }) {
   );
 }
 
-function Timeline({ order, activity }: { order: Order; activity: Activity[] }) {
-  return (
-    <ol className="relative ml-1.5 border-l border-border">
-      {timeline(order, activity).map((entry) => (
-        <li className="relative pb-6 pl-6 last:pb-0" key={entry.key}>
-          <span
-            aria-hidden
-            className="absolute top-1.5 -left-[5px] size-2.5 rounded-full border-2 border-card bg-primary ring-1 ring-primary/30"
-          />
-          <p className="flex flex-wrap items-baseline gap-x-3">
-            <span className="font-medium">{entry.label}</span>
-            <time
-              className="text-sm text-muted-foreground tabular-nums"
-              dateTime={entry.at}
-            >
-              {formatUtc(entry.at)}
-            </time>
-          </p>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            {entry.source}
-            {entry.detail !== null && entry.detail !== "" && (
-              <span className={entry.code ? "font-mono text-xs" : ""}>
-                {" "}
-                {entry.code ? entry.detail : `· ${entry.detail}`}
-              </span>
-            )}
-          </p>
-        </li>
-      ))}
-    </ol>
-  );
-}
-
 /** The order's tracking once shipped; until then, the way to ship a paid order. */
 function Shipping({ order }: { order: Order }) {
   return (
@@ -222,12 +136,12 @@ function Shipping({ order }: { order: Order }) {
       ) : (
         <>
           <dl className="mt-1 divide-y">
-            <PayPalId
+            <DetailField
               label="Carrier"
               mono={false}
               value={order.shipment.carrier}
             />
-            <PayPalId
+            <DetailField
               label="Tracking Number"
               note={`Shipped ${formatUtc(order.shipment.shipped_at)}.`}
               value={order.shipment.tracking_number}
@@ -403,7 +317,9 @@ export default function ConsoleOrder({ params }: Route.ComponentProps) {
                   Timeline
                 </h2>
                 <div className="mt-4">
-                  <Timeline activity={activity.data ?? []} order={order.data} />
+                  <Timeline
+                    entries={timeline(order.data, activity.data ?? [])}
+                  />
                 </div>
               </section>
             </div>
@@ -421,13 +337,13 @@ export default function ConsoleOrder({ params }: Route.ComponentProps) {
                     Agent
                   </h2>
                   <dl className="mt-1 divide-y">
-                    <PayPalId
+                    <DetailField
                       label="Agent"
                       mono={false}
                       note={`Signed every request as ${order.data.agent.id}; Palisade verified each one.`}
                       value={order.data.agent.name}
                     />
-                    <PayPalId
+                    <DetailField
                       label="Policy Hash"
                       note="Ridgeline Running's rules this order passed, as Palisade checked them."
                       value={order.data.policy_hash}
@@ -451,7 +367,7 @@ export default function ConsoleOrder({ params }: Route.ComponentProps) {
                     Mandate
                   </h2>
                   <dl className="mt-1 divide-y">
-                    <PayPalId
+                    <DetailField
                       label="Mandate ID"
                       note={
                         order.data.mandate.kind === "cart"
@@ -461,7 +377,7 @@ export default function ConsoleOrder({ params }: Route.ComponentProps) {
                       value={order.data.mandate.id}
                     />
                     <SignedTerms mandate={order.data.mandate} />
-                    <PayPalId
+                    <DetailField
                       label="Signed By"
                       mono={false}
                       note={
@@ -475,7 +391,7 @@ export default function ConsoleOrder({ params }: Route.ComponentProps) {
                           : "Demo signer (simulated)"
                       }
                     />
-                    <PayPalId
+                    <DetailField
                       label="Token Hash"
                       note={
                         order.data.custom_id?.endsWith(
@@ -501,11 +417,11 @@ export default function ConsoleOrder({ params }: Route.ComponentProps) {
                   />
                 </h2>
                 <dl className="mt-1 divide-y">
-                  <PayPalId
+                  <DetailField
                     label="PayPal Order ID"
                     value={order.data.paypal_order_id}
                   />
-                  <PayPalId
+                  <DetailField
                     label="Authorization ID"
                     note={
                       order.data.status === "authorized" &&
@@ -515,14 +431,17 @@ export default function ConsoleOrder({ params }: Route.ComponentProps) {
                     }
                     value={order.data.authorization_id}
                   />
-                  <PayPalId label="Capture ID" value={order.data.capture_id} />
-                  <PayPalId
+                  <DetailField
+                    label="Capture ID"
+                    value={order.data.capture_id}
+                  />
+                  <DetailField
                     label="Payer Email"
                     mono={false}
                     value={order.data.payer_email}
                   />
                   {order.data.channel === "agent" && (
-                    <PayPalId
+                    <DetailField
                       label="Custom ID"
                       note="The signed mandate's ID and hash."
                       value={order.data.custom_id}
@@ -531,6 +450,7 @@ export default function ConsoleOrder({ params }: Route.ComponentProps) {
                 </dl>
               </aside>
               <Shipping order={order.data} />
+              <OrderDisputes order={order.data} />
             </div>
           </div>
           <section aria-labelledby="calls" className="mt-10">

@@ -1,9 +1,11 @@
 import type { Activity, ToolCallEvent } from "@/api/client";
+import type { TimelineEntry } from "@/components/timeline";
 
+import { outcomeLabel, reasonLabel, statusLabel } from "@/dispute-labels";
 import { formatAmount } from "@/money";
 import { TOOL_LABELS } from "@/tool-labels";
 
-/** How each agent-side event reads to a merchant. */
+/** How each agent-side and dispute event reads to a merchant. */
 export const ACTIVITY_LABELS: Record<Activity["kind"], string> = {
   conversation_started: "Chat Started",
   shopper_message: "Shopper Wrote",
@@ -17,11 +19,33 @@ export const ACTIVITY_LABELS: Record<Activity["kind"], string> = {
   policy_refused: "Policy Refused the Purchase",
   mandate_refused: "Mandate Refused the Purchase",
   checkout_accepted: "Checkout Accepted",
+  dispute_opened: "Dispute Received from PayPal",
+  dispute_updated: "PayPal Updated the Dispute",
+  dispute_resolved: "PayPal Resolved the Dispute",
+  sandbox_dispute_filed: "Dispute Filed as the Demo Buyer",
+  sandbox_dispute_adjudicated: "Decision Requested from PayPal",
 };
 
-/** Who did it, as the timeline names them: the shopper, the buyer signing, the store, or the agent. */
+/** What made Palisade read a dispute from PayPal. */
+const DISPUTE_READS: Record<string, string> = {
+  webhook: "PayPal Webhook",
+  reconciliation: "Hourly Check with PayPal",
+  console: "Merchant Console",
+  simulator: "Sandbox Simulator",
+};
+
+/** Who did it, as the timeline names them: the shopper, the buyer signing, the store, the agent, or PayPal. */
 export function activitySource(row: Activity): string {
   switch (row.kind) {
+    case "dispute_opened":
+    case "dispute_updated":
+    case "dispute_resolved": {
+      const read = text(row.details, "source");
+      return DISPUTE_READS[read] ?? read;
+    }
+    case "sandbox_dispute_filed":
+    case "sandbox_dispute_adjudicated":
+      return "Sandbox Simulator";
     case "conversation_started":
     case "shopper_message":
       return "Shopper";
@@ -60,6 +84,22 @@ function isTool(value: string): value is ToolCallEvent["tool"] {
   return value in TOOL_LABELS;
 }
 
+const STAGES: Record<string, string> = {
+  INQUIRY: "an inquiry",
+  CHARGEBACK: "a claim",
+  PRE_ARBITRATION: "pre-arbitration",
+  ARBITRATION: "arbitration",
+};
+
+/** The dispute's new status, and its new stage when it moved to one. */
+function disputeUpdate(details: Activity["details"]): string {
+  const status = statusLabel(text(details, "status"));
+  const stage = text(details, "stage");
+  return stage === text(details, "from_stage")
+    ? `now ${status}`
+    : `now ${status}, as ${STAGES[stage] ?? stage}`;
+}
+
 /** One line on what the event was about, from the details the API stored with it. */
 export function activityDetail(row: Activity): string {
   const { details } = row;
@@ -94,5 +134,31 @@ export function activityDetail(row: Activity): string {
       return list(details, "reasons");
     case "checkout_accepted":
       return `Order ${text(details, "number")} placed under the mandate`;
+    case "dispute_opened":
+      return `${row.dispute_id ?? ""}: ${reasonLabel(text(details, "reason"))}, ${formatAmount(text(details, "amount"))}, ${statusLabel(text(details, "status"))}`;
+    case "dispute_updated":
+      return `${row.dispute_id ?? ""}: ${disputeUpdate(details)}`;
+    case "dispute_resolved": {
+      const outcome = text(details, "outcome");
+      return `${row.dispute_id ?? ""}: ${outcome === "" ? "closed with no outcome given" : outcomeLabel(outcome)}`;
+    }
+    case "sandbox_dispute_filed":
+      return `${reasonLabel(text(details, "reason"))}, through the demo buyer's own PayPal app`;
+    case "sandbox_dispute_adjudicated":
+      return text(details, "outcome") === "SELLER_FAVOR"
+        ? "Asked PayPal's sandbox to decide for the seller"
+        : "Asked PayPal's sandbox to decide for the buyer";
   }
+}
+
+/** An activity row as a timeline shows it. */
+export function activityEntry(row: Activity): TimelineEntry {
+  return {
+    key: row.id,
+    at: row.at,
+    label: ACTIVITY_LABELS[row.kind],
+    source: activitySource(row),
+    detail: activityDetail(row),
+    code: false,
+  };
 }
