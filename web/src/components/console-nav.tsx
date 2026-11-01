@@ -11,6 +11,11 @@ const PAGES = [
       path === "/console" || path.startsWith("/console/orders/"),
   },
   {
+    to: "/console/disputes",
+    label: "Disputes",
+    owns: (path: string) => path.startsWith("/console/disputes"),
+  },
+  {
     to: "/console/activity",
     label: "Activity",
     owns: (path: string) => path.startsWith("/console/activity"),

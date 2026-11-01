@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Palisade API",
-    "version": "0.17.0"
+    "version": "0.18.0"
   },
   "paths": {
     "/api/paypal/health": {
@@ -734,6 +734,254 @@
         }
       }
     },
+    "/api/disputes": {
+      "get": {
+        "tags": [
+          "disputes"
+        ],
+        "summary": "List Disputes",
+        "description": "The disputes PayPal opened on the store's payments, newest first.",
+        "operationId": "disputes",
+        "parameters": [
+          {
+            "name": "order_number",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Order Number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DisputeSummary"
+                  },
+                  "title": "Response Disputes"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/disputes/{dispute_id}": {
+      "get": {
+        "tags": [
+          "disputes"
+        ],
+        "summary": "Get Dispute",
+        "operationId": "dispute",
+        "parameters": [
+          {
+            "name": "dispute_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^PP-[A-Z0-9-]{4,40}$",
+              "title": "Dispute Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Dispute"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/disputes/{dispute_id}/sync": {
+      "post": {
+        "tags": [
+          "disputes"
+        ],
+        "summary": "Sync Dispute",
+        "description": "Read the dispute from PayPal now, as a webhook would.\n\nA 404 means the dispute names a payment that is none of the shop's orders; a 422 names\nwhat PayPal refused.",
+        "operationId": "sync_dispute",
+        "parameters": [
+          {
+            "name": "dispute_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^PP-[A-Z0-9-]{4,40}$",
+              "title": "Dispute Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Dispute"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sandbox/orders/{number}/disputes": {
+      "post": {
+        "tags": [
+          "sandbox"
+        ],
+        "summary": "Simulate Dispute",
+        "description": "Sandbox simulator: file a dispute on a paid demo-buyer order as the demo buyer.\n\nA 409 means the order cannot be disputed this way, or PayPal's search does not list the\npayment yet; a 422 means PayPal refused the dispute.",
+        "operationId": "simulate_dispute",
+        "parameters": [
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DisputeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Dispute"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sandbox/disputes/{dispute_id}/adjudicate": {
+      "post": {
+        "tags": [
+          "sandbox"
+        ],
+        "summary": "Simulate Adjudication",
+        "description": "Sandbox simulator: have PayPal decide the dispute for the seller or the buyer.\n\nA 409 means PayPal does not offer a decision yet.",
+        "operationId": "simulate_adjudication",
+        "parameters": [
+          {
+            "name": "dispute_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^PP-[A-Z0-9-]{4,40}$",
+              "title": "Dispute Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdjudicationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Dispute"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/mandates": {
       "post": {
         "tags": [
@@ -1108,7 +1356,12 @@
                     "mandate_expired",
                     "policy_refused",
                     "mandate_refused",
-                    "checkout_accepted"
+                    "checkout_accepted",
+                    "dispute_opened",
+                    "dispute_updated",
+                    "dispute_resolved",
+                    "sandbox_dispute_filed",
+                    "sandbox_dispute_adjudicated"
                   ],
                   "type": "string"
                 },
@@ -1178,6 +1431,53 @@
                     "$ref": "#/components/schemas/Activity"
                   },
                   "title": "Response Order Activity"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/disputes/{dispute_id}/activity": {
+      "get": {
+        "tags": [
+          "activity"
+        ],
+        "summary": "Dispute Activity",
+        "description": "What was recorded about one dispute, oldest first; empty for a dispute never stored.",
+        "operationId": "dispute_activity",
+        "parameters": [
+          {
+            "name": "dispute_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Dispute Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Activity"
+                  },
+                  "title": "Response Dispute Activity"
                 }
               }
             }
@@ -1469,7 +1769,12 @@
               "mandate_expired",
               "policy_refused",
               "mandate_refused",
-              "checkout_accepted"
+              "checkout_accepted",
+              "dispute_opened",
+              "dispute_updated",
+              "dispute_resolved",
+              "sandbox_dispute_filed",
+              "sandbox_dispute_adjudicated"
             ],
             "title": "Kind"
           },
@@ -1518,6 +1823,17 @@
             ],
             "title": "Order Number"
           },
+          "dispute_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dispute Id"
+          },
           "details": {
             "additionalProperties": {
               "$ref": "#/components/schemas/JsonValue"
@@ -1539,11 +1855,29 @@
           "mandate_id",
           "order_id",
           "order_number",
+          "dispute_id",
           "details",
           "at"
         ],
         "title": "Activity",
         "description": "An activity row as the console reads it.\n\nThe conversation it belongs to stays server-side: a conversation id plus the shared chat\ncode would open another shopper's chat. Mandate and order ids are safe to show, because\nneither can be acted on without the mandate's key or a signed mandate."
+      },
+      "AdjudicationRequest": {
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "SELLER_FAVOR",
+              "BUYER_FAVOR"
+            ],
+            "title": "Outcome"
+          }
+        },
+        "type": "object",
+        "required": [
+          "outcome"
+        ],
+        "title": "AdjudicationRequest"
       },
       "Agent": {
         "properties": {
@@ -1916,6 +2250,467 @@
         ],
         "title": "CreatedConversation",
         "description": "A new conversation with the key that opens it; the key is handed out this once."
+      },
+      "Dispute": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "order_number": {
+            "type": "string",
+            "title": "Order Number"
+          },
+          "order_channel": {
+            "type": "string",
+            "enum": [
+              "human",
+              "agent"
+            ],
+            "title": "Order Channel"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+              "MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED",
+              "UNAUTHORISED",
+              "CREDIT_NOT_PROCESSED",
+              "DUPLICATE_TRANSACTION",
+              "INCORRECT_AMOUNT",
+              "PAYMENT_BY_OTHER_MEANS",
+              "CANCELED_RECURRING_BILLING",
+              "PROBLEM_WITH_REMITTANCE",
+              "OTHER"
+            ],
+            "title": "Reason"
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "INQUIRY",
+              "CHARGEBACK",
+              "PRE_ARBITRATION",
+              "ARBITRATION"
+            ],
+            "title": "Stage"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "WAITING_FOR_BUYER_RESPONSE",
+              "WAITING_FOR_SELLER_RESPONSE",
+              "UNDER_REVIEW",
+              "RESOLVED",
+              "OTHER"
+            ],
+            "title": "Status"
+          },
+          "dispute_channel": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "INTERNAL",
+                  "EXTERNAL",
+                  "ALERT"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dispute Channel"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "RESOLVED_BUYER_FAVOUR",
+                  "RESOLVED_SELLER_FAVOUR",
+                  "RESOLVED_WITH_PAYOUT",
+                  "CANCELED_BY_BUYER",
+                  "ACCEPTED",
+                  "DENIED",
+                  "NONE"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "amount": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "seller_response_due_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seller Response Due At"
+          },
+          "opened_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Opened At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "capture_id": {
+            "type": "string",
+            "title": "Capture Id"
+          },
+          "buyer_transaction_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Buyer Transaction Id"
+          },
+          "mandate_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mandate Id"
+          },
+          "custom_matches": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Matches"
+          },
+          "seller_protection_eligible": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seller Protection Eligible"
+          },
+          "actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Actions"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/DisputeMessage"
+            },
+            "type": "array",
+            "title": "Messages"
+          },
+          "evidences": {
+            "items": {
+              "$ref": "#/components/schemas/DisputeEvidence"
+            },
+            "type": "array",
+            "title": "Evidences"
+          },
+          "synced_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Synced At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "order_number",
+          "order_channel",
+          "reason",
+          "stage",
+          "status",
+          "dispute_channel",
+          "outcome",
+          "amount",
+          "seller_response_due_at",
+          "opened_at",
+          "updated_at",
+          "capture_id",
+          "buyer_transaction_id",
+          "mandate_id",
+          "custom_matches",
+          "seller_protection_eligible",
+          "actions",
+          "messages",
+          "evidences",
+          "synced_at"
+        ],
+        "title": "Dispute",
+        "description": "A dispute as its console page shows it.\n\nThe buyer's name, email, and PayPal account stay server-side; the order already names its\nwallet."
+      },
+      "DisputeEvidence": {
+        "properties": {
+          "evidence_type": {
+            "type": "string",
+            "title": "Evidence Type"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "documents": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Documents"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "INQUIRY",
+                  "CHARGEBACK",
+                  "PRE_ARBITRATION",
+                  "ARBITRATION"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage"
+          }
+        },
+        "type": "object",
+        "required": [
+          "evidence_type",
+          "source",
+          "at",
+          "notes",
+          "documents",
+          "stage"
+        ],
+        "title": "DisputeEvidence",
+        "description": "One item on PayPal's evidence list: a party's filing, or what PayPal asks a party for."
+      },
+      "DisputeMessage": {
+        "properties": {
+          "posted_by": {
+            "type": "string",
+            "title": "Posted By"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          }
+        },
+        "type": "object",
+        "required": [
+          "posted_by",
+          "at",
+          "content"
+        ],
+        "title": "DisputeMessage"
+      },
+      "DisputeRequest": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "enum": [
+              "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+              "MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED",
+              "OTHER"
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "title": "DisputeRequest"
+      },
+      "DisputeSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "order_number": {
+            "type": "string",
+            "title": "Order Number"
+          },
+          "order_channel": {
+            "type": "string",
+            "enum": [
+              "human",
+              "agent"
+            ],
+            "title": "Order Channel"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+              "MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED",
+              "UNAUTHORISED",
+              "CREDIT_NOT_PROCESSED",
+              "DUPLICATE_TRANSACTION",
+              "INCORRECT_AMOUNT",
+              "PAYMENT_BY_OTHER_MEANS",
+              "CANCELED_RECURRING_BILLING",
+              "PROBLEM_WITH_REMITTANCE",
+              "OTHER"
+            ],
+            "title": "Reason"
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "INQUIRY",
+              "CHARGEBACK",
+              "PRE_ARBITRATION",
+              "ARBITRATION"
+            ],
+            "title": "Stage"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "WAITING_FOR_BUYER_RESPONSE",
+              "WAITING_FOR_SELLER_RESPONSE",
+              "UNDER_REVIEW",
+              "RESOLVED",
+              "OTHER"
+            ],
+            "title": "Status"
+          },
+          "dispute_channel": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "INTERNAL",
+                  "EXTERNAL",
+                  "ALERT"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dispute Channel"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "RESOLVED_BUYER_FAVOUR",
+                  "RESOLVED_SELLER_FAVOUR",
+                  "RESOLVED_WITH_PAYOUT",
+                  "CANCELED_BY_BUYER",
+                  "ACCEPTED",
+                  "DENIED",
+                  "NONE"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "amount": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "seller_response_due_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seller Response Due At"
+          },
+          "opened_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Opened At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "order_number",
+          "order_channel",
+          "reason",
+          "stage",
+          "status",
+          "dispute_channel",
+          "outcome",
+          "amount",
+          "seller_response_due_at",
+          "opened_at",
+          "updated_at"
+        ],
+        "title": "DisputeSummary",
+        "description": "A dispute as the console's list shows it."
       },
       "DoneEvent": {
         "properties": {

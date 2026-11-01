@@ -32,6 +32,9 @@ class Settings(DatabaseSettings):
 
     paypal_client_id: str
     paypal_client_secret: SecretStr
+    # The demo buyer's own REST app: only a buyer's token may open a dispute on its payments.
+    paypal_buyer_client_id: str
+    paypal_buyer_client_secret: SecretStr
     paypal_webhook_id: str
     # The site's origin as the buyer's browser reaches it; PayPal sends the buyer back to URLs under it.
     public_origin: str

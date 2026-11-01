@@ -42,6 +42,7 @@ from typing import Any
 
 from sandbox import PayPal, auth_assertion, check, connect, http_client
 
+# The disputed amount; `--amount` sets it to the payment's own value.
 AMOUNT = {"currency_code": "USD", "value": "95.00"}
 MANDATE_HASH = hashlib.sha256(
     b"intent: running shoes, size 10, up to 120 USD, free returns"
@@ -127,12 +128,14 @@ async def dispute(
         "disputed_transactions": [{"buyer_transaction_id": transaction_id}],
         "reason": reason,
         "dispute_amount": AMOUNT,
-        "extensions": {
+    }
+    # An unauthorised claim is about the account, not the goods, so it carries no merchandise block.
+    if reason != "UNAUTHORISED":
+        body["extensions"] = {
             "merchant_contacted": True,
             "merchant_contacted_outcome": "NO_RESPONSE",
             "merchandize_dispute_properties": {"issue_type": "PRODUCT"},
-        },
-    }
+        }
     if accelerated:
         body["evidences"] = [{"notes": "ACCELERATED_RESPONSE_ENABLED"}]
     headers = {"PayPal-Auth-Assertion": auth_assertion(subject)} if subject else {}
@@ -387,6 +390,9 @@ async def main() -> None:
         default="seller",
         help="whose REST app makes the calls",
     )
+    parser.add_argument(
+        "--amount", default="95.00", help="the disputed amount in USD, two decimals"
+    )
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("vault-start")
     commands.add_parser("vault-finish").add_argument("setup_token_id")
@@ -427,6 +433,7 @@ async def main() -> None:
     charging.add_argument("merchant_id")
     charging.add_argument("--reason-code", default="C2")
     args = parser.parse_args()
+    AMOUNT["value"] = args.amount
 
     async with http_client() as http:
         paypal = await connect(http, args.app)

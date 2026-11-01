@@ -26,6 +26,9 @@ from palisade_api.assistant.model import ClaudeModel
 from palisade_api.assistant.prompt import SYSTEM_PROMPT
 from palisade_api.assistant.service import Assistant
 from palisade_api.database import create_engine
+from palisade_api.disputes import router as disputes_router
+from palisade_api.disputes import webhooks as dispute_webhooks
+from palisade_api.disputes.service import Disputes
 from palisade_api.jobs import run_worker
 from palisade_api.logging import RequestLogMiddleware
 from palisade_api.maintenance import Housekeeping
@@ -46,6 +49,8 @@ from palisade_api.paypal import router as paypal
 from palisade_api.paypal.auth import SANDBOX_BASE_URL, PayPalAuth
 from palisade_api.paypal.client import PayPalClient
 from palisade_api.policy.engine import Policies
+from palisade_api.sandbox import router as sandbox_router
+from palisade_api.sandbox.simulator import Simulator
 from palisade_api.settings import Settings
 from palisade_api.shop import router as shop
 from palisade_api.shop.cart import Carts
@@ -79,6 +84,8 @@ class State(TypedDict):
     checkout: Checkout
     orders: Orders
     shipments: Shipments
+    disputes: Disputes
+    simulator: Simulator
     agent_signatures: AgentSignatures
     mandates: Mandates
     passkeys: Passkeys
@@ -130,6 +137,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[State]:
                 settings.paypal_client_secret.get_secret_value(),
             )
             paypal_client = PayPalClient(http, auth)
+            buyer_paypal = PayPalClient(
+                http,
+                PayPalAuth(
+                    http,
+                    settings.paypal_buyer_client_id,
+                    settings.paypal_buyer_client_secret.get_secret_value(),
+                ),
+            )
+            disputes = Disputes(sessions, paypal_client, activities)
             wallets = Wallets(
                 sessions,
                 paypal_client,
@@ -152,6 +168,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[State]:
                 handlers = {
                     **order_webhooks.handlers(sessions),
                     **wallet_webhooks.handlers(wallets),
+                    **dispute_webhooks.handlers(disputes),
                 }
                 repairs = Repairs(
                     sessions,
@@ -174,6 +191,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[State]:
                             "webhook_handlers": handlers,
                             "repairs": repairs,
                             "housekeeping": Housekeeping(sessions),
+                            "disputes": disputes,
                         },
                     )
                 )
@@ -240,6 +258,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[State]:
                 ),
                 orders=orders,
                 shipments=Shipments(sessions, calls, orders),
+                disputes=disputes,
+                simulator=Simulator(
+                    sessions, buyer_paypal, paypal_client, disputes, activities
+                ),
                 agent_signatures=AgentSignatures(
                     sessions, agents, activities, settings.public_origin
                 ),
@@ -269,6 +291,8 @@ app.include_router(webhooks.router)
 app.include_router(shop.router)
 app.include_router(wallets_router.router)
 app.include_router(orders_router.router)
+app.include_router(disputes_router.router)
+app.include_router(sandbox_router.router)
 app.include_router(mandates_router.router)
 app.include_router(activity_router.router)
 app.include_router(assistant_router.router)
