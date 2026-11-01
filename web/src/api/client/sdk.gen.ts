@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { ActivityData, ActivityErrors, ActivityResponses, ApproveMandateData, ApproveMandateErrors, ApproveMandateResponses, AssistantAccessData, AssistantAccessResponses, CartData, CartErrors, CartResponses, CheckoutData, CheckoutErrors, CheckoutResponses, ConfirmWalletLinkData, ConfirmWalletLinkErrors, ConfirmWalletLinkResponses, ConversationData, ConversationErrors, ConversationResponses, CreateCartData, CreateCartErrors, CreateCartResponses, CreateConversationData, CreateConversationErrors, CreateConversationResponses, CreateMandateData, CreateMandateErrors, CreateMandateResponses, DeclineMandateData, DeclineMandateErrors, DeclineMandateResponses, DemoWalletData, DemoWalletResponses, HealthData, HealthResponses, MandateData, MandateErrors, MandatePasskeyOptionsData, MandatePasskeyOptionsErrors, MandatePasskeyOptionsResponses, MandateResponses, OrderActivityData, OrderActivityErrors, OrderActivityResponses, OrderData, OrderErrors, OrderResponses, OrdersData, OrdersResponses, PaypalHealthData, PaypalHealthResponses, PaypalWebhookData, PaypalWebhookErrors, PaypalWebhookResponses, ProductData, ProductErrors, ProductResponses, ProductsData, ProductsResponses, ReadyData, ReadyErrors, ReadyResponses, RegisterPasskeyData, RegisterPasskeyErrors, RegisterPasskeyResponses, ReplayWebhookEventData, ReplayWebhookEventErrors, ReplayWebhookEventResponses, SendMessageData, SendMessageErrors, SendMessageResponse, SendMessageResponses, SetCartLineData, SetCartLineErrors, SetCartLineResponses, SetCartWalletData, SetCartWalletErrors, SetCartWalletResponses, ShipOrderData, ShipOrderErrors, ShipOrderResponses, StartPasskeyRegistrationData, StartPasskeyRegistrationErrors, StartPasskeyRegistrationResponses, StartWalletLinkData, StartWalletLinkResponses, WalletData, WalletErrors, WalletResponses, WebhookEventsData, WebhookEventsResponses } from './types.gen';
+import type { ActivityData, ActivityErrors, ActivityResponses, ApproveMandateData, ApproveMandateErrors, ApproveMandateResponses, AssistantAccessData, AssistantAccessResponses, CartData, CartErrors, CartResponses, CheckoutData, CheckoutErrors, CheckoutResponses, ConfirmWalletLinkData, ConfirmWalletLinkErrors, ConfirmWalletLinkResponses, ConversationData, ConversationErrors, ConversationResponses, CreateCartData, CreateCartErrors, CreateCartResponses, CreateConversationData, CreateConversationErrors, CreateConversationResponses, CreateMandateData, CreateMandateErrors, CreateMandateResponses, DeclineMandateData, DeclineMandateErrors, DeclineMandateResponses, DemoWalletData, DemoWalletResponses, DisputeActivityData, DisputeActivityErrors, DisputeActivityResponses, DisputeData, DisputeErrors, DisputeResponses, DisputesData, DisputesErrors, DisputesResponses, HealthData, HealthResponses, MandateData, MandateErrors, MandatePasskeyOptionsData, MandatePasskeyOptionsErrors, MandatePasskeyOptionsResponses, MandateResponses, OrderActivityData, OrderActivityErrors, OrderActivityResponses, OrderData, OrderErrors, OrderResponses, OrdersData, OrdersResponses, PaypalHealthData, PaypalHealthResponses, PaypalWebhookData, PaypalWebhookErrors, PaypalWebhookResponses, ProductData, ProductErrors, ProductResponses, ProductsData, ProductsResponses, ReadyData, ReadyErrors, ReadyResponses, RegisterPasskeyData, RegisterPasskeyErrors, RegisterPasskeyResponses, ReplayWebhookEventData, ReplayWebhookEventErrors, ReplayWebhookEventResponses, SendMessageData, SendMessageErrors, SendMessageResponse, SendMessageResponses, SetCartLineData, SetCartLineErrors, SetCartLineResponses, SetCartWalletData, SetCartWalletErrors, SetCartWalletResponses, ShipOrderData, ShipOrderErrors, ShipOrderResponses, SimulateAdjudicationData, SimulateAdjudicationErrors, SimulateAdjudicationResponses, SimulateDisputeData, SimulateDisputeErrors, SimulateDisputeResponses, StartPasskeyRegistrationData, StartPasskeyRegistrationErrors, StartPasskeyRegistrationResponses, StartWalletLinkData, StartWalletLinkResponses, SyncDisputeData, SyncDisputeErrors, SyncDisputeResponses, WalletData, WalletErrors, WalletResponses, WebhookEventsData, WebhookEventsResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -181,6 +181,61 @@ export const shipOrder = <ThrowOnError extends boolean = false>(options: Options
 });
 
 /**
+ * List Disputes
+ *
+ * The disputes PayPal opened on the store's payments, newest first.
+ */
+export const disputes = <ThrowOnError extends boolean = false>(options?: Options<DisputesData, ThrowOnError>): RequestResult<DisputesResponses, DisputesErrors, ThrowOnError> => (options?.client ?? client).get<DisputesResponses, DisputesErrors, ThrowOnError>({ url: '/api/disputes', ...options });
+
+/**
+ * Get Dispute
+ */
+export const dispute = <ThrowOnError extends boolean = false>(options: Options<DisputeData, ThrowOnError>): RequestResult<DisputeResponses, DisputeErrors, ThrowOnError> => (options.client ?? client).get<DisputeResponses, DisputeErrors, ThrowOnError>({ url: '/api/disputes/{dispute_id}', ...options });
+
+/**
+ * Sync Dispute
+ *
+ * Read the dispute from PayPal now, as a webhook would.
+ *
+ * A 404 means the dispute names a payment that is none of the shop's orders; a 422 names
+ * what PayPal refused.
+ */
+export const syncDispute = <ThrowOnError extends boolean = false>(options: Options<SyncDisputeData, ThrowOnError>): RequestResult<SyncDisputeResponses, SyncDisputeErrors, ThrowOnError> => (options.client ?? client).post<SyncDisputeResponses, SyncDisputeErrors, ThrowOnError>({ url: '/api/disputes/{dispute_id}/sync', ...options });
+
+/**
+ * Simulate Dispute
+ *
+ * Sandbox simulator: file a dispute on a paid demo-buyer order as the demo buyer.
+ *
+ * A 409 means the order cannot be disputed this way, or PayPal's search does not list the
+ * payment yet; a 422 means PayPal refused the dispute.
+ */
+export const simulateDispute = <ThrowOnError extends boolean = false>(options: Options<SimulateDisputeData, ThrowOnError>): RequestResult<SimulateDisputeResponses, SimulateDisputeErrors, ThrowOnError> => (options.client ?? client).post<SimulateDisputeResponses, SimulateDisputeErrors, ThrowOnError>({
+    url: '/api/sandbox/orders/{number}/disputes',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Simulate Adjudication
+ *
+ * Sandbox simulator: have PayPal decide the dispute for the seller or the buyer.
+ *
+ * A 409 means PayPal does not offer a decision yet.
+ */
+export const simulateAdjudication = <ThrowOnError extends boolean = false>(options: Options<SimulateAdjudicationData, ThrowOnError>): RequestResult<SimulateAdjudicationResponses, SimulateAdjudicationErrors, ThrowOnError> => (options.client ?? client).post<SimulateAdjudicationResponses, SimulateAdjudicationErrors, ThrowOnError>({
+    url: '/api/sandbox/disputes/{dispute_id}/adjudicate',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
  * Create Mandate
  *
  * An agent asks the buyer for a mandate; the answer holds the key and the consent link.
@@ -282,6 +337,13 @@ export const activity = <ThrowOnError extends boolean = false>(options?: Options
  * The agent-side events behind one order, oldest first, from the shopper's request on.
  */
 export const orderActivity = <ThrowOnError extends boolean = false>(options: Options<OrderActivityData, ThrowOnError>): RequestResult<OrderActivityResponses, OrderActivityErrors, ThrowOnError> => (options.client ?? client).get<OrderActivityResponses, OrderActivityErrors, ThrowOnError>({ url: '/api/orders/{number}/activity', ...options });
+
+/**
+ * Dispute Activity
+ *
+ * What was recorded about one dispute, oldest first; empty for a dispute never stored.
+ */
+export const disputeActivity = <ThrowOnError extends boolean = false>(options: Options<DisputeActivityData, ThrowOnError>): RequestResult<DisputeActivityResponses, DisputeActivityErrors, ThrowOnError> => (options.client ?? client).get<DisputeActivityResponses, DisputeActivityErrors, ThrowOnError>({ url: '/api/disputes/{dispute_id}/activity', ...options });
 
 /**
  * Access

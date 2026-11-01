@@ -21,7 +21,7 @@ export type Activity = {
     /**
      * Kind
      */
-    kind: 'conversation_started' | 'shopper_message' | 'assistant_tool_call' | 'signature_accepted' | 'signature_refused' | 'mandate_requested' | 'mandate_signed' | 'mandate_declined' | 'mandate_expired' | 'policy_refused' | 'mandate_refused' | 'checkout_accepted';
+    kind: 'conversation_started' | 'shopper_message' | 'assistant_tool_call' | 'signature_accepted' | 'signature_refused' | 'mandate_requested' | 'mandate_signed' | 'mandate_declined' | 'mandate_expired' | 'policy_refused' | 'mandate_refused' | 'checkout_accepted' | 'dispute_opened' | 'dispute_updated' | 'dispute_resolved' | 'sandbox_dispute_filed' | 'sandbox_dispute_adjudicated';
     agent: Agent | null;
     /**
      * Mandate Id
@@ -36,6 +36,10 @@ export type Activity = {
      */
     order_number: string | null;
     /**
+     * Dispute Id
+     */
+    dispute_id: string | null;
+    /**
      * Details
      */
     details: {
@@ -45,6 +49,16 @@ export type Activity = {
      * At
      */
     at: string;
+};
+
+/**
+ * AdjudicationRequest
+ */
+export type AdjudicationRequest = {
+    /**
+     * Outcome
+     */
+    outcome: 'SELLER_FAVOR' | 'BUYER_FAVOR';
 };
 
 /**
@@ -257,6 +271,211 @@ export type CreatedConversation = {
      * Key
      */
     key: string;
+};
+
+/**
+ * Dispute
+ *
+ * A dispute as its console page shows it.
+ *
+ * The buyer's name, email, and PayPal account stay server-side; the order already names its
+ * wallet.
+ */
+export type Dispute = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Order Number
+     */
+    order_number: string;
+    /**
+     * Order Channel
+     */
+    order_channel: 'human' | 'agent';
+    /**
+     * Reason
+     */
+    reason: 'MERCHANDISE_OR_SERVICE_NOT_RECEIVED' | 'MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED' | 'UNAUTHORISED' | 'CREDIT_NOT_PROCESSED' | 'DUPLICATE_TRANSACTION' | 'INCORRECT_AMOUNT' | 'PAYMENT_BY_OTHER_MEANS' | 'CANCELED_RECURRING_BILLING' | 'PROBLEM_WITH_REMITTANCE' | 'OTHER';
+    /**
+     * Stage
+     */
+    stage: 'INQUIRY' | 'CHARGEBACK' | 'PRE_ARBITRATION' | 'ARBITRATION';
+    /**
+     * Status
+     */
+    status: 'OPEN' | 'WAITING_FOR_BUYER_RESPONSE' | 'WAITING_FOR_SELLER_RESPONSE' | 'UNDER_REVIEW' | 'RESOLVED' | 'OTHER';
+    /**
+     * Dispute Channel
+     */
+    dispute_channel: 'INTERNAL' | 'EXTERNAL' | 'ALERT' | null;
+    /**
+     * Outcome
+     */
+    outcome: 'RESOLVED_BUYER_FAVOUR' | 'RESOLVED_SELLER_FAVOUR' | 'RESOLVED_WITH_PAYOUT' | 'CANCELED_BY_BUYER' | 'ACCEPTED' | 'DENIED' | 'NONE' | null;
+    amount: Money;
+    /**
+     * Seller Response Due At
+     */
+    seller_response_due_at: string | null;
+    /**
+     * Opened At
+     */
+    opened_at: string;
+    /**
+     * Updated At
+     */
+    updated_at: string;
+    /**
+     * Capture Id
+     */
+    capture_id: string;
+    /**
+     * Buyer Transaction Id
+     */
+    buyer_transaction_id: string | null;
+    /**
+     * Mandate Id
+     */
+    mandate_id: string | null;
+    /**
+     * Custom Matches
+     */
+    custom_matches: boolean | null;
+    /**
+     * Seller Protection Eligible
+     */
+    seller_protection_eligible: boolean | null;
+    /**
+     * Actions
+     */
+    actions: Array<string>;
+    /**
+     * Messages
+     */
+    messages: Array<DisputeMessage>;
+    /**
+     * Evidences
+     */
+    evidences: Array<DisputeEvidence>;
+    /**
+     * Synced At
+     */
+    synced_at: string;
+};
+
+/**
+ * DisputeEvidence
+ *
+ * One item on PayPal's evidence list: a party's filing, or what PayPal asks a party for.
+ */
+export type DisputeEvidence = {
+    /**
+     * Evidence Type
+     */
+    evidence_type: string;
+    /**
+     * Source
+     */
+    source: string;
+    /**
+     * At
+     */
+    at: string;
+    /**
+     * Notes
+     */
+    notes: string | null;
+    /**
+     * Documents
+     */
+    documents: Array<string>;
+    /**
+     * Stage
+     */
+    stage: 'INQUIRY' | 'CHARGEBACK' | 'PRE_ARBITRATION' | 'ARBITRATION' | null;
+};
+
+/**
+ * DisputeMessage
+ */
+export type DisputeMessage = {
+    /**
+     * Posted By
+     */
+    posted_by: string;
+    /**
+     * At
+     */
+    at: string;
+    /**
+     * Content
+     */
+    content: string;
+};
+
+/**
+ * DisputeRequest
+ */
+export type DisputeRequest = {
+    /**
+     * Reason
+     */
+    reason: 'MERCHANDISE_OR_SERVICE_NOT_RECEIVED' | 'MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED' | 'OTHER';
+};
+
+/**
+ * DisputeSummary
+ *
+ * A dispute as the console's list shows it.
+ */
+export type DisputeSummary = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Order Number
+     */
+    order_number: string;
+    /**
+     * Order Channel
+     */
+    order_channel: 'human' | 'agent';
+    /**
+     * Reason
+     */
+    reason: 'MERCHANDISE_OR_SERVICE_NOT_RECEIVED' | 'MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED' | 'UNAUTHORISED' | 'CREDIT_NOT_PROCESSED' | 'DUPLICATE_TRANSACTION' | 'INCORRECT_AMOUNT' | 'PAYMENT_BY_OTHER_MEANS' | 'CANCELED_RECURRING_BILLING' | 'PROBLEM_WITH_REMITTANCE' | 'OTHER';
+    /**
+     * Stage
+     */
+    stage: 'INQUIRY' | 'CHARGEBACK' | 'PRE_ARBITRATION' | 'ARBITRATION';
+    /**
+     * Status
+     */
+    status: 'OPEN' | 'WAITING_FOR_BUYER_RESPONSE' | 'WAITING_FOR_SELLER_RESPONSE' | 'UNDER_REVIEW' | 'RESOLVED' | 'OTHER';
+    /**
+     * Dispute Channel
+     */
+    dispute_channel: 'INTERNAL' | 'EXTERNAL' | 'ALERT' | null;
+    /**
+     * Outcome
+     */
+    outcome: 'RESOLVED_BUYER_FAVOUR' | 'RESOLVED_SELLER_FAVOUR' | 'RESOLVED_WITH_PAYOUT' | 'CANCELED_BY_BUYER' | 'ACCEPTED' | 'DENIED' | 'NONE' | null;
+    amount: Money;
+    /**
+     * Seller Response Due At
+     */
+    seller_response_due_at: string | null;
+    /**
+     * Opened At
+     */
+    opened_at: string;
+    /**
+     * Updated At
+     */
+    updated_at: string;
 };
 
 /**
@@ -1960,6 +2179,158 @@ export type ShipOrderResponses = {
 
 export type ShipOrderResponse = ShipOrderResponses[keyof ShipOrderResponses];
 
+export type DisputesData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Order Number
+         */
+        order_number?: string | null;
+    };
+    url: '/api/disputes';
+};
+
+export type DisputesErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DisputesError = DisputesErrors[keyof DisputesErrors];
+
+export type DisputesResponses = {
+    /**
+     * Response Disputes
+     *
+     * Successful Response
+     */
+    200: Array<DisputeSummary>;
+};
+
+export type DisputesResponse = DisputesResponses[keyof DisputesResponses];
+
+export type DisputeData = {
+    body?: never;
+    path: {
+        /**
+         * Dispute Id
+         */
+        dispute_id: string;
+    };
+    query?: never;
+    url: '/api/disputes/{dispute_id}';
+};
+
+export type DisputeErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DisputeError = DisputeErrors[keyof DisputeErrors];
+
+export type DisputeResponses = {
+    /**
+     * Successful Response
+     */
+    200: Dispute;
+};
+
+export type DisputeResponse = DisputeResponses[keyof DisputeResponses];
+
+export type SyncDisputeData = {
+    body?: never;
+    path: {
+        /**
+         * Dispute Id
+         */
+        dispute_id: string;
+    };
+    query?: never;
+    url: '/api/disputes/{dispute_id}/sync';
+};
+
+export type SyncDisputeErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SyncDisputeError = SyncDisputeErrors[keyof SyncDisputeErrors];
+
+export type SyncDisputeResponses = {
+    /**
+     * Successful Response
+     */
+    200: Dispute;
+};
+
+export type SyncDisputeResponse = SyncDisputeResponses[keyof SyncDisputeResponses];
+
+export type SimulateDisputeData = {
+    body: DisputeRequest;
+    path: {
+        /**
+         * Number
+         */
+        number: string;
+    };
+    query?: never;
+    url: '/api/sandbox/orders/{number}/disputes';
+};
+
+export type SimulateDisputeErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SimulateDisputeError = SimulateDisputeErrors[keyof SimulateDisputeErrors];
+
+export type SimulateDisputeResponses = {
+    /**
+     * Successful Response
+     */
+    201: Dispute;
+};
+
+export type SimulateDisputeResponse = SimulateDisputeResponses[keyof SimulateDisputeResponses];
+
+export type SimulateAdjudicationData = {
+    body: AdjudicationRequest;
+    path: {
+        /**
+         * Dispute Id
+         */
+        dispute_id: string;
+    };
+    query?: never;
+    url: '/api/sandbox/disputes/{dispute_id}/adjudicate';
+};
+
+export type SimulateAdjudicationErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SimulateAdjudicationError = SimulateAdjudicationErrors[keyof SimulateAdjudicationErrors];
+
+export type SimulateAdjudicationResponses = {
+    /**
+     * Successful Response
+     */
+    200: Dispute;
+};
+
+export type SimulateAdjudicationResponse = SimulateAdjudicationResponses[keyof SimulateAdjudicationResponses];
+
 export type CreateMandateData = {
     body: MandateRequest;
     path?: never;
@@ -2176,7 +2547,7 @@ export type ActivityData = {
         /**
          * Kind
          */
-        kind?: 'conversation_started' | 'shopper_message' | 'assistant_tool_call' | 'signature_accepted' | 'signature_refused' | 'mandate_requested' | 'mandate_signed' | 'mandate_declined' | 'mandate_expired' | 'policy_refused' | 'mandate_refused' | 'checkout_accepted' | null;
+        kind?: 'conversation_started' | 'shopper_message' | 'assistant_tool_call' | 'signature_accepted' | 'signature_refused' | 'mandate_requested' | 'mandate_signed' | 'mandate_declined' | 'mandate_expired' | 'policy_refused' | 'mandate_refused' | 'checkout_accepted' | 'dispute_opened' | 'dispute_updated' | 'dispute_resolved' | 'sandbox_dispute_filed' | 'sandbox_dispute_adjudicated' | null;
     };
     url: '/api/activity';
 };
@@ -2232,6 +2603,38 @@ export type OrderActivityResponses = {
 };
 
 export type OrderActivityResponse = OrderActivityResponses[keyof OrderActivityResponses];
+
+export type DisputeActivityData = {
+    body?: never;
+    path: {
+        /**
+         * Dispute Id
+         */
+        dispute_id: string;
+    };
+    query?: never;
+    url: '/api/disputes/{dispute_id}/activity';
+};
+
+export type DisputeActivityErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DisputeActivityError = DisputeActivityErrors[keyof DisputeActivityErrors];
+
+export type DisputeActivityResponses = {
+    /**
+     * Response Dispute Activity
+     *
+     * Successful Response
+     */
+    200: Array<Activity>;
+};
+
+export type DisputeActivityResponse = DisputeActivityResponses[keyof DisputeActivityResponses];
 
 export type AssistantAccessData = {
     body?: never;

@@ -11,11 +11,11 @@ from palisade_api.database import Base
 
 
 class ActivityRecord(Base):
-    """One thing that happened on the agent side of a purchase; rows are only ever added.
+    """One thing that happened around an agent purchase or a dispute; rows are only ever added.
 
     Each row points at whatever it concerns: the agent, the conversation the in-page assistant
-    ran, the mandate, the order. An order's timeline follows these links back to the shopper's
-    first request.
+    ran, the mandate, the order, the dispute. An order's timeline follows these links back to
+    the shopper's first request.
     """
 
     __tablename__: str = "activity"
@@ -30,6 +30,9 @@ class ActivityRecord(Base):
         ForeignKey("mandates.id"), index=True
     )
     order_id: Mapped[UUID | None] = mapped_column(ForeignKey("orders.id"), index=True)
+    dispute_id: Mapped[str | None] = mapped_column(
+        ForeignKey("disputes.id"), index=True
+    )
     details: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True

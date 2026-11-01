@@ -31,3 +31,11 @@ async def order_activity(
         return await service.for_order(number)
     except LookupError as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
+
+
+@router.get("/api/disputes/{dispute_id}/activity", operation_id="dispute_activity")
+async def dispute_activity(
+    dispute_id: str, service: Annotated[Activities, Depends(activities)]
+) -> list[Activity]:
+    """What was recorded about one dispute, oldest first; empty for a dispute never stored."""
+    return await service.for_dispute(dispute_id)

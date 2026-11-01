@@ -22,7 +22,8 @@ map $request_method $client_writes {
 
 # Per visitor and per replica. Reads cover a console that polls; writes cover an agent's tool
 # calls; a request that makes PayPal calls (linking a wallet, paying, shipping, replaying an
-# event) is held to a few a minute; PayPal's own deliveries get room for bursts of retries.
+# event, reading a dispute, a sandbox simulator) is held to a few a minute; PayPal's own
+# deliveries get room for bursts of retries.
 limit_req_zone $client_ip zone=api_reads:10m rate=20r/s;
 limit_req_zone $client_writes zone=api_writes:10m rate=1r/s;
 limit_req_zone $client_ip zone=paypal_calls:10m rate=12r/m;
@@ -71,7 +72,7 @@ server {
     proxy_pass http://${API_UPSTREAM};
 
     # Nested, because ^~ above keeps nginx from trying regular expressions at the server level.
-    location ~ ^/api/(shop/carts/[^/]+/checkout|shop/wallets/(link|confirm)|orders/[^/]+/shipment|webhooks/events/[^/]+/replay)$ {
+    location ~ ^/api/(shop/carts/[^/]+/checkout|shop/wallets/(link|confirm)|orders/[^/]+/shipment|webhooks/events/[^/]+/replay|disputes/[^/]+/sync|sandbox/.+)$ {
       limit_req zone=api_reads burst=100 nodelay;
       limit_req zone=api_writes burst=30 nodelay;
       limit_req zone=paypal_calls burst=6 nodelay;
