@@ -20,6 +20,9 @@ class PolicyRecord(Base):
     blocked_categories: Mapped[list[str]] = mapped_column(ARRAY(Text))
     # SHA-256 of the rules above in their canonical JSON form; the mandate and the order carry it.
     hash: Mapped[str] = mapped_column(Text)
+    # How Palisade answers a dispute: "review" prepares the evidence for the merchant to send,
+    # "automatic" sends it. A setting, not a rule: it is outside the hash and may change in place.
+    dispute_filing: Mapped[str] = mapped_column(Text, server_default="review")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )

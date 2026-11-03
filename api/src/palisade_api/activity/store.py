@@ -32,6 +32,11 @@ ActivityKind = Literal[
     "dispute_resolved",
     "sandbox_dispute_filed",
     "sandbox_dispute_adjudicated",
+    "evidence_prepared",
+    "dispute_escalated",
+    "evidence_filed",
+    "evidence_refused",
+    "dispute_flagged",
 ]
 ACTIVITY_KIND = TypeAdapter(ActivityKind)
 ACTIVITY_LISTED = 200

@@ -8,9 +8,17 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from palisade_api.orders.models import PayPalCallRecord
-from palisade_api.paypal.client import PayPalClient, PayPalError, PayPalResponse
+from palisade_api.paypal.client import (
+    Attachment,
+    PayPalClient,
+    PayPalError,
+    PayPalResponse,
+)
 
-CallAction = Literal["create", "capture", "void", "track"]
+# The order's own calls, then the two that answer a dispute on it.
+CallAction = Literal[
+    "create", "capture", "void", "track", "escalate", "provide_evidence"
+]
 
 
 @final
@@ -43,16 +51,9 @@ class PayPalCalls:
                 .limit(1)
             )
             if call is None:
-                call = PayPalCallRecord(
-                    id=uuid7(),
-                    order_id=order_id,
-                    action=action,
-                    request_id=str(uuid4()),
-                    request_body=body,
-                )
-                session.add(call)
+                call = self.add(session, order_id, action, body)
             call_id, request_id, sent = call.id, call.request_id, call.request_body
-        return await self._post(call_id, path, sent, request_id)
+        return await self.post(call_id, path, sent, request_id)
 
     async def send(
         self, order_id: UUID, action: CallAction, path: str, body: dict[str, JsonValue]
@@ -62,25 +63,55 @@ class PayPalCalls:
         Raises:
             PayPalError: PayPal refused the request or did not answer.
         """
-        call_id = uuid7()
-        request_id = str(uuid4())
         async with self._sessions.begin() as session:
-            session.add(
-                PayPalCallRecord(
-                    id=call_id,
-                    order_id=order_id,
-                    action=action,
-                    request_id=request_id,
-                    request_body=body,
-                )
-            )
-        return await self._post(call_id, path, body, request_id)
+            call = self.add(session, order_id, action, body)
+            call_id, request_id = call.id, call.request_id
+        return await self.post(call_id, path, body, request_id)
 
-    async def _post(
-        self, call_id: UUID, path: str, body: dict[str, JsonValue], request_id: str
+    @staticmethod
+    def add(
+        session: AsyncSession,
+        order_id: UUID,
+        action: CallAction,
+        body: dict[str, JsonValue],
+        *,
+        dispute_id: str | None = None,
+    ) -> PayPalCallRecord:
+        """Record a call about to be made, in the caller's transaction, under a fresh request id.
+
+        `post` sends it; a row the caller needs to reference lands with what references it.
+        """
+        call = PayPalCallRecord(
+            id=uuid7(),
+            order_id=order_id,
+            dispute_id=dispute_id,
+            action=action,
+            request_id=str(uuid4()),
+            request_body=body,
+        )
+        session.add(call)
+        return call
+
+    async def post(
+        self,
+        call_id: UUID,
+        path: str,
+        body: dict[str, JsonValue],
+        request_id: str,
+        attachment: Attachment | None = None,
     ) -> PayPalResponse:
+        """Send a recorded call and keep PayPal's answer on its row, a refusal included.
+
+        Raises:
+            PayPalError: PayPal refused the request or did not answer.
+        """
         try:
-            response = await self._paypal.post(path, body, request_id=request_id)
+            if attachment is None:
+                response = await self._paypal.post(path, body, request_id=request_id)
+            else:
+                response = await self._paypal.post_multipart(
+                    path, body, attachment, request_id=request_id
+                )
         except PayPalError as error:
             await self._answered(
                 call_id, error.status_code, error.debug_id, error.error.model_dump()

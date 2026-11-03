@@ -92,12 +92,12 @@ async def test_a_dispute_event_stores_the_dispute_joined_to_its_order(
     disputes: Disputes,
     wallet_id: UUID,
 ) -> None:
-    order = await paid_order(sessions, wallet_id, custom_id="MANDATE-1:HASH-1")
+    order = await paid_order(sessions, wallet_id, agent=True)
     dispute_id = new_dispute_id()
     answer_with(
         paypal,
         dispute_id,
-        paypal_dispute(dispute_id, order.capture_id, custom="MANDATE-1:HASH-1"),
+        paypal_dispute(dispute_id, order.capture_id, custom=order.custom_id),
     )
     handle = webhooks.handlers(disputes)["CUSTOMER.DISPUTE.CREATED"]
 

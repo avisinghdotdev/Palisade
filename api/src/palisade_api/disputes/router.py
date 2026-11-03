@@ -1,8 +1,16 @@
 from typing import Annotated
+from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response, status
 
+from palisade_api.disputes.narrative import NarrativeTooLong, NarrativeUnavailable
+from palisade_api.disputes.responses import (
+    DisputeResponse,
+    NothingToFile,
+    Responses,
+    UnknownEvidence,
+)
 from palisade_api.disputes.service import (
     Dispute,
     Disputes,
@@ -18,6 +26,12 @@ router = APIRouter(prefix="/api/disputes", tags=["disputes"])
 def disputes(request: Request) -> Disputes:
     # Starlette types lifespan state as Any; the lifespan in main.py puts a Disputes here.
     service: Disputes = request.state.disputes  # pyright: ignore[reportAny]
+    return service
+
+
+def responses(request: Request) -> Responses:
+    # Starlette types lifespan state as Any; the lifespan in main.py puts a Responses here.
+    service: Responses = request.state.responses  # pyright: ignore[reportAny]
     return service
 
 
@@ -78,3 +92,81 @@ async def sync_dispute(
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
     except PayPalError as error:
         raise paypal_refused(error, "did not return the dispute") from error
+
+
+@router.get("/{dispute_id}/response", operation_id="dispute_response")
+async def get_response(
+    dispute_id: DisputeId, service: Annotated[Responses, Depends(responses)]
+) -> DisputeResponse:
+    """Palisade's answer to the dispute as it stands: what it can do next, and the evidence so far."""
+    try:
+        return await service.view(dispute_id)
+    except UnknownDispute as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
+
+
+@router.post("/{dispute_id}/response", operation_id="prepare_response")
+async def prepare_response(
+    dispute_id: DisputeId, service: Annotated[Responses, Depends(responses)]
+) -> DisputeResponse:
+    """Write the notes and the record now, as the job would on PayPal's cue.
+
+    A 502 means Claude did not deliver the notes.
+    """
+    try:
+        return await service.prepare(dispute_id)
+    except UnknownDispute as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
+    except (NarrativeUnavailable, NarrativeTooLong) as error:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(error)) from error
+
+
+@router.post("/{dispute_id}/evidence/{evidence_id}/file", operation_id="file_evidence")
+async def file_evidence(
+    dispute_id: DisputeId,
+    evidence_id: UUID,
+    service: Annotated[Responses, Depends(responses)],
+) -> DisputeResponse:
+    """Approve the prepared evidence and send what PayPal takes now.
+
+    An inquiry that must become a claim is escalated, and the evidence follows once the claim
+    takes it. A 409 means the evidence was filed or refused already; a 422 names what PayPal
+    refused.
+    """
+    try:
+        return await service.file(dispute_id, evidence_id)
+    except (UnknownDispute, UnknownEvidence) as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
+    except NothingToFile as error:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
+    except PayPalError as error:
+        raise paypal_refused(error, "did not take the evidence") from error
+
+
+@router.get(
+    "/{dispute_id}/evidence/{evidence_id}/document",
+    operation_id="evidence_document",
+    response_class=Response,
+    responses={
+        200: {
+            "description": "The record PDF Palisade attached to the evidence.",
+            "content": {
+                "application/pdf": {"schema": {"type": "string", "format": "binary"}}
+            },
+        }
+    },
+)
+async def evidence_document(
+    dispute_id: DisputeId,
+    evidence_id: UUID,
+    service: Annotated[Responses, Depends(responses)],
+) -> Response:
+    try:
+        document = await service.document(dispute_id, evidence_id)
+    except UnknownEvidence as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
+    return Response(
+        document.content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{document.name}"'},
+    )

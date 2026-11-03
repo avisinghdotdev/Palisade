@@ -91,6 +91,8 @@ class Shipment(BaseModel):
 
 class PayPalCall(BaseModel):
     action: CallAction
+    # The dispute an escalate or provide-evidence call answered; None on the order's own calls.
+    dispute_id: str | None
     request_id: str
     status_code: int | None
     debug_id: str | None

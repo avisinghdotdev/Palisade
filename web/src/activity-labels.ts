@@ -1,7 +1,12 @@
 import type { Activity, ToolCallEvent } from "@/api/client";
 import type { TimelineEntry } from "@/components/timeline";
 
-import { outcomeLabel, reasonLabel, statusLabel } from "@/dispute-labels";
+import {
+  evidenceTypeLabel,
+  outcomeLabel,
+  reasonLabel,
+  statusLabel,
+} from "@/dispute-labels";
 import { formatAmount } from "@/money";
 import { TOOL_LABELS } from "@/tool-labels";
 
@@ -24,6 +29,11 @@ export const ACTIVITY_LABELS: Record<Activity["kind"], string> = {
   dispute_resolved: "PayPal Resolved the Dispute",
   sandbox_dispute_filed: "Dispute Filed as the Demo Buyer",
   sandbox_dispute_adjudicated: "Decision Requested from PayPal",
+  evidence_prepared: "Evidence Prepared",
+  dispute_escalated: "Escalated to a Claim",
+  evidence_filed: "Evidence Filed with PayPal",
+  evidence_refused: "PayPal Refused the Evidence",
+  dispute_flagged: "Needs the Merchant",
 };
 
 /** What made Palisade read a dispute from PayPal. */
@@ -32,6 +42,7 @@ const DISPUTE_READS: Record<string, string> = {
   reconciliation: "Hourly Check with PayPal",
   console: "Merchant Console",
   simulator: "Sandbox Simulator",
+  filing: "Evidence Filing",
 };
 
 /** Who did it, as the timeline names them: the shopper, the buyer signing, the store, the agent, or PayPal. */
@@ -57,6 +68,11 @@ export function activitySource(row: Activity): string {
     case "mandate_refused":
     case "checkout_accepted":
     case "signature_refused":
+    case "evidence_prepared":
+    case "dispute_escalated":
+    case "evidence_filed":
+    case "evidence_refused":
+    case "dispute_flagged":
       return "Palisade";
     case "assistant_tool_call":
     case "signature_accepted":
@@ -78,6 +94,11 @@ function text(details: Activity["details"], key: string): string {
 function list(details: Activity["details"], key: string): string {
   const value = details[key];
   return Array.isArray(value) ? value.map(String).join(", ") : "";
+}
+
+function count(details: Activity["details"], key: string): string {
+  const value = details[key];
+  return typeof value === "number" ? String(value) : "";
 }
 
 function isTool(value: string): value is ToolCallEvent["tool"] {
@@ -148,6 +169,22 @@ export function activityDetail(row: Activity): string {
       return text(details, "outcome") === "SELLER_FAVOR"
         ? "Asked PayPal's sandbox to decide for the seller"
         : "Asked PayPal's sandbox to decide for the buyer";
+    case "evidence_prepared":
+      return `${evidenceTypeLabel(text(details, "evidence_type"))}, ${
+        text(details, "status") === "approved"
+          ? "approved to file"
+          : "ready for review"
+      }, ${count(details, "characters")} characters of notes`;
+    case "dispute_escalated":
+      return "From the inquiry to a claim, so PayPal takes the mandate record";
+    case "evidence_filed":
+      return `${evidenceTypeLabel(text(details, "evidence_type"))} in the ${STAGES[text(details, "stage")] ?? text(details, "stage")} stage${
+        details["already_on_file"] === true ? ", found already on file" : ""
+      }`;
+    case "evidence_refused":
+      return text(details, "issues");
+    case "dispute_flagged":
+      return text(details, "why");
   }
 }
 

@@ -165,7 +165,7 @@ class Simulator:
                 dispute_id=dispute_id,
                 reason=reason,
             )
-            self._disputes.record(session, change, "simulator")
+            await self._disputes.record(session, change, "simulator")
         return await self._disputes.get(dispute_id)
 
     async def adjudicate(self, dispute_id: str, outcome: Adjudication) -> Dispute:
@@ -193,7 +193,7 @@ class Simulator:
                 dispute_id=dispute_id,
                 outcome=outcome,
             )
-            self._disputes.record(session, change, "simulator")
+            await self._disputes.record(session, change, "simulator")
         return await self._disputes.get(dispute_id)
 
     async def _buyer_transaction(self, order: OrderRecord) -> str:

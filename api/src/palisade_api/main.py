@@ -28,7 +28,10 @@ from palisade_api.assistant.service import Assistant
 from palisade_api.database import create_engine
 from palisade_api.disputes import router as disputes_router
 from palisade_api.disputes import webhooks as dispute_webhooks
+from palisade_api.disputes.narrative import ClaudeNarrator
+from palisade_api.disputes.responses import Responses
 from palisade_api.disputes.service import Disputes
+from palisade_api.disputes.tasks import enqueue_response
 from palisade_api.jobs import run_worker
 from palisade_api.logging import RequestLogMiddleware
 from palisade_api.maintenance import Housekeeping
@@ -48,6 +51,7 @@ from palisade_api.orders.store import Orders
 from palisade_api.paypal import router as paypal
 from palisade_api.paypal.auth import SANDBOX_BASE_URL, PayPalAuth
 from palisade_api.paypal.client import PayPalClient
+from palisade_api.policy import router as policy_router
 from palisade_api.policy.engine import Policies
 from palisade_api.sandbox import router as sandbox_router
 from palisade_api.sandbox.simulator import Simulator
@@ -85,6 +89,8 @@ class State(TypedDict):
     orders: Orders
     shipments: Shipments
     disputes: Disputes
+    responses: Responses
+    policies: Policies
     simulator: Simulator
     agent_signatures: AgentSignatures
     mandates: Mandates
@@ -145,6 +151,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[State]:
                     settings.paypal_buyer_client_secret.get_secret_value(),
                 ),
             )
+            claude = await stack.enter_async_context(
+                AsyncAnthropic(api_key=settings.anthropic_api_key.get_secret_value())
+            )
             disputes = Disputes(sessions, paypal_client, activities)
             wallets = Wallets(
                 sessions,
@@ -164,6 +173,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[State]:
                 settings.demo_signer_key.get_secret_value(),
                 settings.public_origin,
             )
+            responses = Responses(
+                sessions,
+                calls,
+                disputes,
+                policies,
+                activities,
+                ClaudeNarrator(claude),
+                enqueue_response,
+            )
+            # Every change PayPal reports is a cue to answer the dispute.
+            disputes.on_change(responses.schedule)
             if settings.run_worker:
                 handlers = {
                     **order_webhooks.handlers(sessions),
@@ -192,6 +212,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[State]:
                             "repairs": repairs,
                             "housekeeping": Housekeeping(sessions),
                             "disputes": disputes,
+                            "responses": responses,
                         },
                     )
                 )
@@ -206,9 +227,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[State]:
                     base_url=settings.public_origin,
                     timeout=httpx2.Timeout(60.0),
                 )
-            )
-            claude = await stack.enter_async_context(
-                AsyncAnthropic(api_key=settings.anthropic_api_key.get_secret_value())
             )
             mcp = build(
                 AgentHttp(
@@ -259,6 +277,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[State]:
                 orders=orders,
                 shipments=Shipments(sessions, calls, orders),
                 disputes=disputes,
+                responses=responses,
+                policies=policies,
                 simulator=Simulator(
                     sessions, buyer_paypal, paypal_client, disputes, activities
                 ),
@@ -292,6 +312,7 @@ app.include_router(shop.router)
 app.include_router(wallets_router.router)
 app.include_router(orders_router.router)
 app.include_router(disputes_router.router)
+app.include_router(policy_router.router)
 app.include_router(sandbox_router.router)
 app.include_router(mandates_router.router)
 app.include_router(activity_router.router)
