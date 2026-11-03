@@ -1,4 +1,4 @@
-import type { Dispute } from "@/api/client";
+import type { Dispute, Evidence } from "@/api/client";
 
 /** Whether `value` names one of `labels`' keys, for codes the API stores as plain text. */
 function isKey<K extends string>(
@@ -58,6 +58,12 @@ export const CHANNEL_LABELS: Record<
   ALERT: "Pre-Chargeback Alert",
 };
 
+/** What Palisade files: the shipment's tracking, or the record of the signed mandate. */
+export const EVIDENCE_TYPE_LABELS: Record<Evidence["evidence_type"], string> = {
+  PROOF_OF_FULFILLMENT: "Proof of Shipment",
+  OTHER: "Mandate Record",
+};
+
 /** The response actions PayPal offers, named by their links; the sandbox adds two of its own. */
 const ACTION_LABELS: Record<string, string> = {
   accept_claim: "Accept the Claim",
@@ -103,4 +109,8 @@ export function statusLabel(value: string): string {
 
 export function outcomeLabel(value: string): string {
   return labelOf(OUTCOME_LABELS, value);
+}
+
+export function evidenceTypeLabel(value: string): string {
+  return labelOf(EVIDENCE_TYPE_LABELS, value);
 }

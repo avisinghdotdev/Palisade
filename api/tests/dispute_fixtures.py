@@ -1,16 +1,20 @@
-"""Paid orders and PayPal dispute objects the dispute and sandbox tests share."""
+"""Paid orders and PayPal dispute objects the dispute, evidence, and sandbox tests share."""
 
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4, uuid7
 
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from palisade_api.orders.models import OrderRecord
+from palisade_api.agents.models import AgentRecord
+from palisade_api.mandates.models import MandateRecord
+from palisade_api.orders.models import OrderRecord, ShipmentRecord
 from palisade_api.shop.models import CartRecord
 
 DISPUTES_PATH = "/v1/customer/disputes"
 OPENED = "2026-11-01T07:59:39.261Z"
+TRACKING = "9400100000000000000001"
 
 
 @dataclass(frozen=True)
@@ -18,6 +22,7 @@ class PaidOrder:
     id: UUID
     number: str
     capture_id: str
+    # The mandate's id and token hash on an agent order, as PayPal holds it; None on a human one.
     custom_id: str | None
 
 
@@ -29,31 +34,87 @@ async def paid_order(
     sessions: async_sessionmaker[AsyncSession],
     wallet_id: UUID,
     *,
-    custom_id: str | None = None,
+    agent: bool = False,
+    shipped: bool = False,
 ) -> PaidOrder:
-    """A captured order of 120.00 USD with its own capture id, as the checkout leaves one."""
+    """A captured order of 120.00 USD with its own capture id, as the checkout leaves one.
+
+    An agent order comes with its signed cart mandate and the agent that placed it; a shipped
+    one with the tracking the merchant added.
+    """
     suffix = uuid4().hex[:6].upper()
-    paid = PaidOrder(uuid7(), f"RR-{suffix}", f"CAP-{suffix}", custom_id)
+    capture_id = f"CAP-{suffix}"
+    now = datetime.now(UTC)
     async with sessions.begin() as session:
         cart = CartRecord(id=uuid7(), wallet_id=wallet_id, status="completed", lines=[])
         session.add(cart)
         await session.flush()
-        session.add(
-            OrderRecord(
-                id=paid.id,
-                number=paid.number,
-                cart_id=cart.id,
-                wallet_id=wallet_id,
-                channel="agent" if custom_id is not None else "human",
-                status="captured",
-                currency="USD",
-                total_cents=12000,
-                custom_id=custom_id,
-                capture_id=paid.capture_id,
-                lines=[],
-                events=[],
-            )
+        order = OrderRecord(
+            id=uuid7(),
+            number=f"RR-{suffix}",
+            cart_id=cart.id,
+            wallet_id=wallet_id,
+            channel="agent" if agent else "human",
+            status="captured",
+            currency="USD",
+            total_cents=12000,
+            paypal_order_id=f"PP-ORDER-{suffix}",
+            capture_id=capture_id,
+            lines=[],
+            events=[],
         )
+        if agent:
+            agent_id = f"agent-{suffix}"
+            token_hash = uuid4().hex * 2
+            session.add(
+                AgentRecord(id=agent_id, name="Test Agent", public_key="PUBLIC-KEY")
+            )
+            mandate = MandateRecord(
+                id=uuid7(),
+                kind="cart",
+                agent_id=agent_id,
+                wallet_id=wallet_id,
+                cart_id=cart.id,
+                cap_cents=12000,
+                currency="USD",
+                categories=[],
+                lines=[
+                    {
+                        "product_id": "nike-free-rn-flyknit",
+                        "size": "10",
+                        "quantity": 1,
+                        "name": "Nike Free RN Flyknit",
+                        "unit_price": {"value": "120.00", "currency_code": "USD"},
+                    }
+                ],
+                policy_hash="POLICY-HASH",
+                token="TOKEN",
+                token_hash=token_hash,
+                key_hash="KEY-HASH",
+                status="signed",
+                signed_by="demo_signer",
+                signed_at=now,
+                expires_at=now + timedelta(minutes=15),
+            )
+            session.add(mandate)
+            await session.flush()
+            order.agent_id = agent_id
+            order.policy_hash = "POLICY-HASH"
+            order.mandate_id = mandate.id
+            order.custom_id = f"{mandate.id}:{token_hash}"
+        session.add(order)
+        await session.flush()
+        if shipped:
+            session.add(
+                ShipmentRecord(
+                    id=uuid7(),
+                    order_id=order.id,
+                    carrier="USPS",
+                    tracking_number=TRACKING,
+                    paypal_tracker_id=f"{capture_id}-{TRACKING}",
+                )
+            )
+        paid = PaidOrder(order.id, order.number, capture_id, order.custom_id)
     return paid
 
 
@@ -62,14 +123,56 @@ def paypal_dispute(
     capture_id: str,
     *,
     updated: str = "2026-11-01T08:03:00.000Z",
+    reason: str = "MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED",
     stage: str = "INQUIRY",
     status: str = "UNDER_REVIEW",
     outcome: str | None = None,
     custom: str | None = None,
     actions: tuple[str, ...] = (),
+    seller_filed: str | None = None,
+    escalated: bool = False,
 ) -> dict[str, JsonValue]:
-    """PayPal's dispute object in the shape the sandbox returns it, trimmed to what Palisade reads."""
+    """PayPal's dispute object in the shape the sandbox returns it, trimmed to what Palisade reads.
+
+    `seller_filed` adds the seller's own evidence of that type to the list, in the given stage,
+    with the record attached; `escalated` adds the escalation note the way PayPal lists it, as
+    the seller's OTHER evidence in the inquiry with nothing attached.
+    """
     href = f"https://api-m.sandbox.paypal.com{DISPUTES_PATH}/{dispute_id}"
+    evidences: list[JsonValue] = [
+        {
+            "evidence_type": "CREATE",
+            "source": "SUBMITTED_BY_BUYER",
+            "date": OPENED,
+            "dispute_life_cycle_stage": "INQUIRY",
+        },
+        # What PayPal asks the seller for carries no stage.
+        {
+            "evidence_type": "PROOF_OF_FULFILLMENT",
+            "source": "REQUESTED_FROM_SELLER",
+            "date": OPENED,
+        },
+    ]
+    if escalated:
+        evidences.append(
+            {
+                "evidence_type": "OTHER",
+                "source": "SUBMITTED_BY_SELLER",
+                "date": updated,
+                "notes": "The order was placed by a shopping agent under a mandate.",
+                "dispute_life_cycle_stage": "INQUIRY",
+            }
+        )
+    if seller_filed is not None:
+        evidences.append(
+            {
+                "evidence_type": seller_filed,
+                "source": "SUBMITTED_BY_SELLER",
+                "date": updated,
+                "dispute_life_cycle_stage": stage,
+                "documents": [{"name": "palisade-record.pdf"}],
+            }
+        )
     body: dict[str, JsonValue] = {
         "dispute_id": dispute_id,
         "create_time": OPENED,
@@ -82,7 +185,7 @@ def paypal_dispute(
                 "seller_protection_eligible": True,
             }
         ],
-        "reason": "MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED",
+        "reason": reason,
         "status": status,
         "dispute_amount": {"currency_code": "USD", "value": "120.00"},
         "dispute_life_cycle_stage": stage,
@@ -95,20 +198,7 @@ def paypal_dispute(
                 "content": "The shoes are not the model I asked for.",
             }
         ],
-        "evidences": [
-            {
-                "evidence_type": "CREATE",
-                "source": "SUBMITTED_BY_BUYER",
-                "date": OPENED,
-                "dispute_life_cycle_stage": "INQUIRY",
-            },
-            # What PayPal asks the seller for carries no stage.
-            {
-                "evidence_type": "PROOF_OF_FULFILLMENT",
-                "source": "REQUESTED_FROM_SELLER",
-                "date": OPENED,
-            },
-        ],
+        "evidences": evidences,
         "links": [
             {"rel": "self", "href": href, "method": "GET"},
             *(

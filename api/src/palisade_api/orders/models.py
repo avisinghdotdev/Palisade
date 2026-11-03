@@ -90,7 +90,11 @@ class PayPalCallRecord(Base):
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
     order_id: Mapped[UUID] = mapped_column(ForeignKey("orders.id"), index=True)
-    # "create", "capture", "void", or "track".
+    # The dispute a call answers, for "escalate" and "provide_evidence"; None on the order's own calls.
+    dispute_id: Mapped[str | None] = mapped_column(
+        ForeignKey("disputes.id"), index=True
+    )
+    # "create", "capture", "void", "track", "escalate", or "provide_evidence".
     action: Mapped[str] = mapped_column(Text)
     # The PayPal-Request-Id sent; a repeat with the same id is answered with the same result, and
     # the row keeps the latest answer.

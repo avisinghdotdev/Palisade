@@ -1,6 +1,7 @@
 """Authenticated requests to the PayPal sandbox REST API."""
 
 import asyncio
+import json
 from dataclasses import dataclass
 from time import perf_counter
 from typing import final
@@ -39,6 +40,20 @@ class PayPalResponse:
     status_code: int
     debug_id: str | None
     body: dict[str, JsonValue]
+
+
+@dataclass(frozen=True)
+class Attachment:
+    """A file sent beside the JSON part of a multipart request."""
+
+    name: str
+    content: bytes
+    content_type: str
+
+
+# The parts of a multipart request as PayPal's provide-evidence call takes them: the JSON under
+# `input`, the file under `evidence-file`; accepted by the sandbox on 2026-10-20 and 2026-11-01.
+MultipartFiles = dict[str, tuple[str | None, bytes, str]]
 
 
 class PayPalError(Exception):
@@ -96,20 +111,64 @@ class PayPalClient:
             PayPalError: PayPal refused the request, after the repeat where one applies.
         """
         headers = {"PayPal-Request-Id": request_id, "Prefer": "return=representation"}
-        response = await self._send("POST", path, json=body, headers=headers)
+        return await self._post_once_repeated(
+            path, json=body, files=None, headers=headers
+        )
+
+    async def post_multipart(
+        self,
+        path: str,
+        body: dict[str, JsonValue],
+        attachment: Attachment,
+        *,
+        request_id: str,
+    ) -> PayPalResponse:
+        """POST `body` as the JSON part with `attachment` beside it, under `request_id`.
+
+        Repeats once as `post` does. PayPal does not document the request id on its multipart
+        calls, so a caller that must not file twice checks PayPal's own record first.
+
+        Raises:
+            PayPalError: PayPal refused the request, after the repeat where one applies.
+        """
+        files: MultipartFiles = {
+            "input": (None, json.dumps(body).encode(), "application/json"),
+            "evidence-file": (
+                attachment.name,
+                attachment.content,
+                attachment.content_type,
+            ),
+        }
+        return await self._post_once_repeated(
+            path, json=None, files=files, headers={"PayPal-Request-Id": request_id}
+        )
+
+    async def get(self, path: str) -> PayPalResponse:
+        response = await self._send("GET", path, json=None, files=None, headers={})
+        if response is None:
+            raise PayPalError(504, None, no_answer(f"GET {path} got no answer"))
+        return self._result(response)
+
+    async def _post_once_repeated(
+        self,
+        path: str,
+        *,
+        json: dict[str, JsonValue] | None,
+        files: MultipartFiles | None,
+        headers: dict[str, str],
+    ) -> PayPalResponse:
+        response = await self._send(
+            "POST", path, json=json, files=files, headers=headers
+        )
         if response is None or response.status_code in RETRIED_STATUSES:
             await asyncio.sleep(RETRY_PAUSE_SECONDS)
-            response = await self._send("POST", path, json=body, headers=headers)
+            response = await self._send(
+                "POST", path, json=json, files=files, headers=headers
+            )
             if response is None:
                 raise PayPalError(
                     504, None, no_answer(f"POST {path} got no answer twice")
                 )
-        return self._result(response)
-
-    async def get(self, path: str) -> PayPalResponse:
-        response = await self._send("GET", path, json=None, headers={})
-        if response is None:
-            raise PayPalError(504, None, no_answer(f"GET {path} got no answer"))
         return self._result(response)
 
     async def post_json(self, path: str, body: bytes) -> httpx2.Response:
@@ -133,6 +192,7 @@ class PayPalClient:
         path: str,
         *,
         json: dict[str, JsonValue] | None,
+        files: MultipartFiles | None,
         headers: dict[str, str],
     ) -> httpx2.Response | None:
         """One attempt; None when PayPal could not be reached or did not answer in time.
@@ -146,6 +206,7 @@ class PayPalClient:
                 method,
                 path,
                 json=json,
+                files=files,
                 headers={"Authorization": f"Bearer {token.value}", **headers},
             )
         except (httpx2.TransportError, TokenUnavailable) as error:

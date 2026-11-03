@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Palisade API",
-    "version": "0.18.0"
+    "version": "0.19.0"
   },
   "paths": {
     "/api/paypal/health": {
@@ -875,6 +875,264 @@
         }
       }
     },
+    "/api/disputes/{dispute_id}/response": {
+      "get": {
+        "tags": [
+          "disputes"
+        ],
+        "summary": "Get Response",
+        "description": "Palisade's answer to the dispute as it stands: what it can do next, and the evidence so far.",
+        "operationId": "dispute_response",
+        "parameters": [
+          {
+            "name": "dispute_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^PP-[A-Z0-9-]{4,40}$",
+              "title": "Dispute Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisputeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "disputes"
+        ],
+        "summary": "Prepare Response",
+        "description": "Write the notes and the record now, as the job would on PayPal's cue.\n\nA 502 means Claude did not deliver the notes.",
+        "operationId": "prepare_response",
+        "parameters": [
+          {
+            "name": "dispute_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^PP-[A-Z0-9-]{4,40}$",
+              "title": "Dispute Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisputeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/disputes/{dispute_id}/evidence/{evidence_id}/file": {
+      "post": {
+        "tags": [
+          "disputes"
+        ],
+        "summary": "File Evidence",
+        "description": "Approve the prepared evidence and send what PayPal takes now.\n\nAn inquiry that must become a claim is escalated, and the evidence follows once the claim\ntakes it. A 409 means the evidence was filed or refused already; a 422 names what PayPal\nrefused.",
+        "operationId": "file_evidence",
+        "parameters": [
+          {
+            "name": "evidence_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Evidence Id"
+            }
+          },
+          {
+            "name": "dispute_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^PP-[A-Z0-9-]{4,40}$",
+              "title": "Dispute Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisputeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/disputes/{dispute_id}/evidence/{evidence_id}/document": {
+      "get": {
+        "tags": [
+          "disputes"
+        ],
+        "summary": "Evidence Document",
+        "operationId": "evidence_document",
+        "parameters": [
+          {
+            "name": "evidence_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Evidence Id"
+            }
+          },
+          {
+            "name": "dispute_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^PP-[A-Z0-9-]{4,40}$",
+              "title": "Dispute Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The record PDF Palisade attached to the evidence.",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/policy": {
+      "get": {
+        "tags": [
+          "policy"
+        ],
+        "summary": "Get Policy",
+        "description": "The merchant's policy in force: the rules agents are checked against, and the filing mode.",
+        "operationId": "policy",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Policy"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/policy/dispute-filing": {
+      "put": {
+        "tags": [
+          "policy"
+        ],
+        "summary": "Set Dispute Filing",
+        "description": "Choose whether Palisade waits for the merchant before filing evidence, or files on its own.",
+        "operationId": "set_dispute_filing",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FilingModeChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Policy"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sandbox/orders/{number}/disputes": {
       "post": {
         "tags": [
@@ -1361,7 +1619,12 @@
                     "dispute_updated",
                     "dispute_resolved",
                     "sandbox_dispute_filed",
-                    "sandbox_dispute_adjudicated"
+                    "sandbox_dispute_adjudicated",
+                    "evidence_prepared",
+                    "dispute_escalated",
+                    "evidence_filed",
+                    "evidence_refused",
+                    "dispute_flagged"
                   ],
                   "type": "string"
                 },
@@ -1774,7 +2037,12 @@
               "dispute_updated",
               "dispute_resolved",
               "sandbox_dispute_filed",
-              "sandbox_dispute_adjudicated"
+              "sandbox_dispute_adjudicated",
+              "evidence_prepared",
+              "dispute_escalated",
+              "evidence_filed",
+              "evidence_refused",
+              "dispute_flagged"
             ],
             "title": "Kind"
           },
@@ -2576,6 +2844,50 @@
         ],
         "title": "DisputeRequest"
       },
+      "DisputeResponse": {
+        "properties": {
+          "filing_mode": {
+            "type": "string",
+            "enum": [
+              "review",
+              "automatic"
+            ],
+            "title": "Filing Mode"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "prepare",
+              "review",
+              "escalate",
+              "file",
+              "wait",
+              "merchant",
+              "done"
+            ],
+            "title": "Action"
+          },
+          "why": {
+            "type": "string",
+            "title": "Why"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/Evidence"
+            },
+            "type": "array",
+            "title": "Evidence"
+          }
+        },
+        "type": "object",
+        "required": [
+          "filing_mode",
+          "action",
+          "why",
+          "evidence"
+        ],
+        "title": "DisputeResponse"
+      },
       "DisputeSummary": {
         "properties": {
           "id": {
@@ -2775,6 +3087,145 @@
           "detail"
         ],
         "title": "ErrorEvent"
+      },
+      "Evidence": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "stage": {
+            "type": "string",
+            "title": "Stage"
+          },
+          "evidence_type": {
+            "type": "string",
+            "enum": [
+              "PROOF_OF_FULFILLMENT",
+              "OTHER"
+            ],
+            "title": "Evidence Type"
+          },
+          "notes": {
+            "type": "string",
+            "title": "Notes"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt"
+          },
+          "document_name": {
+            "type": "string",
+            "title": "Document Name"
+          },
+          "document_sha256": {
+            "type": "string",
+            "title": "Document Sha256"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "prepared",
+              "approved",
+              "filed",
+              "refused"
+            ],
+            "title": "Status"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          },
+          "status_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Code"
+          },
+          "debug_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Debug Id"
+          },
+          "prepared_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Prepared At"
+          },
+          "filed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "stage",
+          "evidence_type",
+          "notes",
+          "prompt",
+          "document_name",
+          "document_sha256",
+          "status",
+          "request_id",
+          "status_code",
+          "debug_id",
+          "prepared_at",
+          "filed_at"
+        ],
+        "title": "Evidence",
+        "description": "One answer Palisade prepared, as the console shows it; the PDF comes from its own route."
+      },
+      "FilingModeChange": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "review",
+              "automatic"
+            ],
+            "title": "Mode"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mode"
+        ],
+        "title": "FilingModeChange"
       },
       "HTTPValidationError": {
         "properties": {
@@ -3956,9 +4407,22 @@
               "create",
               "capture",
               "void",
-              "track"
+              "track",
+              "escalate",
+              "provide_evidence"
             ],
             "title": "Action"
+          },
+          "dispute_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dispute Id"
           },
           "request_id": {
             "type": "string",
@@ -4007,6 +4471,7 @@
         "type": "object",
         "required": [
           "action",
+          "dispute_id",
           "request_id",
           "status_code",
           "debug_id",
@@ -4071,6 +4536,32 @@
         ],
         "title": "PhotoCredit",
         "description": "Who took the product photo and where it lives on Unsplash."
+      },
+      "Policy": {
+        "properties": {
+          "rules": {
+            "$ref": "#/components/schemas/Rules"
+          },
+          "hash": {
+            "type": "string",
+            "title": "Hash"
+          },
+          "dispute_filing": {
+            "type": "string",
+            "enum": [
+              "review",
+              "automatic"
+            ],
+            "title": "Dispute Filing"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rules",
+          "hash",
+          "dispute_filing"
+        ],
+        "title": "Policy"
       },
       "Product": {
         "properties": {
@@ -4285,6 +4776,40 @@
         ],
         "title": "RegistrationStart",
         "description": "What the browser's `navigator.credentials.create()` needs, and the challenge to return."
+      },
+      "Rules": {
+        "properties": {
+          "allowed_agents": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Allowed Agents"
+          },
+          "per_order_cap_cents": {
+            "type": "integer",
+            "title": "Per Order Cap Cents"
+          },
+          "per_agent_daily_cap_cents": {
+            "type": "integer",
+            "title": "Per Agent Daily Cap Cents"
+          },
+          "blocked_categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Blocked Categories"
+          }
+        },
+        "type": "object",
+        "required": [
+          "allowed_agents",
+          "per_order_cap_cents",
+          "per_agent_daily_cap_cents",
+          "blocked_categories"
+        ],
+        "title": "Rules"
       },
       "Shipment": {
         "properties": {
