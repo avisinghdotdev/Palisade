@@ -6,7 +6,7 @@ from pathlib import Path
 from fpdf import FPDF
 from fpdf.enums import XPos, YPos
 
-from palisade_api.disputes.facts import NOT_SPECIFIED, Facts
+from palisade_api.disputes.facts import NOT_SPECIFIED, SIGNERS, Facts
 from palisade_api.shop.catalog import Money
 
 # DejaVu Sans, so any name or product the record holds prints; its licence sits beside it.
@@ -17,10 +17,6 @@ PAGE_WIDTH = 180
 LABEL_WIDTH = 55
 BODY_SIZE = 9.5
 
-SIGNERS = {
-    "passkey": "The buyer's own passkey (WebAuthn)",
-    "demo_signer": "The demo signer (simulated; stands in for a buyer's passkey)",
-}
 KINDS = {
     "cart": "Cart mandate: one exact cart, signed at checkout",
     "intent": "Intent mandate: a cap and categories, signed up front",
@@ -153,7 +149,7 @@ def _footer(pdf: FPDF, facts: Facts) -> None:
     note = (
         " The mandate was signed by the demo signer, a simulated buyer, as this store runs in"
         + " PayPal's sandbox."
-        if signer == "demo_signer"
+        if signer == SIGNERS["demo_signer"]
         else ""
     )
     pdf.multi_cell(
@@ -225,12 +221,7 @@ def _mandate(facts: Facts) -> list[tuple[str, str]]:
     return [
         ("Mandate id", str(mandate.id)),
         ("Kind", KINDS.get(mandate.kind, mandate.kind)),
-        (
-            "Signed by",
-            NOT_SPECIFIED
-            if mandate.signed_by is None
-            else SIGNERS.get(mandate.signed_by, mandate.signed_by),
-        ),
+        ("Signed by", mandate.signed_by or NOT_SPECIFIED),
         ("Signed", when(mandate.signed_at)),
         ("Spending cap", amount(mandate.cap)),
         ("Categories", ", ".join(mandate.categories) or "any"),

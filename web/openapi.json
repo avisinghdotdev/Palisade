@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Palisade API",
-    "version": "0.19.0"
+    "version": "0.19.1"
   },
   "paths": {
     "/api/paypal/health": {

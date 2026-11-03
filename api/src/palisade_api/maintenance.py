@@ -1,4 +1,4 @@
-"""Housekeeping: rows that only matter for a while are removed once they no longer can."""
+"""Housekeeping: short-lived rows pruned, and jobs a stopped worker left half done run again."""
 
 from typing import final
 
@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from palisade_api.agents.models import AgentNonceRecord
 from palisade_api.agents.signatures import MAX_AGE
-from palisade_api.jobs import MAINTENANCE_QUEUE, context_value, jobs
+from palisade_api.jobs import MAINTENANCE_QUEUE, RECOVERY_QUEUE, context_value, jobs
 from palisade_api.mandates.models import PasskeyChallengeRecord
 from palisade_api.mandates.passkeys import CHALLENGE_LIFETIME
 
@@ -60,3 +60,23 @@ async def prune(context: JobContext, timestamp: int) -> None:
         include_aborted=True,
     )
     logger.info("rows_pruned", scheduled_for=timestamp, **removed)
+
+
+# Every few minutes while a worker runs. A job whose worker stopped mid-run, as a replacing
+# release stops the old one, stays "doing" and keeps its lock, so the next job under that lock
+# would wait for good; once the worker's heartbeat is gone, the job runs again from the start.
+# Every task is safe to run twice.
+@jobs.periodic(cron="*/5 * * * *")
+@jobs.task(queue=RECOVERY_QUEUE, lock="retry_stalled_jobs", pass_context=True)
+async def retry_stalled_jobs(context: JobContext, timestamp: int) -> None:
+    manager = context.app.job_manager
+    stalled = list(await manager.get_stalled_jobs())
+    for job in stalled:
+        await manager.retry_job(job)
+    if stalled:
+        logger.warning(
+            "stalled_jobs_retried",
+            job_ids=[job.id for job in stalled],
+            tasks=[job.task_name for job in stalled],
+            scheduled_for=timestamp,
+        )
