@@ -17,6 +17,12 @@ from palisade_api.shop.catalog import Money
 MERCHANT_NAME = "Ridgeline Running"
 # What the record says where the store holds nothing.
 NOT_SPECIFIED = "Not specified"
+# How each way of signing reads in the record, so the narrative and the PDF never print a code.
+SIGNERS = {
+    "passkey": "The buyer's own passkey (WebAuthn)",
+    "demo_signer": "The demo signer, a simulated stand-in for the buyer's passkey in PayPal's"
+    + " sandbox",
+}
 
 
 class DisputeFacts(BaseModel):
@@ -57,7 +63,7 @@ class MandateFacts(BaseModel):
     id: UUID
     # "cart": one exact cart, signed at checkout; "intent": a cap and categories, signed up front.
     kind: str
-    # "passkey" for the buyer's own passkey, "demo_signer" for the simulated signer.
+    # How the buyer signed, in SIGNERS' words; None while unsigned.
     signed_by: str | None
     signed_at: datetime | None
     cap: Money

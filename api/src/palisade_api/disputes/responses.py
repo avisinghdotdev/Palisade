@@ -16,7 +16,6 @@ from uuid import UUID, uuid7
 import psycopg
 import structlog
 from fastapi import status
-from procrastinate.exceptions import AlreadyEnqueued
 from pydantic import BaseModel, JsonValue
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -27,6 +26,7 @@ from palisade_api.activity.store import Activities
 from palisade_api.disputes.document import DOCUMENT_NAME, render
 from palisade_api.disputes.facts import (
     MERCHANT_NAME,
+    SIGNERS,
     AgentFacts,
     CallFacts,
     DisputeFacts,
@@ -72,8 +72,8 @@ ESCALATE_NOTE = (
     "The order was placed by a shopping agent under a mandate the buyer signed; the record is"
     " attached once the claim takes evidence."
 )
-# Queues the response job for the dispute on the given connection, inside its transaction, and
-# returns the job id; raises AlreadyEnqueued when one already waits.
+# Queues the response job for the dispute on the given connection, inside its transaction; the
+# job id.
 Enqueue = Callable[[psycopg.AsyncConnection[object], str], Awaitable[int]]
 
 logger = structlog.stdlib.get_logger(__name__)
@@ -322,15 +322,7 @@ class Responses:
         record = change.record
         if record.status == "RESOLVED":
             return
-        connection = await driver_connection(session)
-        try:
-            # A savepoint: a job that waits already refuses the second with a unique
-            # violation, which must not take the stored change down with it.
-            async with session.begin_nested():
-                job_id = await self._enqueue(connection, record.id)
-        except AlreadyEnqueued:
-            logger.info("dispute_response_already_queued", dispute_id=record.id)
-            return
+        job_id = await self._enqueue(await driver_connection(session), record.id)
         logger.info("dispute_response_queued", dispute_id=record.id, job_id=job_id)
 
     async def view(self, dispute_id: str) -> DisputeResponse:
@@ -701,7 +693,9 @@ class Responses:
             else MandateFacts(
                 id=mandate.id,
                 kind=mandate.kind,
-                signed_by=mandate.signed_by,
+                signed_by=None
+                if mandate.signed_by is None
+                else SIGNERS[mandate.signed_by],
                 signed_at=mandate.signed_at,
                 cap=money(mandate.cap_cents),
                 categories=list(mandate.categories),

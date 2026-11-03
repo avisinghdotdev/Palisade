@@ -16,8 +16,8 @@ from dispute_fixtures import (
     paypal_dispute,
 )
 from paypal_stub import PayPalStub, json_answer
-from procrastinate.exceptions import AlreadyEnqueued
 from pydantic import BaseModel, JsonValue
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from palisade_api.activity.router import activities as activities_dependency
@@ -35,6 +35,7 @@ from palisade_api.disputes.responses import (
 from palisade_api.disputes.router import disputes as disputes_dependency
 from palisade_api.disputes.router import responses as responses_dependency
 from palisade_api.disputes.service import Disputes
+from palisade_api.disputes.tasks import enqueue_response
 from palisade_api.main import app
 from palisade_api.orders.calls import PayPalCalls
 from palisade_api.orders.router import orders as orders_dependency
@@ -120,9 +121,6 @@ def responses(
     async def enqueue(
         _connection: psycopg.AsyncConnection[object], dispute_id: str
     ) -> int:
-        """Queues once per dispute and refuses a second, the way the queueing lock does."""
-        if dispute_id in enqueued:
-            raise AlreadyEnqueued
         enqueued.append(dispute_id)
         return len(enqueued)
 
@@ -229,7 +227,9 @@ async def test_an_agent_dispute_is_prepared_for_review_then_escalated_and_filed(
     assert evidence.notes == NOTES
     assert evidence.prompt is not None
     assert f"<custom_id>{order.custom_id}</custom_id>" in evidence.prompt
-    assert "<signed_by>demo_signer</signed_by>" in evidence.prompt
+    # The signer in words a reviewer reads, never the stored code.
+    assert "<signed_by>The demo signer, a simulated stand-in" in evidence.prompt
+    assert "demo_signer" not in evidence.prompt
     assert narrator.prompts == [evidence.prompt]
     document = await client.get(
         f"/api/disputes/{dispute_id}/evidence/{evidence.id}/document"
@@ -441,14 +441,30 @@ async def test_the_job_escalates_then_waits_for_the_claim(
     assert filed.details["already_on_file"] is True
 
 
-@pytest.mark.usefixtures("responses")
-async def test_a_change_while_a_job_waits_is_stored_all_the_same(
+async def test_a_change_while_a_job_waits_is_stored_and_queued_on_the_real_queue(
     sessions: async_sessionmaker[AsyncSession],
     paypal: PayPalStub,
     disputes: Disputes,
-    enqueued: list[str],
+    narrator: ScriptedNarrator,
     wallet_id: UUID,
 ) -> None:
+    """The queue's own insert, in the storing transaction, on the database the app runs on.
+
+    A queueing lock once refused the second job with a unique violation that silently
+    aborted the transaction around it, so PayPal's newer state was never stored.
+    """
+    http = paypal.client()
+    disputes.on_change(
+        Responses(
+            sessions,
+            PayPalCalls(sessions, PayPalClient(http, PayPalAuth(http, "id", "secret"))),
+            disputes,
+            Policies(sessions),
+            Activities(sessions),
+            narrator,
+            enqueue_response,
+        ).schedule
+    )
     order = await paid_order(sessions, wallet_id, agent=True)
     dispute_id = new_dispute_id()
     answer_with(paypal, dispute_id, paypal_dispute(dispute_id, order.capture_id))
@@ -460,16 +476,34 @@ async def test_a_change_while_a_job_waits_is_stored_all_the_same(
             dispute_id,
             order.capture_id,
             updated="2026-11-01T08:03:36.000Z",
+            stage="CHARGEBACK",
             status="WAITING_FOR_SELLER_RESPONSE",
         ),
     )
 
-    # The queue refuses a second job while the first waits; the change still lands.
     waiting = await disputes.sync(dispute_id, "webhook")
 
-    assert waiting.status == "WAITING_FOR_SELLER_RESPONSE"
-    assert enqueued == [dispute_id]
+    assert (waiting.stage, waiting.status) == (
+        "CHARGEBACK",
+        "WAITING_FOR_SELLER_RESPONSE",
+    )
     assert await kinds(sessions, dispute_id) == ["dispute_opened", "dispute_updated"]
+    async with sessions() as session:
+        queued = (
+            await session.execute(
+                text(
+                    """
+                    SELECT status, lock, queueing_lock FROM procrastinate_jobs
+                    WHERE args->>'dispute_id' = :dispute_id ORDER BY id
+                    """
+                ),
+                {"dispute_id": dispute_id},
+            )
+        ).all()
+    assert [tuple(row) for row in queued] == [
+        ("todo", f"dispute:{dispute_id}", None),
+        ("todo", f"dispute:{dispute_id}", None),
+    ]
 
 
 @pytest.mark.usefixtures("console")
