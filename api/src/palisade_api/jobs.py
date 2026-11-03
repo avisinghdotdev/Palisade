@@ -25,12 +25,14 @@ ORDERS_QUEUE = "orders"
 MAINTENANCE_QUEUE = "maintenance"
 DISPUTES_QUEUE = "disputes"
 EVIDENCE_QUEUE = "evidence"
+RECOVERY_QUEUE = "recovery"
 WORKER_QUEUES = (
     WEBHOOKS_QUEUE,
     ORDERS_QUEUE,
     MAINTENANCE_QUEUE,
     DISPUTES_QUEUE,
     EVIDENCE_QUEUE,
+    RECOVERY_QUEUE,
 )
 
 # Tasks register when their module is imported; the worker imports these before it starts. This

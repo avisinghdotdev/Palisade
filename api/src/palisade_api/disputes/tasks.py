@@ -36,8 +36,7 @@ async def reconcile_disputes(context: JobContext, timestamp: int) -> None:
 async def respond_to_dispute(context: JobContext, dispute_id: str) -> None:
     """Prepare the seller's answer to the dispute and file what PayPal takes now.
 
-    Queued on every change of the dispute's state. One job runs per dispute at a time, and one
-    waits at most, so a burst of webhooks costs one run.
+    Queued on every change of the dispute's state; a run with nothing to do ends at once.
     """
     response = await context_value(context, "responses", Responses).respond(dispute_id)
     logger.info(
@@ -55,13 +54,12 @@ async def enqueue_response(
 ) -> int:
     """Queue `respond_to_dispute` on `connection`, inside the transaction it holds; the job id.
 
-    Raises:
-        AlreadyEnqueued: a job for the dispute waits already. The refusal is a unique
-            violation, which aborts the transaction unless the caller wrapped the call in a
-            savepoint.
+    The lock runs one job per dispute at a time, so two never file at once. There is no
+    queueing lock: refusing a second waiting job is a unique violation, which aborts the
+    caller's transaction and with it the dispute change being stored, and it also stopped a
+    running job from scheduling its retry once that job had queued its successor (both seen
+    live on 2026-11-03).
     """
     return await respond_to_dispute.configure(
-        connection=connection,
-        lock=f"dispute:{dispute_id}",
-        queueing_lock=f"respond:{dispute_id}",
+        connection=connection, lock=f"dispute:{dispute_id}"
     ).defer_async(dispute_id=dispute_id)
