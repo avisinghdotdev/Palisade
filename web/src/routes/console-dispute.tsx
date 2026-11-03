@@ -18,6 +18,7 @@ import {
   disputeActivityQueryKey,
   disputeOptions,
   disputeQueryKey,
+  disputeResponseQueryKey,
   disputesQueryKey,
   simulateAdjudicationMutation,
   syncDisputeMutation,
@@ -25,6 +26,7 @@ import {
 import { Channel } from "@/components/channel";
 import { CopyButton } from "@/components/copy-button";
 import { DetailField } from "@/components/detail-field";
+import { DisputeResponsePanel } from "@/components/dispute-response";
 import { DisputeStatus } from "@/components/dispute-status";
 import { Timeline } from "@/components/timeline";
 import { Button } from "@/components/ui/button";
@@ -63,6 +65,9 @@ function useStoreDispute() {
     queryClient.setQueryData(disputeQueryKey({ path }), dispute);
     void queryClient.invalidateQueries({
       queryKey: disputeActivityQueryKey({ path }),
+    });
+    void queryClient.invalidateQueries({
+      queryKey: disputeResponseQueryKey({ path }),
     });
     void queryClient.invalidateQueries({ queryKey: disputesQueryKey() });
   };
@@ -443,6 +448,7 @@ export default function ConsoleDispute({ params }: Route.ComponentProps) {
           <div className="mt-8 grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_22rem]">
             <div className="min-w-0 space-y-10">
               <Messages dispute={dispute.data} />
+              <DisputeResponsePanel dispute={dispute.data} />
               <Evidence dispute={dispute.data} />
               <section aria-labelledby="timeline">
                 <h2 className="text-base font-semibold" id="timeline">

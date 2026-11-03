@@ -24,7 +24,14 @@ WEBHOOKS_QUEUE = "webhooks"
 ORDERS_QUEUE = "orders"
 MAINTENANCE_QUEUE = "maintenance"
 DISPUTES_QUEUE = "disputes"
-WORKER_QUEUES = (WEBHOOKS_QUEUE, ORDERS_QUEUE, MAINTENANCE_QUEUE, DISPUTES_QUEUE)
+EVIDENCE_QUEUE = "evidence"
+WORKER_QUEUES = (
+    WEBHOOKS_QUEUE,
+    ORDERS_QUEUE,
+    MAINTENANCE_QUEUE,
+    DISPUTES_QUEUE,
+    EVIDENCE_QUEUE,
+)
 
 # Tasks register when their module is imported; the worker imports these before it starts. This
 # connector is never opened: a job is deferred on the caller's own connection, and the worker

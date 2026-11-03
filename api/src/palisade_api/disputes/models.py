@@ -2,12 +2,12 @@ from datetime import datetime
 from uuid import UUID
 
 from pydantic import JsonValue
-from sqlalchemy import DateTime, ForeignKey, Integer, Text, func
+from sqlalchemy import DateTime, ForeignKey, Integer, LargeBinary, Text, Uuid, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from palisade_api.database import Base
-from palisade_api.orders.models import OrderRecord
+from palisade_api.orders.models import OrderRecord, PayPalCallRecord
 
 
 class DisputeRecord(Base):
@@ -46,3 +46,36 @@ class DisputeRecord(Base):
     )
 
     order: Mapped[OrderRecord] = relationship()
+
+
+class EvidenceRecord(Base):
+    """The seller's answer to a dispute, as Palisade prepared it and as PayPal took it.
+
+    One row per answer: the notes PayPal shows its reviewer, the prompt Claude wrote them from,
+    the record PDF, and the call that filed them.
+    """
+
+    __tablename__: str = "evidence"
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    dispute_id: Mapped[str] = mapped_column(ForeignKey("disputes.id"), index=True)
+    # The dispute's stage when the answer was prepared, then the stage it was filed in.
+    stage: Mapped[str] = mapped_column(Text)
+    # PROOF_OF_FULFILLMENT with the shipment's tracking, or OTHER with the record alone.
+    evidence_type: Mapped[str] = mapped_column(Text)
+    notes: Mapped[str] = mapped_column(Text)
+    # The facts record Claude was given, kept for audit; None when the notes were not Claude's.
+    prompt: Mapped[str | None] = mapped_column(Text)
+    document_name: Mapped[str] = mapped_column(Text)
+    document: Mapped[bytes] = mapped_column(LargeBinary)
+    document_sha256: Mapped[str] = mapped_column(Text)
+    # "prepared" awaits the merchant; "approved" files as soon as PayPal takes it; then "filed"
+    # or "refused".
+    status: Mapped[str] = mapped_column(Text)
+    call_id: Mapped[UUID | None] = mapped_column(ForeignKey("paypal_calls.id"))
+    prepared_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    filed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    call: Mapped[PayPalCallRecord | None] = relationship()

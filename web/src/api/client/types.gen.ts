@@ -21,7 +21,7 @@ export type Activity = {
     /**
      * Kind
      */
-    kind: 'conversation_started' | 'shopper_message' | 'assistant_tool_call' | 'signature_accepted' | 'signature_refused' | 'mandate_requested' | 'mandate_signed' | 'mandate_declined' | 'mandate_expired' | 'policy_refused' | 'mandate_refused' | 'checkout_accepted' | 'dispute_opened' | 'dispute_updated' | 'dispute_resolved' | 'sandbox_dispute_filed' | 'sandbox_dispute_adjudicated';
+    kind: 'conversation_started' | 'shopper_message' | 'assistant_tool_call' | 'signature_accepted' | 'signature_refused' | 'mandate_requested' | 'mandate_signed' | 'mandate_declined' | 'mandate_expired' | 'policy_refused' | 'mandate_refused' | 'checkout_accepted' | 'dispute_opened' | 'dispute_updated' | 'dispute_resolved' | 'sandbox_dispute_filed' | 'sandbox_dispute_adjudicated' | 'evidence_prepared' | 'dispute_escalated' | 'evidence_filed' | 'evidence_refused' | 'dispute_flagged';
     agent: Agent | null;
     /**
      * Mandate Id
@@ -426,6 +426,28 @@ export type DisputeRequest = {
 };
 
 /**
+ * DisputeResponse
+ */
+export type DisputeResponse = {
+    /**
+     * Filing Mode
+     */
+    filing_mode: 'review' | 'automatic';
+    /**
+     * Action
+     */
+    action: 'prepare' | 'review' | 'escalate' | 'file' | 'wait' | 'merchant' | 'done';
+    /**
+     * Why
+     */
+    why: string;
+    /**
+     * Evidence
+     */
+    evidence: Array<Evidence>;
+};
+
+/**
  * DisputeSummary
  *
  * A dispute as the console's list shows it.
@@ -511,6 +533,76 @@ export type ErrorEvent = {
      * Detail
      */
     detail: string;
+};
+
+/**
+ * Evidence
+ *
+ * One answer Palisade prepared, as the console shows it; the PDF comes from its own route.
+ */
+export type Evidence = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Stage
+     */
+    stage: string;
+    /**
+     * Evidence Type
+     */
+    evidence_type: 'PROOF_OF_FULFILLMENT' | 'OTHER';
+    /**
+     * Notes
+     */
+    notes: string;
+    /**
+     * Prompt
+     */
+    prompt: string | null;
+    /**
+     * Document Name
+     */
+    document_name: string;
+    /**
+     * Document Sha256
+     */
+    document_sha256: string;
+    /**
+     * Status
+     */
+    status: 'prepared' | 'approved' | 'filed' | 'refused';
+    /**
+     * Request Id
+     */
+    request_id: string | null;
+    /**
+     * Status Code
+     */
+    status_code: number | null;
+    /**
+     * Debug Id
+     */
+    debug_id: string | null;
+    /**
+     * Prepared At
+     */
+    prepared_at: string;
+    /**
+     * Filed At
+     */
+    filed_at: string | null;
+};
+
+/**
+ * FilingModeChange
+ */
+export type FilingModeChange = {
+    /**
+     * Mode
+     */
+    mode: 'review' | 'automatic';
 };
 
 /**
@@ -1122,7 +1214,11 @@ export type PayPalCall = {
     /**
      * Action
      */
-    action: 'create' | 'capture' | 'void' | 'track';
+    action: 'create' | 'capture' | 'void' | 'track' | 'escalate' | 'provide_evidence';
+    /**
+     * Dispute Id
+     */
+    dispute_id: string | null;
     /**
      * Request Id
      */
@@ -1185,6 +1281,21 @@ export type PhotoCredit = {
      * Url
      */
     url: string;
+};
+
+/**
+ * Policy
+ */
+export type Policy = {
+    rules: Rules;
+    /**
+     * Hash
+     */
+    hash: string;
+    /**
+     * Dispute Filing
+     */
+    dispute_filing: 'review' | 'automatic';
 };
 
 /**
@@ -1331,6 +1442,28 @@ export type RegistrationStart = {
     options: {
         [key: string]: JsonValue;
     };
+};
+
+/**
+ * Rules
+ */
+export type Rules = {
+    /**
+     * Allowed Agents
+     */
+    allowed_agents: Array<string>;
+    /**
+     * Per Order Cap Cents
+     */
+    per_order_cap_cents: number;
+    /**
+     * Per Agent Daily Cap Cents
+     */
+    per_agent_daily_cap_cents: number;
+    /**
+     * Blocked Categories
+     */
+    blocked_categories: Array<string>;
 };
 
 /**
@@ -2239,7 +2372,7 @@ export type DisputeResponses = {
     200: Dispute;
 };
 
-export type DisputeResponse = DisputeResponses[keyof DisputeResponses];
+export type DisputeResponse2 = DisputeResponses[keyof DisputeResponses];
 
 export type SyncDisputeData = {
     body?: never;
@@ -2270,6 +2403,175 @@ export type SyncDisputeResponses = {
 };
 
 export type SyncDisputeResponse = SyncDisputeResponses[keyof SyncDisputeResponses];
+
+export type DisputeResponseData = {
+    body?: never;
+    path: {
+        /**
+         * Dispute Id
+         */
+        dispute_id: string;
+    };
+    query?: never;
+    url: '/api/disputes/{dispute_id}/response';
+};
+
+export type DisputeResponseErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DisputeResponseError = DisputeResponseErrors[keyof DisputeResponseErrors];
+
+export type DisputeResponseResponses = {
+    /**
+     * Successful Response
+     */
+    200: DisputeResponse;
+};
+
+export type DisputeResponseResponse = DisputeResponseResponses[keyof DisputeResponseResponses];
+
+export type PrepareResponseData = {
+    body?: never;
+    path: {
+        /**
+         * Dispute Id
+         */
+        dispute_id: string;
+    };
+    query?: never;
+    url: '/api/disputes/{dispute_id}/response';
+};
+
+export type PrepareResponseErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PrepareResponseError = PrepareResponseErrors[keyof PrepareResponseErrors];
+
+export type PrepareResponseResponses = {
+    /**
+     * Successful Response
+     */
+    200: DisputeResponse;
+};
+
+export type PrepareResponseResponse = PrepareResponseResponses[keyof PrepareResponseResponses];
+
+export type FileEvidenceData = {
+    body?: never;
+    path: {
+        /**
+         * Evidence Id
+         */
+        evidence_id: string;
+        /**
+         * Dispute Id
+         */
+        dispute_id: string;
+    };
+    query?: never;
+    url: '/api/disputes/{dispute_id}/evidence/{evidence_id}/file';
+};
+
+export type FileEvidenceErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type FileEvidenceError = FileEvidenceErrors[keyof FileEvidenceErrors];
+
+export type FileEvidenceResponses = {
+    /**
+     * Successful Response
+     */
+    200: DisputeResponse;
+};
+
+export type FileEvidenceResponse = FileEvidenceResponses[keyof FileEvidenceResponses];
+
+export type EvidenceDocumentData = {
+    body?: never;
+    path: {
+        /**
+         * Evidence Id
+         */
+        evidence_id: string;
+        /**
+         * Dispute Id
+         */
+        dispute_id: string;
+    };
+    query?: never;
+    url: '/api/disputes/{dispute_id}/evidence/{evidence_id}/document';
+};
+
+export type EvidenceDocumentErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type EvidenceDocumentError = EvidenceDocumentErrors[keyof EvidenceDocumentErrors];
+
+export type EvidenceDocumentResponses = {
+    /**
+     * The record PDF Palisade attached to the evidence.
+     */
+    200: Blob | File;
+};
+
+export type EvidenceDocumentResponse = EvidenceDocumentResponses[keyof EvidenceDocumentResponses];
+
+export type PolicyData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/policy';
+};
+
+export type PolicyResponses = {
+    /**
+     * Successful Response
+     */
+    200: Policy;
+};
+
+export type PolicyResponse = PolicyResponses[keyof PolicyResponses];
+
+export type SetDisputeFilingData = {
+    body: FilingModeChange;
+    path?: never;
+    query?: never;
+    url: '/api/policy/dispute-filing';
+};
+
+export type SetDisputeFilingErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SetDisputeFilingError = SetDisputeFilingErrors[keyof SetDisputeFilingErrors];
+
+export type SetDisputeFilingResponses = {
+    /**
+     * Successful Response
+     */
+    200: Policy;
+};
+
+export type SetDisputeFilingResponse = SetDisputeFilingResponses[keyof SetDisputeFilingResponses];
 
 export type SimulateDisputeData = {
     body: DisputeRequest;
@@ -2547,7 +2849,7 @@ export type ActivityData = {
         /**
          * Kind
          */
-        kind?: 'conversation_started' | 'shopper_message' | 'assistant_tool_call' | 'signature_accepted' | 'signature_refused' | 'mandate_requested' | 'mandate_signed' | 'mandate_declined' | 'mandate_expired' | 'policy_refused' | 'mandate_refused' | 'checkout_accepted' | 'dispute_opened' | 'dispute_updated' | 'dispute_resolved' | 'sandbox_dispute_filed' | 'sandbox_dispute_adjudicated' | null;
+        kind?: 'conversation_started' | 'shopper_message' | 'assistant_tool_call' | 'signature_accepted' | 'signature_refused' | 'mandate_requested' | 'mandate_signed' | 'mandate_declined' | 'mandate_expired' | 'policy_refused' | 'mandate_refused' | 'checkout_accepted' | 'dispute_opened' | 'dispute_updated' | 'dispute_resolved' | 'sandbox_dispute_filed' | 'sandbox_dispute_adjudicated' | 'evidence_prepared' | 'dispute_escalated' | 'evidence_filed' | 'evidence_refused' | 'dispute_flagged' | null;
     };
     url: '/api/activity';
 };

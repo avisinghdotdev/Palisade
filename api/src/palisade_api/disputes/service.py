@@ -1,5 +1,6 @@
 """Disputes as PayPal reports them, stored and joined to the order whose capture they name."""
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Literal, final
@@ -53,7 +54,7 @@ OutcomeCode = Literal[
     "NONE",
 ]
 # What made Palisade read the dispute from PayPal.
-SyncSource = Literal["webhook", "reconciliation", "console", "simulator"]
+SyncSource = Literal["webhook", "reconciliation", "console", "simulator", "filing"]
 
 REASON = TypeAdapter(DisputeReason)
 STAGE = TypeAdapter(DisputeStage)
@@ -247,6 +248,10 @@ def state(record: DisputeRecord) -> State:
     return State(record.stage, record.status, record.outcome)
 
 
+# Told, inside the storing transaction, of every dispute whose stage, status, or outcome changed.
+Changed = Callable[[AsyncSession, Change], Awaitable[None]]
+
+
 def summary(record: DisputeRecord) -> DisputeSummary:
     return DisputeSummary(
         id=record.id,
@@ -329,6 +334,11 @@ class Disputes:
         self._sessions = sessions
         self._paypal = paypal
         self._activities = activities
+        self._changed: list[Changed] = []
+
+    def on_change(self, listener: Changed) -> None:
+        """Have `listener` told about every change of state stored from now on."""
+        self._changed.append(listener)
 
     async def fetch(
         self, dispute_id: str
@@ -351,7 +361,7 @@ class Disputes:
         live, raw = await self.fetch(dispute_id)
         async with self._sessions.begin() as session:
             change = await self.upsert(session, live, raw)
-            self.record(session, change, source)
+            await self.record(session, change, source)
         return await self.get(dispute_id)
 
     async def upsert(
@@ -411,8 +421,10 @@ class Disputes:
         await session.flush()
         return Change(record, before)
 
-    def record(self, session: AsyncSession, change: Change, source: SyncSource) -> None:
-        """Write what changed to the activity log, in the caller's transaction."""
+    async def record(
+        self, session: AsyncSession, change: Change, source: SyncSource
+    ) -> None:
+        """Write what changed to the activity log, in the caller's transaction, and tell the listeners."""
         record = change.record
         after = state(record)
         if change.before == after:
@@ -461,6 +473,8 @@ class Disputes:
             outcome=record.outcome,
             source=source,
         )
+        for listener in self._changed:
+            await listener(session, change)
 
     async def get(self, dispute_id: str) -> Dispute:
         async with self._sessions() as session:

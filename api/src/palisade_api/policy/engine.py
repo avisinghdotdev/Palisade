@@ -3,11 +3,11 @@
 import hashlib
 import json
 from datetime import timedelta
-from typing import final
+from typing import Literal, final
 from uuid import uuid7
 
 import structlog
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter
 from sqlalchemy import ColumnElement, Select, and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -28,6 +28,10 @@ MERCHANT_RULES = {
     "per_agent_daily_cap_cents": 100_000_000,
     "blocked_categories": [],
 }
+# How Palisade answers a dispute: "review" prepares the evidence and waits for the merchant to
+# send it; "automatic" sends it as soon as PayPal takes it.
+FilingMode = Literal["review", "automatic"]
+FILING_MODE = TypeAdapter(FilingMode)
 
 logger = structlog.stdlib.get_logger(__name__)
 
@@ -47,6 +51,12 @@ class Rules(BaseModel):
 class Policy(BaseModel):
     rules: Rules
     hash: str
+    # A setting beside the rules, outside the hash, so changing it refuses no signed mandate.
+    dispute_filing: FilingMode
+
+
+class FilingModeChange(BaseModel):
+    mode: FilingMode
 
 
 class Purchase(BaseModel):
@@ -110,7 +120,16 @@ def spending(condition: ColumnElement[bool]) -> Select[int]:
 
 def policy(record: PolicyRecord) -> Policy:
     rules = Rules.model_validate(record, from_attributes=True)
-    return Policy(rules=rules, hash=record.hash)
+    return Policy(
+        rules=rules,
+        hash=record.hash,
+        dispute_filing=FILING_MODE.validate_python(record.dispute_filing),
+    )
+
+
+def newest() -> Select[PolicyRecord]:
+    # UUIDv7 ids sort in creation order and never tie, which `created_at` does inside one transaction.
+    return select(PolicyRecord).order_by(PolicyRecord.id.desc()).limit(1)
 
 
 @final
@@ -122,17 +141,23 @@ class Policies:
         """Write the merchant's rules as a new policy unless the one in force already is them.
 
         Orders and mandates keep the hash of the rules they passed, so an older policy stays
-        readable, and a mandate signed under it is refused with POLICY_CHANGED.
+        readable, and a mandate signed under it is refused with POLICY_CHANGED. The filing mode
+        carries over, since it is the merchant's setting, not part of the rules.
         """
         rules = Rules.model_validate(MERCHANT_RULES)
         async with self._sessions.begin() as session:
-            newest = await session.scalar(
-                select(PolicyRecord.hash).order_by(PolicyRecord.id.desc()).limit(1)
-            )
-            if newest == rules.hash():
+            current = await session.scalar(newest())
+            if current is not None and current.hash == rules.hash():
                 return
             session.add(
-                PolicyRecord(id=uuid7(), hash=rules.hash(), **rules.model_dump())
+                PolicyRecord(
+                    id=uuid7(),
+                    hash=rules.hash(),
+                    dispute_filing="review"
+                    if current is None
+                    else current.dispute_filing,
+                    **rules.model_dump(),
+                )
             )
             logger.info("policy_created", policy_hash=rules.hash())
 
@@ -142,13 +167,29 @@ class Policies:
         Raises:
             LookupError: the merchant has no policy.
         """
-        # UUIDv7 ids sort in creation order and never tie, which `created_at` does inside one transaction.
-        record = await session.scalar(
-            select(PolicyRecord).order_by(PolicyRecord.id.desc()).limit(1)
-        )
+        record = await session.scalar(newest())
         if record is None:
             raise LookupError("the merchant has no policy")
         return policy(record)
+
+    async def get(self) -> Policy:
+        async with self._sessions() as session:
+            return await self.current(session)
+
+    async def set_dispute_filing(self, mode: FilingMode) -> Policy:
+        """Change how disputes are answered from now on; the policy in force keeps its hash.
+
+        Raises:
+            LookupError: the merchant has no policy.
+        """
+        async with self._sessions.begin() as session:
+            record = await session.scalar(newest().with_for_update())
+            if record is None:
+                raise LookupError("the merchant has no policy")
+            if record.dispute_filing != mode:
+                record.dispute_filing = mode
+                logger.info("dispute_filing_changed", mode=mode)
+            return policy(record)
 
     @staticmethod
     async def spent_today(session: AsyncSession, agent_id: str) -> int:
