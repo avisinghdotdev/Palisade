@@ -214,6 +214,13 @@ def decide(live: PayPalDispute, loaded: Loaded) -> tuple[FilingAction, str]:
     rows, mode = loaded.evidence, loaded.mode
     if live.status == "RESOLVED":
         return "done", "PayPal has decided this dispute."
+    if live.dispute_channel == "ALERT" and mode == "automatic":
+        return (
+            "wait",
+            "A pre-chargeback alert: the buyer asked their card issuer for a refund. Palisade"
+            + " refunds in full before PayPal's 20-hour window closes, which avoids the"
+            + " chargeback, and files no evidence.",
+        )
     if isinstance(route, MerchantOnly):
         return "merchant", route.why
     stage = live.dispute_life_cycle_stage

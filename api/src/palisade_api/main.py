@@ -16,6 +16,7 @@ from starlette.types import ASGIApp
 
 from palisade_api.activity import router as activity_router
 from palisade_api.activity.store import Activities
+from palisade_api.agents import router as agents_router
 from palisade_api.agents.client import AgentHttp, AgentSigner
 from palisade_api.agents.registry import Agents, BuiltinAgent
 from palisade_api.agents.signatures import AgentSignatures
@@ -28,10 +29,11 @@ from palisade_api.assistant.service import Assistant
 from palisade_api.database import create_engine
 from palisade_api.disputes import router as disputes_router
 from palisade_api.disputes import webhooks as dispute_webhooks
+from palisade_api.disputes.alerts import Alerts
 from palisade_api.disputes.narrative import ClaudeNarrator
 from palisade_api.disputes.responses import Responses
 from palisade_api.disputes.service import Disputes
-from palisade_api.disputes.tasks import enqueue_response
+from palisade_api.disputes.tasks import cancel_refund, enqueue_response, schedule_refund
 from palisade_api.jobs import run_worker
 from palisade_api.logging import RequestLogMiddleware
 from palisade_api.maintenance import Housekeeping
@@ -90,7 +92,9 @@ class State(TypedDict):
     shipments: Shipments
     disputes: Disputes
     responses: Responses
+    alerts: Alerts
     policies: Policies
+    agents: Agents
     simulator: Simulator
     agent_signatures: AgentSignatures
     mandates: Mandates
@@ -182,8 +186,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[State]:
                 ClaudeNarrator(claude),
                 enqueue_response,
             )
-            # Every change PayPal reports is a cue to answer the dispute.
+            alerts = Alerts(
+                sessions,
+                calls,
+                disputes,
+                policies,
+                activities,
+                schedule_refund,
+                cancel_refund,
+            )
+            # Every change PayPal reports is a cue to answer the dispute, and for an alert to
+            # start or stop its refund timer.
             disputes.on_change(responses.schedule)
+            disputes.on_change(alerts.schedule)
             if settings.run_worker:
                 handlers = {
                     **order_webhooks.handlers(sessions),
@@ -213,6 +228,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[State]:
                             "housekeeping": Housekeeping(sessions),
                             "disputes": disputes,
                             "responses": responses,
+                            "alerts": alerts,
                         },
                     )
                 )
@@ -278,7 +294,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[State]:
                 shipments=Shipments(sessions, calls, orders),
                 disputes=disputes,
                 responses=responses,
+                alerts=alerts,
                 policies=policies,
+                agents=agents,
                 simulator=Simulator(
                     sessions, buyer_paypal, paypal_client, disputes, activities
                 ),
@@ -313,6 +331,7 @@ app.include_router(wallets_router.router)
 app.include_router(orders_router.router)
 app.include_router(disputes_router.router)
 app.include_router(policy_router.router)
+app.include_router(agents_router.router)
 app.include_router(sandbox_router.router)
 app.include_router(mandates_router.router)
 app.include_router(activity_router.router)

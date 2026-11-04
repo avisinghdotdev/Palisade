@@ -4,6 +4,7 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response, status
 
+from palisade_api.disputes.alerts import AlertRefund, Alerts, NotAnAlert, NotRefundable
 from palisade_api.disputes.narrative import NarrativeTooLong, NarrativeUnavailable
 from palisade_api.disputes.responses import (
     DisputeResponse,
@@ -32,6 +33,12 @@ def disputes(request: Request) -> Disputes:
 def responses(request: Request) -> Responses:
     # Starlette types lifespan state as Any; the lifespan in main.py puts a Responses here.
     service: Responses = request.state.responses  # pyright: ignore[reportAny]
+    return service
+
+
+def alerts(request: Request) -> Alerts:
+    # Starlette types lifespan state as Any; the lifespan in main.py puts an Alerts here.
+    service: Alerts = request.state.alerts  # pyright: ignore[reportAny]
     return service
 
 
@@ -170,3 +177,36 @@ async def evidence_document(
         media_type="application/pdf",
         headers={"Content-Disposition": f'inline; filename="{document.name}"'},
     )
+
+
+@router.get("/{dispute_id}/alert", operation_id="dispute_alert")
+async def get_alert(
+    dispute_id: DisputeId, service: Annotated[Alerts, Depends(alerts)]
+) -> AlertRefund:
+    """Where a pre-chargeback alert's refund stands: PayPal's deadline, the timer, the refund.
+
+    A 404 means no stored dispute has the id, or the dispute is not an alert.
+    """
+    try:
+        return await service.view(dispute_id)
+    except (UnknownDispute, NotAnAlert) as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
+
+
+@router.post("/{dispute_id}/alert/refund", operation_id="refund_alert")
+async def refund_alert(
+    dispute_id: DisputeId, service: Annotated[Alerts, Depends(alerts)]
+) -> AlertRefund:
+    """Refund the alert's order in full now; asking again answers with the refund made.
+
+    A 409 means the alert is resolved or the order is not a captured payment; a 422 names
+    what PayPal refused.
+    """
+    try:
+        return await service.refund(dispute_id, "console")
+    except (UnknownDispute, NotAnAlert) as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
+    except NotRefundable as error:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
+    except PayPalError as error:
+        raise paypal_refused(error, "did not refund the payment") from error

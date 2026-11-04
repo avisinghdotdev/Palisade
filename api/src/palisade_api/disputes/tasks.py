@@ -1,12 +1,22 @@
-"""The dispute jobs: the hourly read of what PayPal changed quietly, and the response to a cue."""
+"""The dispute jobs: the hourly reconciliation, the response to a cue, and an alert's refund."""
+
+from datetime import datetime
 
 import psycopg
 import structlog
 from procrastinate import JobContext, RetryStrategy
 
+from palisade_api.disputes.alerts import Alerts
 from palisade_api.disputes.responses import NotYetOffered, Responses
 from palisade_api.disputes.service import Disputes
-from palisade_api.jobs import DISPUTES_QUEUE, EVIDENCE_QUEUE, context_value, jobs
+from palisade_api.jobs import (
+    ALERTS_QUEUE,
+    DISPUTES_QUEUE,
+    EVIDENCE_QUEUE,
+    context_value,
+    jobs,
+)
+from palisade_api.paypal.client import PayPalError
 
 logger = structlog.stdlib.get_logger(__name__)
 
@@ -15,6 +25,9 @@ logger = structlog.stdlib.get_logger(__name__)
 WAIT_FOR_PAYPAL = RetryStrategy(
     max_attempts=12, wait=180, retry_exceptions=[NotYetOffered]
 )
+# A refund PayPal did not answer is tried again under the same request id, within the hour
+# PayPal's window still leaves: four tries two minutes apart. A refusal is not raised.
+REFUND_AGAIN = RetryStrategy(max_attempts=4, wait=120, retry_exceptions=[PayPalError])
 
 
 # Hourly while a worker runs; the lock keeps two runs from overlapping across replicas.
@@ -63,3 +76,36 @@ async def enqueue_response(
     return await respond_to_dispute.configure(
         connection=connection, lock=f"dispute:{dispute_id}"
     ).defer_async(dispute_id=dispute_id)
+
+
+@jobs.task(queue=ALERTS_QUEUE, retry=REFUND_AGAIN, pass_context=True)
+async def refund_alert(context: JobContext, dispute_id: str) -> None:
+    """Refund a pre-chargeback alert's order before PayPal's window closes."""
+    await context_value(context, "alerts", Alerts).refund_on_time(dispute_id)
+    logger.info(
+        "alert_refund_ran",
+        dispute_id=dispute_id,
+        job_id=context.job.id,
+        attempt=context.job.attempts,
+    )
+
+
+async def schedule_refund(
+    connection: psycopg.AsyncConnection[object], dispute_id: str, at: datetime
+) -> int:
+    """Queue `refund_alert` to run at `at`, on `connection` inside its transaction; the job id.
+
+    Its lock is the alert's own, not the dispute's: the worker holds back every job behind a
+    waiting one under the same lock, so a refund due hours ahead under the dispute's lock would
+    stall the dispute's response jobs until then.
+    """
+    return await refund_alert.configure(
+        connection=connection, lock=f"alert-refund:{dispute_id}", schedule_at=at
+    ).defer_async(dispute_id=dispute_id)
+
+
+async def cancel_refund(
+    connection: psycopg.AsyncConnection[object], job_id: int
+) -> bool:
+    """Cancel the waiting refund job on `connection`; False when it already ran or is running."""
+    return await jobs.job_manager.cancel_job_by_id_async(job_id, connection=connection)

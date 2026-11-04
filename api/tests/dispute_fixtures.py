@@ -131,6 +131,7 @@ def paypal_dispute(
     actions: tuple[str, ...] = (),
     seller_filed: str | None = None,
     escalated: bool = False,
+    channel: str = "INTERNAL",
 ) -> dict[str, JsonValue]:
     """PayPal's dispute object in the shape the sandbox returns it, trimmed to what Palisade reads.
 
@@ -189,7 +190,7 @@ def paypal_dispute(
         "status": status,
         "dispute_amount": {"currency_code": "USD", "value": "120.00"},
         "dispute_life_cycle_stage": stage,
-        "dispute_channel": "INTERNAL",
+        "dispute_channel": channel,
         "seller_response_due_date": "2026-11-21T07:59:39.261Z",
         "messages": [
             {

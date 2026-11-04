@@ -7,7 +7,7 @@ import {
   reasonLabel,
   statusLabel,
 } from "@/dispute-labels";
-import { formatAmount } from "@/money";
+import { formatAmount, formatUtc } from "@/money";
 import { TOOL_LABELS } from "@/tool-labels";
 
 /** How each agent-side and dispute event reads to a merchant. */
@@ -34,6 +34,11 @@ export const ACTIVITY_LABELS: Record<Activity["kind"], string> = {
   evidence_filed: "Evidence Filed with PayPal",
   evidence_refused: "PayPal Refused the Evidence",
   dispute_flagged: "Needs the Merchant",
+  alert_refund_scheduled: "Alert Refund Scheduled",
+  alert_refund_cancelled: "Alert Refund Cancelled",
+  alert_refund_skipped: "Alert Refund Left to the Merchant",
+  alert_refunded: "Refunded to End the Alert",
+  alert_refund_refused: "PayPal Refused the Refund",
 };
 
 /** What made Palisade read a dispute from PayPal. */
@@ -43,6 +48,13 @@ const DISPUTE_READS: Record<string, string> = {
   console: "Merchant Console",
   simulator: "Sandbox Simulator",
   filing: "Evidence Filing",
+  alert: "Alert Refund Timer",
+};
+
+/** Who refunded a pre-chargeback alert: the merchant, or Palisade when the time came. */
+const REFUNDERS: Record<string, string> = {
+  console: "Merchant Console",
+  timer: "Palisade",
 };
 
 /** Who did it, as the timeline names them: the shopper, the buyer signing, the store, the agent, or PayPal. */
@@ -53,6 +65,11 @@ export function activitySource(row: Activity): string {
     case "dispute_resolved": {
       const read = text(row.details, "source");
       return DISPUTE_READS[read] ?? read;
+    }
+    case "alert_refunded":
+    case "alert_refund_refused": {
+      const refunder = text(row.details, "source");
+      return REFUNDERS[refunder] ?? refunder;
     }
     case "sandbox_dispute_filed":
     case "sandbox_dispute_adjudicated":
@@ -73,6 +90,9 @@ export function activitySource(row: Activity): string {
     case "evidence_filed":
     case "evidence_refused":
     case "dispute_flagged":
+    case "alert_refund_scheduled":
+    case "alert_refund_cancelled":
+    case "alert_refund_skipped":
       return "Palisade";
     case "assistant_tool_call":
     case "signature_accepted":
@@ -185,6 +205,18 @@ export function activityDetail(row: Activity): string {
       return text(details, "issues");
     case "dispute_flagged":
       return text(details, "why");
+    case "alert_refund_scheduled":
+      return `A full refund at ${formatUtc(text(details, "due"))}, an hour before PayPal's window closes`;
+    case "alert_refund_cancelled": {
+      const outcome = text(details, "outcome");
+      return `The alert closed first${outcome === "" ? "" : `: ${outcomeLabel(outcome)}`}; nothing was refunded`;
+    }
+    case "alert_refund_skipped":
+      return text(details, "why");
+    case "alert_refunded":
+      return `Refund ${text(details, "refund_id")}, ${text(details, "refund_status").toLowerCase()}`;
+    case "alert_refund_refused":
+      return text(details, "issues");
   }
 }
 

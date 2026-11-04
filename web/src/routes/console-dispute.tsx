@@ -23,6 +23,7 @@ import {
   simulateAdjudicationMutation,
   syncDisputeMutation,
 } from "@/api/client/@tanstack/react-query.gen";
+import { AlertRefundPanel } from "@/components/alert-refund";
 import { Channel } from "@/components/channel";
 import { CopyButton } from "@/components/copy-button";
 import { DetailField } from "@/components/detail-field";
@@ -447,6 +448,9 @@ export default function ConsoleDispute({ params }: Route.ComponentProps) {
           )}
           <div className="mt-8 grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_22rem]">
             <div className="min-w-0 space-y-10">
+              {dispute.data.dispute_channel === "ALERT" && (
+                <AlertRefundPanel dispute={dispute.data} />
+              )}
               <Messages dispute={dispute.data} />
               <DisputeResponsePanel dispute={dispute.data} />
               <Evidence dispute={dispute.data} />

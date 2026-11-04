@@ -21,7 +21,7 @@ export type Activity = {
     /**
      * Kind
      */
-    kind: 'conversation_started' | 'shopper_message' | 'assistant_tool_call' | 'signature_accepted' | 'signature_refused' | 'mandate_requested' | 'mandate_signed' | 'mandate_declined' | 'mandate_expired' | 'policy_refused' | 'mandate_refused' | 'checkout_accepted' | 'dispute_opened' | 'dispute_updated' | 'dispute_resolved' | 'sandbox_dispute_filed' | 'sandbox_dispute_adjudicated' | 'evidence_prepared' | 'dispute_escalated' | 'evidence_filed' | 'evidence_refused' | 'dispute_flagged';
+    kind: 'conversation_started' | 'shopper_message' | 'assistant_tool_call' | 'signature_accepted' | 'signature_refused' | 'mandate_requested' | 'mandate_signed' | 'mandate_declined' | 'mandate_expired' | 'policy_refused' | 'mandate_refused' | 'checkout_accepted' | 'dispute_opened' | 'dispute_updated' | 'dispute_resolved' | 'sandbox_dispute_filed' | 'sandbox_dispute_adjudicated' | 'evidence_prepared' | 'dispute_escalated' | 'evidence_filed' | 'evidence_refused' | 'dispute_flagged' | 'alert_refund_scheduled' | 'alert_refund_cancelled' | 'alert_refund_skipped' | 'alert_refunded' | 'alert_refund_refused';
     agent: Agent | null;
     /**
      * Mandate Id
@@ -73,6 +73,35 @@ export type Agent = {
      * Name
      */
     name: string;
+};
+
+/**
+ * AlertRefund
+ *
+ * Where a pre-chargeback alert's refund stands, as the dispute page shows it.
+ */
+export type AlertRefund = {
+    /**
+     * Filing Mode
+     */
+    filing_mode: 'review' | 'automatic';
+    /**
+     * Deadline
+     */
+    deadline: string;
+    /**
+     * Scheduled For
+     */
+    scheduled_for: string | null;
+    refund: PayPalCall | null;
+    /**
+     * Refunded
+     */
+    refunded: boolean;
+    /**
+     * Can Refund
+     */
+    can_refund: boolean;
 };
 
 /**
@@ -1214,7 +1243,7 @@ export type PayPalCall = {
     /**
      * Action
      */
-    action: 'create' | 'capture' | 'void' | 'track' | 'escalate' | 'provide_evidence';
+    action: 'create' | 'capture' | 'void' | 'track' | 'escalate' | 'provide_evidence' | 'refund';
     /**
      * Dispute Id
      */
@@ -1408,6 +1437,30 @@ export type ReceivedEvent = {
      * Processed At
      */
     processed_at: string | null;
+};
+
+/**
+ * RegisteredAgent
+ *
+ * An agent as the registry holds it: the key its signatures are checked against.
+ */
+export type RegisteredAgent = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Public Key
+     */
+    public_key: string;
+    /**
+     * Registered At
+     */
+    registered_at: string;
 };
 
 /**
@@ -2532,6 +2585,66 @@ export type EvidenceDocumentResponses = {
 
 export type EvidenceDocumentResponse = EvidenceDocumentResponses[keyof EvidenceDocumentResponses];
 
+export type DisputeAlertData = {
+    body?: never;
+    path: {
+        /**
+         * Dispute Id
+         */
+        dispute_id: string;
+    };
+    query?: never;
+    url: '/api/disputes/{dispute_id}/alert';
+};
+
+export type DisputeAlertErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DisputeAlertError = DisputeAlertErrors[keyof DisputeAlertErrors];
+
+export type DisputeAlertResponses = {
+    /**
+     * Successful Response
+     */
+    200: AlertRefund;
+};
+
+export type DisputeAlertResponse = DisputeAlertResponses[keyof DisputeAlertResponses];
+
+export type RefundAlertData = {
+    body?: never;
+    path: {
+        /**
+         * Dispute Id
+         */
+        dispute_id: string;
+    };
+    query?: never;
+    url: '/api/disputes/{dispute_id}/alert/refund';
+};
+
+export type RefundAlertErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RefundAlertError = RefundAlertErrors[keyof RefundAlertErrors];
+
+export type RefundAlertResponses = {
+    /**
+     * Successful Response
+     */
+    200: AlertRefund;
+};
+
+export type RefundAlertResponse = RefundAlertResponses[keyof RefundAlertResponses];
+
 export type PolicyData = {
     body?: never;
     path?: never;
@@ -2572,6 +2685,24 @@ export type SetDisputeFilingResponses = {
 };
 
 export type SetDisputeFilingResponse = SetDisputeFilingResponses[keyof SetDisputeFilingResponses];
+
+export type AgentsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/agents';
+};
+
+export type AgentsResponses = {
+    /**
+     * Response Agents
+     *
+     * Successful Response
+     */
+    200: Array<RegisteredAgent>;
+};
+
+export type AgentsResponse = AgentsResponses[keyof AgentsResponses];
 
 export type SimulateDisputeData = {
     body: DisputeRequest;
@@ -2849,7 +2980,7 @@ export type ActivityData = {
         /**
          * Kind
          */
-        kind?: 'conversation_started' | 'shopper_message' | 'assistant_tool_call' | 'signature_accepted' | 'signature_refused' | 'mandate_requested' | 'mandate_signed' | 'mandate_declined' | 'mandate_expired' | 'policy_refused' | 'mandate_refused' | 'checkout_accepted' | 'dispute_opened' | 'dispute_updated' | 'dispute_resolved' | 'sandbox_dispute_filed' | 'sandbox_dispute_adjudicated' | 'evidence_prepared' | 'dispute_escalated' | 'evidence_filed' | 'evidence_refused' | 'dispute_flagged' | null;
+        kind?: 'conversation_started' | 'shopper_message' | 'assistant_tool_call' | 'signature_accepted' | 'signature_refused' | 'mandate_requested' | 'mandate_signed' | 'mandate_declined' | 'mandate_expired' | 'policy_refused' | 'mandate_refused' | 'checkout_accepted' | 'dispute_opened' | 'dispute_updated' | 'dispute_resolved' | 'sandbox_dispute_filed' | 'sandbox_dispute_adjudicated' | 'evidence_prepared' | 'dispute_escalated' | 'evidence_filed' | 'evidence_refused' | 'dispute_flagged' | 'alert_refund_scheduled' | 'alert_refund_cancelled' | 'alert_refund_skipped' | 'alert_refunded' | 'alert_refund_refused' | null;
     };
     url: '/api/activity';
 };

@@ -1,9 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
+import { Link } from "react-router";
 
 import { disputesOptions } from "@/api/client/@tanstack/react-query.gen";
 import { DisputesGrid } from "@/components/disputes-grid";
-import { FilingMode } from "@/components/filing-mode";
 import { Button } from "@/components/ui/button";
 import { pageTitle } from "@/page-title";
 
@@ -24,26 +24,31 @@ export default function ConsoleDisputes() {
           <p className="mt-1 text-sm text-muted-foreground">
             Every dispute PayPal opened on the store&apos;s orders, joined to
             the order and the buyer&apos;s signed mandate, and answered with the
-            record of how the order was placed.
+            record of how the order was placed. Whether Palisade files on its
+            own is set on{" "}
+            <Link
+              className="text-primary underline-offset-2 hover:underline"
+              to="/console/agents"
+            >
+              Agents and Policy
+            </Link>
+            .
           </p>
         </div>
-        <div className="flex flex-wrap items-end gap-4">
-          <FilingMode />
-          <Button
-            disabled={disputes.isFetching}
-            onClick={() => {
-              void disputes.refetch();
-            }}
-            size="sm"
-            variant="outline"
-          >
-            <RefreshCw
-              aria-hidden
-              className={disputes.isFetching ? "animate-spin" : undefined}
-            />
-            Refresh
-          </Button>
-        </div>
+        <Button
+          disabled={disputes.isFetching}
+          onClick={() => {
+            void disputes.refetch();
+          }}
+          size="sm"
+          variant="outline"
+        >
+          <RefreshCw
+            aria-hidden
+            className={disputes.isFetching ? "animate-spin" : undefined}
+          />
+          Refresh
+        </Button>
       </div>
       {disputes.isError && (
         <p className="mt-4 text-sm text-destructive">

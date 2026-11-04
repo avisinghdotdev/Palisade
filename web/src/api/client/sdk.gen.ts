@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { ActivityData, ActivityErrors, ActivityResponses, ApproveMandateData, ApproveMandateErrors, ApproveMandateResponses, AssistantAccessData, AssistantAccessResponses, CartData, CartErrors, CartResponses, CheckoutData, CheckoutErrors, CheckoutResponses, ConfirmWalletLinkData, ConfirmWalletLinkErrors, ConfirmWalletLinkResponses, ConversationData, ConversationErrors, ConversationResponses, CreateCartData, CreateCartErrors, CreateCartResponses, CreateConversationData, CreateConversationErrors, CreateConversationResponses, CreateMandateData, CreateMandateErrors, CreateMandateResponses, DeclineMandateData, DeclineMandateErrors, DeclineMandateResponses, DemoWalletData, DemoWalletResponses, DisputeActivityData, DisputeActivityErrors, DisputeActivityResponses, DisputeData, DisputeErrors, DisputeResponseData, DisputeResponseErrors, DisputeResponseResponses, DisputeResponses, DisputesData, DisputesErrors, DisputesResponses, EvidenceDocumentData, EvidenceDocumentErrors, EvidenceDocumentResponses, FileEvidenceData, FileEvidenceErrors, FileEvidenceResponses, HealthData, HealthResponses, MandateData, MandateErrors, MandatePasskeyOptionsData, MandatePasskeyOptionsErrors, MandatePasskeyOptionsResponses, MandateResponses, OrderActivityData, OrderActivityErrors, OrderActivityResponses, OrderData, OrderErrors, OrderResponses, OrdersData, OrdersResponses, PaypalHealthData, PaypalHealthResponses, PaypalWebhookData, PaypalWebhookErrors, PaypalWebhookResponses, PolicyData, PolicyResponses, PrepareResponseData, PrepareResponseErrors, PrepareResponseResponses, ProductData, ProductErrors, ProductResponses, ProductsData, ProductsResponses, ReadyData, ReadyErrors, ReadyResponses, RegisterPasskeyData, RegisterPasskeyErrors, RegisterPasskeyResponses, ReplayWebhookEventData, ReplayWebhookEventErrors, ReplayWebhookEventResponses, SendMessageData, SendMessageErrors, SendMessageResponse, SendMessageResponses, SetCartLineData, SetCartLineErrors, SetCartLineResponses, SetCartWalletData, SetCartWalletErrors, SetCartWalletResponses, SetDisputeFilingData, SetDisputeFilingErrors, SetDisputeFilingResponses, ShipOrderData, ShipOrderErrors, ShipOrderResponses, SimulateAdjudicationData, SimulateAdjudicationErrors, SimulateAdjudicationResponses, SimulateDisputeData, SimulateDisputeErrors, SimulateDisputeResponses, StartPasskeyRegistrationData, StartPasskeyRegistrationErrors, StartPasskeyRegistrationResponses, StartWalletLinkData, StartWalletLinkResponses, SyncDisputeData, SyncDisputeErrors, SyncDisputeResponses, WalletData, WalletErrors, WalletResponses, WebhookEventsData, WebhookEventsResponses } from './types.gen';
+import type { ActivityData, ActivityErrors, ActivityResponses, AgentsData, AgentsResponses, ApproveMandateData, ApproveMandateErrors, ApproveMandateResponses, AssistantAccessData, AssistantAccessResponses, CartData, CartErrors, CartResponses, CheckoutData, CheckoutErrors, CheckoutResponses, ConfirmWalletLinkData, ConfirmWalletLinkErrors, ConfirmWalletLinkResponses, ConversationData, ConversationErrors, ConversationResponses, CreateCartData, CreateCartErrors, CreateCartResponses, CreateConversationData, CreateConversationErrors, CreateConversationResponses, CreateMandateData, CreateMandateErrors, CreateMandateResponses, DeclineMandateData, DeclineMandateErrors, DeclineMandateResponses, DemoWalletData, DemoWalletResponses, DisputeActivityData, DisputeActivityErrors, DisputeActivityResponses, DisputeAlertData, DisputeAlertErrors, DisputeAlertResponses, DisputeData, DisputeErrors, DisputeResponseData, DisputeResponseErrors, DisputeResponseResponses, DisputeResponses, DisputesData, DisputesErrors, DisputesResponses, EvidenceDocumentData, EvidenceDocumentErrors, EvidenceDocumentResponses, FileEvidenceData, FileEvidenceErrors, FileEvidenceResponses, HealthData, HealthResponses, MandateData, MandateErrors, MandatePasskeyOptionsData, MandatePasskeyOptionsErrors, MandatePasskeyOptionsResponses, MandateResponses, OrderActivityData, OrderActivityErrors, OrderActivityResponses, OrderData, OrderErrors, OrderResponses, OrdersData, OrdersResponses, PaypalHealthData, PaypalHealthResponses, PaypalWebhookData, PaypalWebhookErrors, PaypalWebhookResponses, PolicyData, PolicyResponses, PrepareResponseData, PrepareResponseErrors, PrepareResponseResponses, ProductData, ProductErrors, ProductResponses, ProductsData, ProductsResponses, ReadyData, ReadyErrors, ReadyResponses, RefundAlertData, RefundAlertErrors, RefundAlertResponses, RegisterPasskeyData, RegisterPasskeyErrors, RegisterPasskeyResponses, ReplayWebhookEventData, ReplayWebhookEventErrors, ReplayWebhookEventResponses, SendMessageData, SendMessageErrors, SendMessageResponse, SendMessageResponses, SetCartLineData, SetCartLineErrors, SetCartLineResponses, SetCartWalletData, SetCartWalletErrors, SetCartWalletResponses, SetDisputeFilingData, SetDisputeFilingErrors, SetDisputeFilingResponses, ShipOrderData, ShipOrderErrors, ShipOrderResponses, SimulateAdjudicationData, SimulateAdjudicationErrors, SimulateAdjudicationResponses, SimulateDisputeData, SimulateDisputeErrors, SimulateDisputeResponses, StartPasskeyRegistrationData, StartPasskeyRegistrationErrors, StartPasskeyRegistrationResponses, StartWalletLinkData, StartWalletLinkResponses, SyncDisputeData, SyncDisputeErrors, SyncDisputeResponses, WalletData, WalletErrors, WalletResponses, WebhookEventsData, WebhookEventsResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -235,6 +235,25 @@ export const fileEvidence = <ThrowOnError extends boolean = false>(options: Opti
 export const evidenceDocument = <ThrowOnError extends boolean = false>(options: Options<EvidenceDocumentData, ThrowOnError>): RequestResult<EvidenceDocumentResponses, EvidenceDocumentErrors, ThrowOnError> => (options.client ?? client).get<EvidenceDocumentResponses, EvidenceDocumentErrors, ThrowOnError>({ url: '/api/disputes/{dispute_id}/evidence/{evidence_id}/document', ...options });
 
 /**
+ * Get Alert
+ *
+ * Where a pre-chargeback alert's refund stands: PayPal's deadline, the timer, the refund.
+ *
+ * A 404 means no stored dispute has the id, or the dispute is not an alert.
+ */
+export const disputeAlert = <ThrowOnError extends boolean = false>(options: Options<DisputeAlertData, ThrowOnError>): RequestResult<DisputeAlertResponses, DisputeAlertErrors, ThrowOnError> => (options.client ?? client).get<DisputeAlertResponses, DisputeAlertErrors, ThrowOnError>({ url: '/api/disputes/{dispute_id}/alert', ...options });
+
+/**
+ * Refund Alert
+ *
+ * Refund the alert's order in full now; asking again answers with the refund made.
+ *
+ * A 409 means the alert is resolved or the order is not a captured payment; a 422 names
+ * what PayPal refused.
+ */
+export const refundAlert = <ThrowOnError extends boolean = false>(options: Options<RefundAlertData, ThrowOnError>): RequestResult<RefundAlertResponses, RefundAlertErrors, ThrowOnError> => (options.client ?? client).post<RefundAlertResponses, RefundAlertErrors, ThrowOnError>({ url: '/api/disputes/{dispute_id}/alert/refund', ...options });
+
+/**
  * Get Policy
  *
  * The merchant's policy in force: the rules agents are checked against, and the filing mode.
@@ -254,6 +273,13 @@ export const setDisputeFiling = <ThrowOnError extends boolean = false>(options: 
         ...options.headers
     }
 });
+
+/**
+ * List Agents
+ *
+ * The agents the merchant knows, with the public keys their signed requests must match.
+ */
+export const agents = <ThrowOnError extends boolean = false>(options?: Options<AgentsData, ThrowOnError>): RequestResult<AgentsResponses, unknown, ThrowOnError> => (options?.client ?? client).get<AgentsResponses, unknown, ThrowOnError>({ url: '/api/agents', ...options });
 
 /**
  * Simulate Dispute

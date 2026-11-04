@@ -1,6 +1,7 @@
 """The agents the merchant knows, and the two Palisade runs itself."""
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import final
 
 import structlog
@@ -28,6 +29,14 @@ class Agent(BaseModel):
     name: str
 
 
+class RegisteredAgent(Agent):
+    """An agent as the registry holds it: the key its signatures are checked against."""
+
+    # The raw 32-byte Ed25519 public key, base64; the agent's `keyid` names it.
+    public_key: str
+    registered_at: datetime
+
+
 class UnknownAgent(LookupError):
     def __init__(self, agent_id: str) -> None:
         super().__init__(f"no agent has the id {agent_id}")
@@ -53,6 +62,24 @@ class Agents:
             if record.name != agent.name:
                 record.name = agent.name
                 logger.info("agent_renamed", agent_id=agent.id, name=agent.name)
+
+    async def list(self) -> list[RegisteredAgent]:
+        """Every agent the merchant knows, in the order they were registered."""
+        async with self._sessions() as session:
+            records = (
+                await session.scalars(
+                    select(AgentRecord).order_by(AgentRecord.created_at, AgentRecord.id)
+                )
+            ).all()
+        return [
+            RegisteredAgent(
+                id=record.id,
+                name=record.name,
+                public_key=record.public_key,
+                registered_at=record.created_at,
+            )
+            for record in records
+        ]
 
     async def public_keys(self) -> dict[str, str]:
         """Every agent's public key by agent id, as a signature verifier resolves them."""

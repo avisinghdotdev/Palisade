@@ -37,6 +37,11 @@ ActivityKind = Literal[
     "evidence_filed",
     "evidence_refused",
     "dispute_flagged",
+    "alert_refund_scheduled",
+    "alert_refund_cancelled",
+    "alert_refund_skipped",
+    "alert_refunded",
+    "alert_refund_refused",
 ]
 ACTIVITY_KIND = TypeAdapter(ActivityKind)
 ACTIVITY_LISTED = 200
