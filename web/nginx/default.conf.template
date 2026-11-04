@@ -72,7 +72,7 @@ server {
     proxy_pass http://${API_UPSTREAM};
 
     # Nested, because ^~ above keeps nginx from trying regular expressions at the server level.
-    location ~ ^/api/(shop/carts/[^/]+/checkout|shop/wallets/(link|confirm)|orders/[^/]+/shipment|webhooks/events/[^/]+/replay|disputes/[^/]+/(sync|response|evidence/[^/]+/file)|sandbox/.+)$ {
+    location ~ ^/api/(shop/carts/[^/]+/checkout|shop/wallets/(link|confirm)|orders/[^/]+/shipment|webhooks/events/[^/]+/replay|disputes/[^/]+/(sync|response|evidence/[^/]+/file|alert/refund)|sandbox/.+)$ {
       limit_req zone=api_reads burst=100 nodelay;
       limit_req zone=api_writes burst=30 nodelay;
       limit_req zone=paypal_calls burst=6 nodelay;
