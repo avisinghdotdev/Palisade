@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Palisade API",
-    "version": "0.19.1"
+    "version": "0.20.0"
   },
   "paths": {
     "/api/paypal/health": {
@@ -1069,6 +1069,94 @@
         }
       }
     },
+    "/api/disputes/{dispute_id}/alert": {
+      "get": {
+        "tags": [
+          "disputes"
+        ],
+        "summary": "Get Alert",
+        "description": "Where a pre-chargeback alert's refund stands: PayPal's deadline, the timer, the refund.\n\nA 404 means no stored dispute has the id, or the dispute is not an alert.",
+        "operationId": "dispute_alert",
+        "parameters": [
+          {
+            "name": "dispute_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^PP-[A-Z0-9-]{4,40}$",
+              "title": "Dispute Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertRefund"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/disputes/{dispute_id}/alert/refund": {
+      "post": {
+        "tags": [
+          "disputes"
+        ],
+        "summary": "Refund Alert",
+        "description": "Refund the alert's order in full now; asking again answers with the refund made.\n\nA 409 means the alert is resolved or the order is not a captured payment; a 422 names\nwhat PayPal refused.",
+        "operationId": "refund_alert",
+        "parameters": [
+          {
+            "name": "dispute_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^PP-[A-Z0-9-]{4,40}$",
+              "title": "Dispute Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertRefund"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/policy": {
       "get": {
         "tags": [
@@ -1126,6 +1214,32 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "List Agents",
+        "description": "The agents the merchant knows, with the public keys their signed requests must match.",
+        "operationId": "agents",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RegisteredAgent"
+                  },
+                  "type": "array",
+                  "title": "Response Agents"
                 }
               }
             }
@@ -1624,7 +1738,12 @@
                     "dispute_escalated",
                     "evidence_filed",
                     "evidence_refused",
-                    "dispute_flagged"
+                    "dispute_flagged",
+                    "alert_refund_scheduled",
+                    "alert_refund_cancelled",
+                    "alert_refund_skipped",
+                    "alert_refunded",
+                    "alert_refund_refused"
                   ],
                   "type": "string"
                 },
@@ -2042,7 +2161,12 @@
               "dispute_escalated",
               "evidence_filed",
               "evidence_refused",
-              "dispute_flagged"
+              "dispute_flagged",
+              "alert_refund_scheduled",
+              "alert_refund_cancelled",
+              "alert_refund_skipped",
+              "alert_refunded",
+              "alert_refund_refused"
             ],
             "title": "Kind"
           },
@@ -2164,6 +2288,64 @@
           "name"
         ],
         "title": "Agent"
+      },
+      "AlertRefund": {
+        "properties": {
+          "filing_mode": {
+            "type": "string",
+            "enum": [
+              "review",
+              "automatic"
+            ],
+            "title": "Filing Mode"
+          },
+          "deadline": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Deadline"
+          },
+          "scheduled_for": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled For"
+          },
+          "refund": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PayPalCall"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "refunded": {
+            "type": "boolean",
+            "title": "Refunded"
+          },
+          "can_refund": {
+            "type": "boolean",
+            "title": "Can Refund"
+          }
+        },
+        "type": "object",
+        "required": [
+          "filing_mode",
+          "deadline",
+          "scheduled_for",
+          "refund",
+          "refunded",
+          "can_refund"
+        ],
+        "title": "AlertRefund",
+        "description": "Where a pre-chargeback alert's refund stands, as the dispute page shows it."
       },
       "Approval": {
         "properties": {
@@ -4409,7 +4591,8 @@
               "void",
               "track",
               "escalate",
-              "provide_evidence"
+              "provide_evidence",
+              "refund"
             ],
             "title": "Action"
           },
@@ -4733,6 +4916,36 @@
           "processed_at"
         ],
         "title": "ReceivedEvent"
+      },
+      "RegisteredAgent": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "public_key": {
+            "type": "string",
+            "title": "Public Key"
+          },
+          "registered_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Registered At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "public_key",
+          "registered_at"
+        ],
+        "title": "RegisteredAgent",
+        "description": "An agent as the registry holds it: the key its signatures are checked against."
       },
       "Registration": {
         "properties": {

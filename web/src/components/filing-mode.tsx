@@ -22,12 +22,12 @@ const MODES: { mode: Mode; label: string; note: string }[] = [
   {
     mode: "review",
     label: "Review and file",
-    note: "Palisade prepares the evidence; the merchant reads it and files it.",
+    note: "Palisade prepares the evidence; the merchant reads it and files it, and refunds a pre-chargeback alert from its dispute page.",
   },
   {
     mode: "automatic",
     label: "File automatically",
-    note: "Palisade files the evidence as soon as PayPal takes it.",
+    note: "Palisade files the evidence as soon as PayPal takes it, and refunds a pre-chargeback alert an hour before PayPal's 20-hour window closes.",
   },
 ];
 

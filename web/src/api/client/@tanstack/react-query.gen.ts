@@ -3,8 +3,8 @@
 import { type DefaultError, queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 
 import { client } from '../client.gen';
-import { activity, approveMandate, assistantAccess, cart, checkout, confirmWalletLink, conversation, createCart, createConversation, createMandate, declineMandate, demoWallet, dispute, disputeActivity, disputeResponse, disputes, evidenceDocument, fileEvidence, health, mandate, mandatePasskeyOptions, type Options, order, orderActivity, orders, paypalHealth, paypalWebhook, policy, prepareResponse, product, products, ready, registerPasskey, replayWebhookEvent, setCartLine, setCartWallet, setDisputeFiling, shipOrder, simulateAdjudication, simulateDispute, startPasskeyRegistration, startWalletLink, syncDispute, wallet, webhookEvents } from '../sdk.gen';
-import type { ActivityData, ActivityError, ActivityResponse, ApproveMandateData, ApproveMandateError, ApproveMandateResponse, AssistantAccessData, AssistantAccessResponse, CartData, CartError, CartResponse, CheckoutData, CheckoutError, CheckoutResponse, ConfirmWalletLinkData, ConfirmWalletLinkError, ConfirmWalletLinkResponse, ConversationData, ConversationError, ConversationResponse, CreateCartData, CreateCartError, CreateCartResponse, CreateConversationData, CreateConversationError, CreateConversationResponse, CreateMandateData, CreateMandateError, CreateMandateResponse, DeclineMandateData, DeclineMandateError, DeclineMandateResponse, DemoWalletData, DemoWalletResponse, DisputeActivityData, DisputeActivityError, DisputeActivityResponse, DisputeData, DisputeError, DisputeResponse2, DisputeResponseData, DisputeResponseError, DisputeResponseResponse, DisputesData, DisputesError, DisputesResponse, EvidenceDocumentData, EvidenceDocumentError, EvidenceDocumentResponse, FileEvidenceData, FileEvidenceError, FileEvidenceResponse, HealthData, HealthResponse, MandateData, MandateError, MandatePasskeyOptionsData, MandatePasskeyOptionsError, MandatePasskeyOptionsResponse, MandateResponse, OrderActivityData, OrderActivityError, OrderActivityResponse, OrderData, OrderError, OrderResponse, OrdersData, OrdersResponse, PaypalHealthData, PaypalHealthResponse, PaypalWebhookData, PaypalWebhookError, PaypalWebhookResponse, PolicyData, PolicyResponse, PrepareResponseData, PrepareResponseError, PrepareResponseResponse, ProductData, ProductError, ProductResponse, ProductsData, ProductsResponse, ReadyData, ReadyResponse, RegisterPasskeyData, RegisterPasskeyError, RegisterPasskeyResponse, ReplayWebhookEventData, ReplayWebhookEventError, ReplayWebhookEventResponse, SetCartLineData, SetCartLineError, SetCartLineResponse, SetCartWalletData, SetCartWalletError, SetCartWalletResponse, SetDisputeFilingData, SetDisputeFilingError, SetDisputeFilingResponse, ShipOrderData, ShipOrderError, ShipOrderResponse, SimulateAdjudicationData, SimulateAdjudicationError, SimulateAdjudicationResponse, SimulateDisputeData, SimulateDisputeError, SimulateDisputeResponse, StartPasskeyRegistrationData, StartPasskeyRegistrationError, StartPasskeyRegistrationResponse, StartWalletLinkData, StartWalletLinkResponse, SyncDisputeData, SyncDisputeError, SyncDisputeResponse, WalletData, WalletError, WalletResponse, WebhookEventsData, WebhookEventsResponse } from '../types.gen';
+import { activity, agents, approveMandate, assistantAccess, cart, checkout, confirmWalletLink, conversation, createCart, createConversation, createMandate, declineMandate, demoWallet, dispute, disputeActivity, disputeAlert, disputeResponse, disputes, evidenceDocument, fileEvidence, health, mandate, mandatePasskeyOptions, type Options, order, orderActivity, orders, paypalHealth, paypalWebhook, policy, prepareResponse, product, products, ready, refundAlert, registerPasskey, replayWebhookEvent, setCartLine, setCartWallet, setDisputeFiling, shipOrder, simulateAdjudication, simulateDispute, startPasskeyRegistration, startWalletLink, syncDispute, wallet, webhookEvents } from '../sdk.gen';
+import type { ActivityData, ActivityError, ActivityResponse, AgentsData, AgentsResponse, ApproveMandateData, ApproveMandateError, ApproveMandateResponse, AssistantAccessData, AssistantAccessResponse, CartData, CartError, CartResponse, CheckoutData, CheckoutError, CheckoutResponse, ConfirmWalletLinkData, ConfirmWalletLinkError, ConfirmWalletLinkResponse, ConversationData, ConversationError, ConversationResponse, CreateCartData, CreateCartError, CreateCartResponse, CreateConversationData, CreateConversationError, CreateConversationResponse, CreateMandateData, CreateMandateError, CreateMandateResponse, DeclineMandateData, DeclineMandateError, DeclineMandateResponse, DemoWalletData, DemoWalletResponse, DisputeActivityData, DisputeActivityError, DisputeActivityResponse, DisputeAlertData, DisputeAlertError, DisputeAlertResponse, DisputeData, DisputeError, DisputeResponse2, DisputeResponseData, DisputeResponseError, DisputeResponseResponse, DisputesData, DisputesError, DisputesResponse, EvidenceDocumentData, EvidenceDocumentError, EvidenceDocumentResponse, FileEvidenceData, FileEvidenceError, FileEvidenceResponse, HealthData, HealthResponse, MandateData, MandateError, MandatePasskeyOptionsData, MandatePasskeyOptionsError, MandatePasskeyOptionsResponse, MandateResponse, OrderActivityData, OrderActivityError, OrderActivityResponse, OrderData, OrderError, OrderResponse, OrdersData, OrdersResponse, PaypalHealthData, PaypalHealthResponse, PaypalWebhookData, PaypalWebhookError, PaypalWebhookResponse, PolicyData, PolicyResponse, PrepareResponseData, PrepareResponseError, PrepareResponseResponse, ProductData, ProductError, ProductResponse, ProductsData, ProductsResponse, ReadyData, ReadyResponse, RefundAlertData, RefundAlertError, RefundAlertResponse, RegisterPasskeyData, RegisterPasskeyError, RegisterPasskeyResponse, ReplayWebhookEventData, ReplayWebhookEventError, ReplayWebhookEventResponse, SetCartLineData, SetCartLineError, SetCartLineResponse, SetCartWalletData, SetCartWalletError, SetCartWalletResponse, SetDisputeFilingData, SetDisputeFilingError, SetDisputeFilingResponse, ShipOrderData, ShipOrderError, ShipOrderResponse, SimulateAdjudicationData, SimulateAdjudicationError, SimulateAdjudicationResponse, SimulateDisputeData, SimulateDisputeError, SimulateDisputeResponse, StartPasskeyRegistrationData, StartPasskeyRegistrationError, StartPasskeyRegistrationResponse, StartWalletLinkData, StartWalletLinkResponse, SyncDisputeData, SyncDisputeError, SyncDisputeResponse, WalletData, WalletError, WalletResponse, WebhookEventsData, WebhookEventsResponse } from '../types.gen';
 
 export type QueryKey<TOptions extends Options> = [
     Pick<TOptions, 'baseUrl' | 'body' | 'headers' | 'path' | 'query'> & {
@@ -526,6 +526,50 @@ export const evidenceDocumentOptions = (options: Options<EvidenceDocumentData>) 
     queryKey: evidenceDocumentQueryKey(options)
 });
 
+export const disputeAlertQueryKey = (options: Options<DisputeAlertData>) => createQueryKey('disputeAlert', options);
+
+/**
+ * Get Alert
+ *
+ * Where a pre-chargeback alert's refund stands: PayPal's deadline, the timer, the refund.
+ *
+ * A 404 means no stored dispute has the id, or the dispute is not an alert.
+ */
+export const disputeAlertOptions = (options: Options<DisputeAlertData>) => queryOptions<DisputeAlertResponse, DisputeAlertError, DisputeAlertResponse, ReturnType<typeof disputeAlertQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await disputeAlert({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: disputeAlertQueryKey(options)
+});
+
+/**
+ * Refund Alert
+ *
+ * Refund the alert's order in full now; asking again answers with the refund made.
+ *
+ * A 409 means the alert is resolved or the order is not a captured payment; a 422 names
+ * what PayPal refused.
+ */
+export const refundAlertMutation = (options?: Partial<Options<RefundAlertData>>): UseMutationOptions<RefundAlertResponse, RefundAlertError, Options<RefundAlertData>> => {
+    const mutationOptions: UseMutationOptions<RefundAlertResponse, RefundAlertError, Options<RefundAlertData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await refundAlert({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
 export const policyQueryKey = (options?: Options<PolicyData>) => createQueryKey('policy', options);
 
 /**
@@ -564,6 +608,26 @@ export const setDisputeFilingMutation = (options?: Partial<Options<SetDisputeFil
     };
     return mutationOptions;
 };
+
+export const agentsQueryKey = (options?: Options<AgentsData>) => createQueryKey('agents', options);
+
+/**
+ * List Agents
+ *
+ * The agents the merchant knows, with the public keys their signed requests must match.
+ */
+export const agentsOptions = (options?: Options<AgentsData>) => queryOptions<AgentsResponse, DefaultError, AgentsResponse, ReturnType<typeof agentsQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await agents({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: agentsQueryKey(options)
+});
 
 /**
  * Simulate Dispute

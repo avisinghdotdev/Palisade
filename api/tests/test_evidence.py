@@ -307,6 +307,41 @@ async def test_an_agent_dispute_is_prepared_for_review_then_escalated_and_filed(
 
 
 @pytest.mark.usefixtures("console")
+async def test_automatic_mode_answers_an_alert_with_the_refund_not_evidence(
+    sessions: async_sessionmaker[AsyncSession],
+    paypal: PayPalStub,
+    disputes: Disputes,
+    responses: Responses,
+    narrator: ScriptedNarrator,
+    client: httpx2.AsyncClient,
+    wallet_id: UUID,
+) -> None:
+    await filing_mode(client, "automatic")
+    order = await paid_order(sessions, wallet_id, agent=True)
+    dispute_id = new_dispute_id()
+    answer_with(
+        paypal,
+        dispute_id,
+        paypal_dispute(
+            dispute_id,
+            order.capture_id,
+            status="WAITING_FOR_SELLER_RESPONSE",
+            custom=order.custom_id,
+            actions=("provide_evidence",),
+            channel="ALERT",
+        ),
+    )
+    _ = await disputes.sync(dispute_id, "webhook")
+
+    response = await responses.respond(dispute_id)
+
+    assert (response.action, response.evidence) == ("wait", [])
+    assert "20-hour window" in response.why
+    assert narrator.prompts == []
+    assert paypal.sent("POST", f"{DISPUTES_PATH}/{dispute_id}/provide-evidence") == []
+
+
+@pytest.mark.usefixtures("console")
 async def test_automatic_mode_files_the_tracking_on_a_shipped_inquiry_from_the_job(
     sessions: async_sessionmaker[AsyncSession],
     paypal: PayPalStub,

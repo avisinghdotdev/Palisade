@@ -8,12 +8,14 @@ import pytest
 from agent_fixtures import AGENT, ORIGIN, allow, seed, signed
 from order_fixtures import CAPTURE_PATH, CREATE_PATH, cart_with_shoes, created_order
 from paypal_stub import PayPalStub, json_answer
+from pydantic import TypeAdapter
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from palisade_api.activity.store import Activities
 from palisade_api.agents.keys import encode_public_key, private_key
-from palisade_api.agents.registry import Agents, BuiltinAgent
+from palisade_api.agents.registry import Agents, BuiltinAgent, RegisteredAgent
+from palisade_api.agents.router import agents as agents_dependency
 from palisade_api.agents.signatures import AgentSignatures, agent_signatures
 from palisade_api.main import app
 from palisade_api.mandates.passkeys import Passkeys
@@ -285,3 +287,24 @@ def test_the_policy_hash_ignores_field_order() -> None:
 
     assert rules.hash() == reordered.hash()
     assert len(rules.hash()) == 64
+
+
+async def test_the_registry_lists_each_agent_with_its_public_key(
+    sessions: async_sessionmaker[AsyncSession],
+    agent_seed: str,
+    client: httpx2.AsyncClient,
+) -> None:
+    app.dependency_overrides[agents_dependency] = lambda: Agents(sessions)
+    try:
+        response = await client.get("/api/agents")
+    finally:
+        app.dependency_overrides.clear()
+
+    listed = {
+        agent.id: agent
+        for agent in TypeAdapter(list[RegisteredAgent]).validate_json(response.content)
+    }
+    assert listed[AGENT].name == "Test Agent"
+    assert listed[AGENT].public_key == encode_public_key(
+        private_key(agent_seed).public_key()
+    )

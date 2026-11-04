@@ -15,9 +15,9 @@ from palisade_api.paypal.client import (
     PayPalResponse,
 )
 
-# The order's own calls, then the two that answer a dispute on it.
+# The order's own calls, then the three that answer a dispute on it.
 CallAction = Literal[
-    "create", "capture", "void", "track", "escalate", "provide_evidence"
+    "create", "capture", "void", "track", "escalate", "provide_evidence", "refund"
 ]
 
 
@@ -30,12 +30,19 @@ class PayPalCalls:
         self._paypal = paypal
 
     async def once(
-        self, order_id: UUID, action: CallAction, path: str, body: dict[str, JsonValue]
+        self,
+        order_id: UUID,
+        action: CallAction,
+        path: str,
+        body: dict[str, JsonValue],
+        *,
+        dispute_id: str | None = None,
     ) -> PayPalResponse:
         """The order's one call for `action`: the first sends `body`, a later one repeats it.
 
         A repeat goes under the first call's `PayPal-Request-Id` with the first call's body, so
-        PayPal answers with the first result when it already acted.
+        PayPal answers with the first result when it already acted. `dispute_id` names the
+        dispute a first call answers.
 
         Raises:
             PayPalError: PayPal refused the request or did not answer.
@@ -51,7 +58,7 @@ class PayPalCalls:
                 .limit(1)
             )
             if call is None:
-                call = self.add(session, order_id, action, body)
+                call = self.add(session, order_id, action, body, dispute_id=dispute_id)
             call_id, request_id, sent = call.id, call.request_id, call.request_body
         return await self.post(call_id, path, sent, request_id)
 

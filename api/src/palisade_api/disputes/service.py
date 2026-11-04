@@ -54,7 +54,9 @@ OutcomeCode = Literal[
     "NONE",
 ]
 # What made Palisade read the dispute from PayPal.
-SyncSource = Literal["webhook", "reconciliation", "console", "simulator", "filing"]
+SyncSource = Literal[
+    "webhook", "reconciliation", "console", "simulator", "filing", "alert"
+]
 
 REASON = TypeAdapter(DisputeReason)
 STAGE = TypeAdapter(DisputeStage)

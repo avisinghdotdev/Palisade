@@ -2,7 +2,16 @@ from datetime import datetime
 from uuid import UUID
 
 from pydantic import JsonValue
-from sqlalchemy import DateTime, ForeignKey, Integer, LargeBinary, Text, Uuid, func
+from sqlalchemy import (
+    BigInteger,
+    DateTime,
+    ForeignKey,
+    Integer,
+    LargeBinary,
+    Text,
+    Uuid,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -44,6 +53,10 @@ class DisputeRecord(Base):
     synced_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+    # A pre-chargeback alert's refund job and the time it runs, while one waits. No foreign key:
+    # the job queue prunes its finished jobs.
+    refund_job_id: Mapped[int | None] = mapped_column(BigInteger)
+    refund_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     order: Mapped[OrderRecord] = relationship()
 
