@@ -164,7 +164,10 @@ module apiApp 'br/public:avm/res/app/container-app:0.23.0' = {
     // Traffic from the web app stays inside the environment; a redirect to HTTPS would break the proxy.
     ingressAllowInsecure: true
     revisionSuffix: revisionSuffix
-    scaleSettings: { minReplicas: 0, maxReplicas: 2 }
+    // One replica always: the job worker inside the API runs the timers (an alert's refund, the
+    // hourly PayPal check), which a replica scaled to zero cannot. Back to 0 after judging ends,
+    // a few days past 2026-12-15.
+    scaleSettings: { minReplicas: 1, maxReplicas: 2 }
     containers: [
       {
         name: 'api'
