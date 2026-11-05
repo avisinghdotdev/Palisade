@@ -19,5 +19,6 @@ export default [
     route("console/disputes", "routes/console-disputes.tsx"),
     route("console/disputes/:disputeId", "routes/console-dispute.tsx"),
     route("console/agents", "routes/console-agents.tsx"),
+    route("console/analytics", "routes/console-analytics.tsx"),
   ]),
 ] satisfies RouteConfig;

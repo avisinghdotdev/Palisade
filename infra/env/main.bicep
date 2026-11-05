@@ -67,6 +67,7 @@ var apiSecrets = [
   { env: 'MANDATE_ISSUER_KEY', secret: 'mandate-issuer-key' }
   { env: 'DEMO_SIGNER_KEY', secret: 'demo-signer-key' }
   { env: 'CHAT_ACCESS_KEY', secret: 'chat-access-key' }
+  { env: 'AG_STUDIO_LICENSE_KEY', secret: 'ag-studio-license-key' }
 ]
 var apiSecretEnvironment = [for item in apiSecrets: { name: item.env, secretRef: item.secret }]
 var apiEnvironment = [

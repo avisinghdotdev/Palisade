@@ -51,6 +51,8 @@ class Settings(DatabaseSettings):
     # The in-page agent's Claude access, and the code a shopper types to open the chat.
     anthropic_api_key: SecretStr
     chat_access_key: SecretStr
+    # The console's analytics dashboard (AG Studio) checks this licence in the browser.
+    ag_studio_license_key: str
     # Startup applies pending migrations only where this is true, so one process owns the schema.
     run_migrations: bool
     # The job worker runs inside this process only where this is true, so a laptop never takes

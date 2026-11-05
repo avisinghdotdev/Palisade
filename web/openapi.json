@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Palisade API",
-    "version": "0.20.1"
+    "version": "0.21.0"
   },
   "paths": {
     "/api/paypal/health": {
@@ -1877,6 +1877,28 @@
         }
       }
     },
+    "/api/analytics": {
+      "get": {
+        "tags": [
+          "analytics"
+        ],
+        "summary": "Get Analytics",
+        "description": "Every paid order and every dispute as rows, with the licence key of the dashboard that charts them.",
+        "operationId": "analytics",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyticsRows"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/assistant/access": {
       "get": {
         "tags": [
@@ -2346,6 +2368,35 @@
         ],
         "title": "AlertRefund",
         "description": "Where a pre-chargeback alert's refund stands, as the dispute page shows it."
+      },
+      "AnalyticsRows": {
+        "properties": {
+          "license_key": {
+            "type": "string",
+            "title": "License Key"
+          },
+          "orders": {
+            "items": {
+              "$ref": "#/components/schemas/OrderRow"
+            },
+            "type": "array",
+            "title": "Orders"
+          },
+          "disputes": {
+            "items": {
+              "$ref": "#/components/schemas/DisputeRow"
+            },
+            "type": "array",
+            "title": "Disputes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "license_key",
+          "orders",
+          "disputes"
+        ],
+        "title": "AnalyticsRows"
       },
       "Approval": {
         "properties": {
@@ -3069,6 +3120,117 @@
           "evidence"
         ],
         "title": "DisputeResponse"
+      },
+      "DisputeRow": {
+        "properties": {
+          "dispute_id": {
+            "type": "string",
+            "title": "Dispute Id"
+          },
+          "order_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Order Id"
+          },
+          "opened_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Opened On"
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "human",
+              "agent"
+            ],
+            "title": "Channel"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+              "MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED",
+              "UNAUTHORISED",
+              "CREDIT_NOT_PROCESSED",
+              "DUPLICATE_TRANSACTION",
+              "INCORRECT_AMOUNT",
+              "PAYMENT_BY_OTHER_MEANS",
+              "CANCELED_RECURRING_BILLING",
+              "PROBLEM_WITH_REMITTANCE",
+              "OTHER"
+            ],
+            "title": "Reason"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "WAITING_FOR_BUYER_RESPONSE",
+              "WAITING_FOR_SELLER_RESPONSE",
+              "UNDER_REVIEW",
+              "RESOLVED",
+              "OTHER"
+            ],
+            "title": "Status"
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "open",
+              "won",
+              "lost",
+              "closed"
+            ],
+            "title": "Result"
+          },
+          "evidence": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "prepared",
+                  "approved",
+                  "filed",
+                  "refused"
+                ]
+              },
+              {
+                "type": "string",
+                "const": "none"
+              }
+            ],
+            "title": "Evidence"
+          },
+          "minutes_to_evidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minutes To Evidence"
+          },
+          "amount_cents": {
+            "type": "integer",
+            "title": "Amount Cents"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dispute_id",
+          "order_id",
+          "opened_on",
+          "channel",
+          "reason",
+          "status",
+          "result",
+          "evidence",
+          "minutes_to_evidence",
+          "amount_cents"
+        ],
+        "title": "DisputeRow"
       },
       "DisputeSummary": {
         "properties": {
@@ -4494,6 +4656,78 @@
           "line_total"
         ],
         "title": "OrderLine"
+      },
+      "OrderRow": {
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Order Id"
+          },
+          "number": {
+            "type": "string",
+            "title": "Number"
+          },
+          "placed_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Placed On"
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "human",
+              "agent"
+            ],
+            "title": "Channel"
+          },
+          "agent_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Name"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "creating",
+              "declined",
+              "failed",
+              "authorized",
+              "capture_pending",
+              "captured",
+              "voided",
+              "refunded",
+              "reversed"
+            ],
+            "title": "Status"
+          },
+          "amount_cents": {
+            "type": "integer",
+            "title": "Amount Cents"
+          },
+          "disputed": {
+            "type": "boolean",
+            "title": "Disputed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "order_id",
+          "number",
+          "placed_on",
+          "channel",
+          "agent_name",
+          "status",
+          "amount_cents",
+          "disputed"
+        ],
+        "title": "OrderRow"
       },
       "OrderSummary": {
         "properties": {
