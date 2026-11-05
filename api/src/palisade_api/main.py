@@ -20,6 +20,8 @@ from palisade_api.agents import router as agents_router
 from palisade_api.agents.client import AgentHttp, AgentSigner
 from palisade_api.agents.registry import Agents, BuiltinAgent
 from palisade_api.agents.signatures import AgentSignatures
+from palisade_api.analytics import router as analytics_router
+from palisade_api.analytics.service import Analytics
 from palisade_api.assistant import router as assistant_router
 from palisade_api.assistant.access import ChatAccess
 from palisade_api.assistant.local import LocalApp
@@ -100,6 +102,7 @@ class State(TypedDict):
     mandates: Mandates
     passkeys: Passkeys
     activities: Activities
+    analytics: Analytics
     chat_access: ChatAccess
     assistant: Assistant
     mcp_app: ASGIApp
@@ -306,6 +309,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[State]:
                 mandates=mandates,
                 passkeys=passkeys,
                 activities=activities,
+                analytics=Analytics(sessions, settings.ag_studio_license_key),
                 chat_access=ChatAccess(settings.chat_access_key.get_secret_value()),
                 assistant=assistant,
                 mcp_app=mcp_app,
@@ -335,6 +339,7 @@ app.include_router(agents_router.router)
 app.include_router(sandbox_router.router)
 app.include_router(mandates_router.router)
 app.include_router(activity_router.router)
+app.include_router(analytics_router.router)
 app.include_router(assistant_router.router)
 # After the routers, so the shop's own paths win and only the MCP endpoint falls through.
 app.mount(MOUNT, MountedServer(), name="mcp")

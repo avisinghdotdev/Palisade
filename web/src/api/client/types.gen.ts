@@ -105,6 +105,24 @@ export type AlertRefund = {
 };
 
 /**
+ * AnalyticsRows
+ */
+export type AnalyticsRows = {
+    /**
+     * License Key
+     */
+    license_key: string;
+    /**
+     * Orders
+     */
+    orders: Array<OrderRow>;
+    /**
+     * Disputes
+     */
+    disputes: Array<DisputeRow>;
+};
+
+/**
  * Approval
  */
 export type Approval = {
@@ -474,6 +492,52 @@ export type DisputeResponse = {
      * Evidence
      */
     evidence: Array<Evidence>;
+};
+
+/**
+ * DisputeRow
+ */
+export type DisputeRow = {
+    /**
+     * Dispute Id
+     */
+    dispute_id: string;
+    /**
+     * Order Id
+     */
+    order_id: string;
+    /**
+     * Opened On
+     */
+    opened_on: string;
+    /**
+     * Channel
+     */
+    channel: 'human' | 'agent';
+    /**
+     * Reason
+     */
+    reason: 'MERCHANDISE_OR_SERVICE_NOT_RECEIVED' | 'MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED' | 'UNAUTHORISED' | 'CREDIT_NOT_PROCESSED' | 'DUPLICATE_TRANSACTION' | 'INCORRECT_AMOUNT' | 'PAYMENT_BY_OTHER_MEANS' | 'CANCELED_RECURRING_BILLING' | 'PROBLEM_WITH_REMITTANCE' | 'OTHER';
+    /**
+     * Status
+     */
+    status: 'OPEN' | 'WAITING_FOR_BUYER_RESPONSE' | 'WAITING_FOR_SELLER_RESPONSE' | 'UNDER_REVIEW' | 'RESOLVED' | 'OTHER';
+    /**
+     * Result
+     */
+    result: 'open' | 'won' | 'lost' | 'closed';
+    /**
+     * Evidence
+     */
+    evidence: 'prepared' | 'approved' | 'filed' | 'refused' | 'none';
+    /**
+     * Minutes To Evidence
+     */
+    minutes_to_evidence: number | null;
+    /**
+     * Amount Cents
+     */
+    amount_cents: number;
 };
 
 /**
@@ -1187,6 +1251,44 @@ export type OrderLine = {
     name: string;
     unit_price: Money;
     line_total: Money;
+};
+
+/**
+ * OrderRow
+ */
+export type OrderRow = {
+    /**
+     * Order Id
+     */
+    order_id: string;
+    /**
+     * Number
+     */
+    number: string;
+    /**
+     * Placed On
+     */
+    placed_on: string;
+    /**
+     * Channel
+     */
+    channel: 'human' | 'agent';
+    /**
+     * Agent Name
+     */
+    agent_name: string | null;
+    /**
+     * Status
+     */
+    status: 'creating' | 'declined' | 'failed' | 'authorized' | 'capture_pending' | 'captured' | 'voided' | 'refunded' | 'reversed';
+    /**
+     * Amount Cents
+     */
+    amount_cents: number;
+    /**
+     * Disputed
+     */
+    disputed: boolean;
 };
 
 /**
@@ -3068,6 +3170,22 @@ export type DisputeActivityResponses = {
 };
 
 export type DisputeActivityResponse = DisputeActivityResponses[keyof DisputeActivityResponses];
+
+export type AnalyticsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/analytics';
+};
+
+export type AnalyticsResponses = {
+    /**
+     * Successful Response
+     */
+    200: AnalyticsRows;
+};
+
+export type AnalyticsResponse = AnalyticsResponses[keyof AnalyticsResponses];
 
 export type AssistantAccessData = {
     body?: never;
