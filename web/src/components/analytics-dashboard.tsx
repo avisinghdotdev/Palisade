@@ -1,6 +1,8 @@
 import {
   type AgPanelConfig,
   type AgResponsiveLayoutBreakpoint,
+  AgStudioAiModule,
+  AgStudioModuleRegistry,
   enableStudioDevValidations,
   studioTheme,
 } from "ag-studio";
@@ -10,13 +12,19 @@ import { useMemo, useState } from "react";
 
 import type { AnalyticsRows } from "@/api/client";
 
+import { analyticsAi } from "@/analytics-agent";
 import {
   ANALYTICS_REPORT,
   analyticsSources,
   STACKED_LAYOUT,
 } from "@/analytics-report";
+import { AssistantAccess } from "@/components/assistant-access";
 import { Button } from "@/components/ui/button";
 import { useMediaQuery } from "@/hooks/use-media-query";
+import { useShopper } from "@/shopper";
+
+// Studio shows its agents' chat panel only with its AI module registered.
+AgStudioModuleRegistry.registerModules([AgStudioAiModule]);
 
 // Studio names a broken widget or field reference in the browser console; development only.
 if (import.meta.env.DEV) {
@@ -57,11 +65,12 @@ const theme = studioTheme.withParams({
 
 const AS_AUTHORED: AgResponsiveLayoutBreakpoint[] = [];
 
-// The dashboard opens with no panels; editing adds Studio's field list and widget settings.
-// There is no AI panel: the console runs no Studio AI module.
+// The dashboard opens with no panels; editing adds Studio's field list, its agents, and the
+// widget settings. Studio shows its AI panel in edit mode only. Each panel is a column of its
+// own, so a fourth (filters) left the canvas a sliver on a laptop screen.
 const PANELS: AgPanelConfig = {
   view: {},
-  edit: { left: ["data"], right: ["edit", "filters"] },
+  edit: { left: ["data"], right: ["ai", "edit"] },
 };
 
 /** The analytics dashboard over the API's rows; AG Studio loads with this module and nowhere else. */
@@ -71,6 +80,8 @@ export function AnalyticsDashboard({ rows }: { rows: AnalyticsRows }) {
   // at the same width. The heights are the layout's rows of 16 pixels plus Studio's padding.
   const wide = useMediaQuery("(min-width: 768px)");
   const [editing, setEditing] = useState(false);
+  // The agents spend the team's Claude credit, so they open with the chat's access code.
+  const { chatKey } = useShopper();
 
   return (
     <>
@@ -78,8 +89,8 @@ export function AnalyticsDashboard({ rows }: { rows: AnalyticsRows }) {
         <div className="mb-3 flex items-center justify-end gap-3">
           {editing && (
             <p className="text-sm text-muted-foreground">
-              Drag fields onto the canvas, or change any widget. Changes last
-              until the page reloads.
+              Drag fields onto the canvas, change any widget, or ask the agents
+              in the chat panel. Changes last until the page reloads.
             </p>
           )}
           <Button
@@ -90,12 +101,21 @@ export function AnalyticsDashboard({ rows }: { rows: AnalyticsRows }) {
             variant="outline"
           >
             {editing ? <Check aria-hidden /> : <Pencil aria-hidden />}
-            {editing ? "Done Editing" : "Edit Dashboard"}
+            {editing ? "Done Editing" : "Edit and Ask"}
           </Button>
+        </div>
+      )}
+      {wide && editing && chatKey === null && (
+        <div className="mb-3 flex max-w-md rounded-xl border bg-card">
+          <AssistantAccess
+            action="Open the Agents"
+            reason="The dashboard's agents run on Claude and open with the chat access key that was shared with you."
+          />
         </div>
       )}
       <AgStudioProvider licenseKey={rows.license_key}>
         <AgStudio
+          ai={chatKey === null ? undefined : analyticsAi}
           className={wide ? "h-[70rem]" : "h-[148rem]"}
           data={data}
           initialState={ANALYTICS_REPORT}

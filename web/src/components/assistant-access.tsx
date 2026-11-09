@@ -7,8 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useShopper } from "@/shopper";
 
-/** The code screen: the chat opens only with the key the team shared. */
-export function AssistantAccess() {
+/** The code screen: the chat, and the dashboard's agents, open only with the key the team shared. */
+export function AssistantAccess({
+  action = "Open the Chat",
+  reason = "Please enter the chat access key that was shared with you.",
+}: {
+  action?: string;
+  reason?: string;
+}) {
   const { setChatKey } = useShopper();
   const [code, setCode] = useState("");
   const check = useMutation({
@@ -35,9 +41,7 @@ export function AssistantAccess() {
       <KeyRound aria-hidden className="size-8 text-muted-foreground" />
       <div>
         <h3 className="text-base font-semibold">Enter the Access Key</h3>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Please enter the chat access key that was shared with you.
-        </p>
+        <p className="mt-1 text-sm text-muted-foreground">{reason}</p>
       </div>
       <label className="sr-only" htmlFor="chat-access-code">
         Access key
@@ -62,7 +66,7 @@ export function AssistantAccess() {
         {check.isPending && (
           <LoaderCircle aria-hidden className="motion-safe:animate-spin" />
         )}
-        Open the Chat
+        {action}
       </Button>
     </form>
   );

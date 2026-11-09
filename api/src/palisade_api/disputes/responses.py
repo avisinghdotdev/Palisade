@@ -16,7 +16,7 @@ from uuid import UUID, uuid7
 import psycopg
 import structlog
 from fastapi import status
-from pydantic import BaseModel, JsonValue
+from pydantic import BaseModel, JsonValue, TypeAdapter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import joinedload
@@ -25,7 +25,9 @@ from palisade_api.activity.models import ActivityRecord
 from palisade_api.activity.store import Activities
 from palisade_api.disputes.document import DOCUMENT_NAME, render
 from palisade_api.disputes.facts import (
+    MANDATE_FORMAT,
     MERCHANT_NAME,
+    SIGNATURE_SCHEME,
     SIGNERS,
     AgentFacts,
     CallFacts,
@@ -36,6 +38,7 @@ from palisade_api.disputes.facts import (
     PolicyFacts,
     ShipmentFacts,
 )
+from palisade_api.disputes.grounding import Statement
 from palisade_api.disputes.models import DisputeRecord, EvidenceRecord
 from palisade_api.disputes.narrative import Narrator, prompt
 from palisade_api.disputes.service import (
@@ -75,6 +78,8 @@ ESCALATE_NOTE = (
 # Queues the response job for the dispute on the given connection, inside its transaction; the
 # job id.
 Enqueue = Callable[[psycopg.AsyncConnection[object], str], Awaitable[int]]
+STATEMENTS = TypeAdapter(list[Statement])
+GROUNDING = TypeAdapter(list[dict[str, JsonValue]])
 
 logger = structlog.stdlib.get_logger(__name__)
 
@@ -87,6 +92,9 @@ class Evidence(BaseModel):
     evidence_type: EvidenceType
     notes: str
     prompt: str | None
+    # Claude's notes sentence by sentence with the record lines each cites, and the sentences
+    # the grounding check dropped; None when Palisade wrote the notes itself.
+    grounding: list[Statement] | None
     document_name: str
     document_sha256: str
     status: EvidenceStatus
@@ -273,6 +281,9 @@ def evidence(row: EvidenceRecord) -> Evidence:
             "evidence_type": row.evidence_type,
             "notes": row.notes,
             "prompt": row.prompt,
+            "grounding": None
+            if row.grounding is None
+            else STATEMENTS.validate_python(row.grounding),
             "document_name": row.document_name,
             "document_sha256": row.document_sha256,
             "status": row.status,
@@ -380,10 +391,15 @@ class Responses:
             return self._response(loaded, live)
         facts = await self._facts(loaded, live)
         if loaded.order.mandate is None:
-            asked, notes = None, shipment_notes(facts)
+            asked, notes, grounding, dropped = None, shipment_notes(facts), None, None
         else:
             asked = prompt(facts)
-            notes = await self._narrator.write(asked)
+            narrative = await self._narrator.write(facts)
+            notes = narrative.text
+            grounding = GROUNDING.validate_python(
+                STATEMENTS.dump_python(narrative.statements, mode="json")
+            )
+            dropped = narrative.dropped
         document = render(facts)
         status: EvidenceStatus = (
             "approved" if loaded.mode == "automatic" else "prepared"
@@ -397,6 +413,7 @@ class Responses:
                     evidence_type=filing.evidence_type,
                     notes=notes,
                     prompt=asked,
+                    grounding=grounding,
                     document_name=DOCUMENT_NAME,
                     document=document,
                     document_sha256=hashlib.sha256(document).hexdigest(),
@@ -411,6 +428,7 @@ class Responses:
                 evidence_type=filing.evidence_type,
                 status=status,
                 characters=len(notes),
+                dropped=dropped,
             )
         return await self.view(dispute_id)
 
@@ -693,6 +711,7 @@ class Responses:
                 id=agent.id,
                 name=agent.name,
                 public_key=agent.public_key,
+                signature_scheme=SIGNATURE_SCHEME,
                 verified_requests=verified,
             ),
             mandate=None
@@ -700,6 +719,7 @@ class Responses:
             else MandateFacts(
                 id=mandate.id,
                 kind=mandate.kind,
+                token_format=MANDATE_FORMAT,
                 signed_by=None
                 if mandate.signed_by is None
                 else SIGNERS[mandate.signed_by],

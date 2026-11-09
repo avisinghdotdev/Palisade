@@ -13,6 +13,7 @@ import { AgentIcon } from "@/components/agent-icon";
 import { Channel } from "@/components/channel";
 import { CopyButton } from "@/components/copy-button";
 import { DetailField } from "@/components/detail-field";
+import { MandateVerifyLink } from "@/components/mandate-verify-link";
 import { OrderDisputes } from "@/components/order-disputes";
 import { OrderLines } from "@/components/order-lines";
 import { OrderStatus } from "@/components/order-status";
@@ -403,6 +404,9 @@ export default function ConsoleOrder({ params }: Route.ComponentProps) {
                       value={order.data.mandate.token_hash}
                     />
                   </dl>
+                  <div className="mt-3">
+                    <MandateVerifyLink mandateId={order.data.mandate.id} />
+                  </div>
                 </aside>
               )}
               <aside
