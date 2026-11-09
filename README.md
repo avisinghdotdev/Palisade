@@ -1,0 +1,222 @@
+# Palisade
+
+Palisade is a merchant-side trust and dispute layer for purchases that AI shopping agents make at an
+online store and pay for with PayPal. The buyer signs a mandate, Palisade verifies the agent and the
+merchant's policy, binds the mandate to the PayPal order, and when a dispute arrives it answers with
+evidence and a narrative written by Claude.
+
+It is an entry to the PayPal AI Hackathon 2026. Everything runs against the PayPal sandbox.
+
+- Hosted demo: https://palisade.avisingh.dev (the store at `/shop`, the merchant console at
+  `/console`, an MCP endpoint for agents at `/api/shop/mcp`)
+- Stack: FastAPI, React Router, PostgreSQL, Claude (Anthropic API), PayPal REST APIs, AG Grid and
+  AG Studio, Azure Container Apps behind Cloudflare
+
+## The loop
+
+1. An agent shops. Either the in-page agent on `/shop` (Claude, running on the server) or any
+   MCP client connected to `/api/shop/mcp` searches the catalog and fills a cart.
+2. The buyer signs a mandate. The agent asks for approval; the buyer opens the consent page and
+   signs with a passkey, or with a labelled demo signer. The mandate is an SD-JWT in the shape of
+   an AP2 Checkout Mandate: the items, the amount cap, the merchant, the expiry, the agent, and a
+   hash of the merchant's policy.
+3. Palisade checks the agent. Every agent request carries an RFC 9421 HTTP message signature made
+   with an Ed25519 key that Palisade holds in its registry. Unsigned or replayed requests are
+   refused. The merchant's policy (allowed agents, spend caps, blocked categories) is applied.
+4. The mandate is bound to the PayPal order. Palisade creates the order with `custom_id` set to
+   the mandate's id and SHA-256, authorizes it from the buyer's vaulted PayPal wallet, and
+   captures it. Every order is tagged as placed by an agent or by a person.
+5. Disputes are answered with evidence. PayPal's dispute webhooks are verified, stored, and
+   processed by durable jobs. Palisade joins the dispute to the order and the mandate, has Claude
+   write a narrative from a structured facts record, builds a record PDF, and files through the
+   Disputes API: tracking as `PROOF_OF_FULFILLMENT` for item-not-received, the mandate record as
+   `OTHER` evidence once the claim opens for the other reasons. The merchant chooses "Review and
+   file" or automatic. A pre-chargeback alert gets a timed refund.
+
+## Try it in five minutes
+
+No login or key is needed for the store, the consent page, or the console.
+
+1. Open https://palisade.avisingh.dev/shop. The default buyer is the demo buyer, whose PayPal
+   sandbox wallet is already linked. To pay from your own sandbox account instead, use the buyer
+   menu in the header and approve the wallet link on sandbox.paypal.com once.
+2. Press "Shop with the Agent" and enter the chat access code that comes with the submission.
+   Ask for a shoe; the agent proposes a cart and asks for your approval.
+3. The consent page opens. Press "Approve with Passkey" (your device's passkey) or "Approve with
+   Demo Signer (Simulated)". The chat carries on by itself and places the order. The receipt
+   links to the order in the console.
+4. Open the order in the console at https://palisade.avisingh.dev/console. You see the agent, the
+   signature check, the policy decision, the decoded mandate, the PayPal order, authorization,
+   and capture, and the timeline.
+5. File a dispute. On a demo-buyer order, press "File a Dispute (Sandbox Simulator)": the demo
+   buyer's own PayPal app opens the dispute. From your own sandbox account, open Activity on
+   sandbox.paypal.com, pick the payment, and choose "Report a problem". For an item-not-received
+   story, press "Mark as Shipped" on the order first so the evidence has tracking.
+6. Watch the dispute page under Disputes. PayPal's webhook reaches Palisade about three and a
+   half minutes after filing. Within fifteen seconds of it, Claude's notes and the record PDF are
+   ready. In "Review and file" mode, press "File with PayPal"; in automatic mode nothing needs
+   pressing. A not-as-described inquiry is escalated first and the evidence is filed when PayPal
+   opens the claim, about three minutes later. In the measured run on 2026-11-06 the evidence
+   was on file 7 minutes 10 seconds after the buyer filed.
+7. PayPal offers adjudication hours later. "Decide for the Seller" is a sandbox simulator that
+   stands in for PayPal's reviewer, and it is labelled as such.
+8. The Analytics page shows agent versus person orders, dispute rate, win rate, and time to
+   evidence, on an AG Studio dashboard. Agents and Policy shows the registered agents, their
+   public keys, the policy in force with its hash, and the filing mode.
+
+To shop through your own agent instead of the chat, connect any MCP client to the endpoint, for
+example with the `claude` command-line tool:
+
+```
+claude mcp add --transport http ridgeline https://palisade.avisingh.dev/api/shop/mcp
+```
+
+The endpoint exposes the same eight tools as the chat, pays from the demo buyer's wallet, and
+appears in the console as the "MCP Agent".
+
+## What is real and what is simulated
+
+Real, in the PayPal sandbox: orders, authorizations, captures, vaulted wallets, webhooks and their
+signature verification, disputes, escalation, evidence filing, shipment trackers, refunds, and
+every state change PayPal makes on its own.
+
+Simulated, and labelled in the interface: filing a dispute as the demo buyer (a real dispute, opened
+through the demo buyer's own PayPal app because only the buyer can open one), PayPal's final
+decision ("Decide for the Seller", a sandbox-only adjudicate call), the USPS tracking number (the
+sandbox checks no number), and the demo signer (a server-held key that stands in for a buyer's
+passkey so judges need no device setup).
+
+## PayPal APIs used
+
+| API | What Palisade does with it | Code |
+|---|---|---|
+| OAuth client credentials | Tokens for the merchant's app and the demo buyer's app | `api/src/palisade_api/paypal/auth.py` |
+| Orders v2 | Create with intent `AUTHORIZE` and `custom_id` = mandate id and hash; authorize from a vault id with stored-credential fields; void when a capture is refused | `orders/checkout.py` |
+| Payments v2 | Capture the authorization; refund a capture (pre-chargeback alerts) | `orders/checkout.py`, `disputes/alerts.py` |
+| Vault v3 | Setup token and payment token so a buyer links a wallet once | `wallets/` |
+| Webhooks | Receive, verify with `verify-webhook-signature`, store, deduplicate, process by job; eleven event types handled | `webhooks/` |
+| Disputes v1 | List and read disputes, escalate an inquiry, provide evidence as multipart (JSON part plus PDF), hourly reconciliation | `disputes/` |
+| Shipment Tracking | Add a tracker to the capture so not-received evidence has tracking | `orders/shipping.py` |
+| Transaction Search | Find the demo buyer's transaction id for a Palisade order, so the simulator can file | `sandbox/simulator.py` |
+| Sandbox simulators | Create a dispute as the buyer; adjudicate | `sandbox/` |
+
+Every call sends a `PayPal-Request-Id` and records the `paypal-debug-id`. A call that gets no
+answer, a 409, a 429, or a 5xx is repeated once under the same request id; an order whose outcome
+stays unknown goes to a repair job that tries again every five minutes.
+
+## AI used
+
+| Where | Model | What it does | What it cannot do |
+|---|---|---|---|
+| The in-page agent on `/shop` | Claude Opus 5.5 through the Anthropic SDK's tool runner, streaming, with adaptive thinking | Searches, explains, fills the cart, requests the mandate, checks it, and places the order once the buyer has signed | Capture money. Checkout is refused without a signed, unexpired mandate that fits the cart; the model only calls the same signed API any agent calls |
+| The dispute narrative | Claude Opus 5.5, one Messages call | Writes at most 2,000 characters from a structured facts record (mandate, agent, order, tracking, policy); the prompt and the output are stored | Invent facts. The record is built in code; the text is checked for length and retried once |
+
+The Anthropic key never leaves the server. The chat sits behind one access code because every turn
+spends the team's credit; the rest of the site is open.
+
+## What makes this different
+
+Written for a reviewer who compares entries. Each claim points at the code or the record.
+
+- Agents are verified at the merchant, not trusted. Every agent request is signed (RFC 9421,
+  Ed25519) and checked against a registry with a nonce store and a five-minute window; the
+  console shows the signature result on each order. See `agents/signatures.py`.
+- The mandate is a standard token, signed by the buyer's own key. An SD-JWT in the AP2 Checkout
+  Mandate shape, with the buyer's passkey assertion as the key-binding proof, single use, fifteen
+  minutes for a cart mandate and twenty-four hours for an intent mandate, and the merchant's
+  policy hash inside so a changed policy invalidates it. See `mandates/tokens.py`.
+- The binding to PayPal is on the order itself. `custom_id` carries the mandate id and hash, so
+  the dispute, the capture, and the mandate are one record that PayPal's own objects point at.
+- Evidence is routed by dispute reason and stage, the way PayPal's API requires it. Tracking as
+  `PROOF_OF_FULFILLMENT` in the inquiry for not-received; escalate first and file the mandate
+  record as `OTHER` in the claim for the rest, because PayPal refuses `OTHER` in the inquiry. A
+  dispute on a person's order with no mandate is handed to the merchant, not fought. See
+  `disputes/responses.py`.
+- Pre-chargeback alerts are refunded on a timer inside PayPal's twenty-hour window, cancelled if
+  the alert resolves first, and only in automatic mode. See `disputes/alerts.py`.
+- Two filing modes. "Review and file" (the default) prepares everything and waits for a person;
+  automatic files on its own. Both are proven live on the hosted app.
+- One tool set, two doors. The chat and the MCP endpoint share the same eight tools, each with a
+  title and read-only or destructive hints, and both sign as registered agents, so the console
+  shows an outside agent's shopping beside the chat's. See `assistant/tools.py` and `mcp/server.py`.
+- Nothing is lost between webhooks. Every delivery is verified and stored before it is processed;
+  jobs retry with backoff; an hourly reconciliation reads disputes that fire no webhook; a
+  five-minute sweep retries jobs a stopped worker left behind.
+- Measured, not asserted. A buyer filed a dispute on the sandbox site at 20:49:41 UTC on
+  2026-11-06; Palisade had the notes ready at 20:53:20, the merchant pressed File at 20:53:40,
+  and the evidence was on file at 20:56:50 (PayPal 200, debug id `f5514074d9b3b`).
+- Production practices throughout: typed end to end (basedpyright recommended mode, TypeScript
+  strict, a generated API client), structured logs with request, order, mandate, and dispute ids,
+  secrets in Azure Key Vault, rate limits at nginx, a content security policy, health and readiness
+  endpoints, migrations applied at startup under a lock, 173 API tests that run inside a rolled-back
+  transaction.
+
+### Where to check each claim
+
+| Claim | Where |
+|---|---|
+| Agent requests are signed and verified | `api/src/palisade_api/agents/signatures.py`; `api/tests/test_agents.py` (replay and stale signatures refused) |
+| The mandate is a passkey-signed SD-JWT with the policy hash inside | `api/src/palisade_api/mandates/tokens.py`, `mandates/passkeys.py`; `api/tests/test_mandates.py` |
+| Checkout is refused without a fitting mandate | `api/src/palisade_api/orders/checkout.py` (`MANDATE_*` refusals); `api/tests/test_checkout.py` |
+| The order carries the mandate in `custom_id` | `orders/checkout.py`; any agent order's PayPal panel in the console |
+| Webhooks are verified, stored, deduplicated, and processed by jobs | `api/src/palisade_api/webhooks/`; `api/tests/test_webhooks.py`, `test_jobs.py` |
+| Evidence is routed by reason and stage | `api/src/palisade_api/disputes/responses.py`; `api/tests/test_evidence.py` |
+| The alert refund waits inside PayPal's window and cancels on resolve | `api/src/palisade_api/disputes/alerts.py`; `api/tests/test_alerts.py` |
+| The chat and the MCP endpoint share one tool set | `api/src/palisade_api/assistant/tools.py`, `mcp/server.py`; `api/tests/test_mcp.py` |
+| A live dispute cycle ran end to end | Dispute `PP-R-JRK-10196691` on order `RR-CVQYZP` in the hosted console: filed 2026-11-06 20:49:41 UTC, evidence on file 20:56:50 |
+
+## Architecture
+
+- `api/` is the FastAPI service, packaged by feature: `paypal/`, `webhooks/`, `shop/`, `wallets/`,
+  `orders/`, `agents/`, `policy/`, `mandates/`, `activity/`, `analytics/`, `assistant/`, `mcp/`,
+  `disputes/`, `sandbox/`. Jobs run on Procrastinate in the same PostgreSQL database, inside the
+  API process. Migrations are Alembic.
+- `web/` is the React Router SPA with prerendering: the store with its chat panel, the consent
+  page, and the merchant console (orders, disputes, agents and policy, analytics, activity).
+  Tables are AG Grid Community; the analytics page is an AG Studio dashboard.
+- `infra/` is Bicep for Azure Container Apps, Container Registry, Key Vault, and Log Analytics;
+  a push to `main` builds both images and deploys.
+- `spikes/` are the throwaway scripts that proved each PayPal behaviour in the sandbox before it
+  was built.
+
+## Run it locally
+
+You need Git, Docker Desktop, Node 24, and `just`. Then:
+
+```
+just init
+cp .env.example .env
+```
+
+Fill `.env`:
+
+- `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`: a sandbox REST app on a business
+  account, with Vault enabled and a webhook pointing at your public URL `/api/webhooks/paypal`.
+- `PAYPAL_BUYER_CLIENT_ID`, `PAYPAL_BUYER_CLIENT_SECRET`: a second sandbox REST app on the business
+  account that plays the demo buyer (only a buyer's own app can open a dispute on its payments).
+- `DEMO_BUYER_EMAIL`: that account's email; `PUBLIC_ORIGIN`: `http://127.0.0.1:8080` locally.
+- `DATABASE_URL`: any PostgreSQL 18 database. Apply the schema once with
+  `uv run --frozen --env-file .env python -m palisade_api.migrate`.
+- `ANTHROPIC_API_KEY`, and `CHAT_ACCESS_KEY` (any long random string; it opens the chat).
+- Four Ed25519 seeds as base64 of 32 random bytes: `SHOPPER_AGENT_KEY`, `MCP_AGENT_KEY`,
+  `MANDATE_ISSUER_KEY`, `DEMO_SIGNER_KEY`.
+- `AG_STUDIO_LICENSE_KEY`: an AG Studio trial key, or leave it empty and accept the watermark.
+
+Then `docker compose up --watch` and open http://127.0.0.1:8080. The API has no host port; the
+web container proxies `/api`. Checks: `uv run --frozen --env-file .env pytest`,
+`uv run --frozen basedpyright`, `pnpm --dir web run typecheck lint knip test`.
+
+## Limits worth knowing
+
+- Sandbox only. No code path targets a live PayPal account.
+- The sandbox cannot open `UNAUTHORISED`, `INCORRECT_AMOUNT`, or `DUPLICATE_TRANSACTION` disputes
+  by API, and it never produces a pre-chargeback `ALERT`; those paths are unit-tested and take the
+  same routes as the reasons that are proven live.
+- PayPal offers adjudication hours after evidence is filed, so a demo that ends with a decision
+  uses a dispute opened earlier.
+- The in-page chat needs the access code; the MCP endpoint, the store, and the console do not.
+
+## Licence and credits
+
+MIT, see `LICENSE`. Product photos are Unsplash-licensed shots of real shoes, credited in
+`docs/product-photos.md`; the store is a demo and sells nothing.

@@ -61,12 +61,14 @@ class PayPal:
         body: dict[str, Any] | None = None,
         *,
         headers: dict[str, str] | None = None,
+        files: dict[str, Any] | None = None,
     ) -> tuple[int, Any, str]:
         """Like `call`, but reports the answer instead of exiting: for calls whose failure is the finding."""
         response = await self._http.request(
             method,
             path,
             json=body,
+            files=files,
             headers={
                 **self._headers,
                 **(headers or {}),

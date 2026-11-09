@@ -60,9 +60,8 @@ export default function Home() {
               shop that agents can buy from, and the merchant console behind it.
             </p>
             <p>
-              The code is the team's entry to the hackathon. More of the loop
-              lands with each milestone up to the submission on 12 November
-              2026.
+              The code is the team's entry to the hackathon. Judging runs from 1
+              to 15 December 2026, and this demo stays up and free until then.
             </p>
           </AboutDialog>
         </div>

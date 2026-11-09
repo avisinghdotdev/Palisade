@@ -1,6 +1,6 @@
 [project]
 name = "palisade-api"
-version = "0.21.0"
+version = "0.21.1"
 requires-python = ">=3.14"
 dependencies = [
     "alembic>=1.20.0",
@@ -13,7 +13,7 @@ dependencies = [
     "mcp>=2.3.0",
     "procrastinate>=3.10.0",
     "psycopg[binary]>=3.3.6",
-    "pydantic>=2.14.1",
+    "pydantic>=2.14.2",
     "pydantic-settings>=2.16.0",
     "sd-jwt>=0.10.4",
     "sqlalchemy[asyncio]>=2.1.5",

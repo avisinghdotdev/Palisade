@@ -1,4 +1,4 @@
-FROM ghcr.io/astral-sh/uv:0.13.5-python3.14-alpine AS deps
+FROM ghcr.io/astral-sh/uv:0.13.7-python3.14-alpine AS deps
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=0
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
@@ -18,7 +18,8 @@ FROM source AS build
 RUN --mount=type=cache,target=/root/.cache/uv \
   uv sync --frozen --no-dev --no-editable --package palisade-api
 
-FROM python:3.14.9-alpine AS serve
+# alpine3.23 matches the uv image above, so both stages share one libc and OpenSSL.
+FROM python:3.14.10-alpine3.23 AS serve
 RUN adduser -D -H -u 10001 api
 COPY --from=build /app/.venv /app/.venv
 USER 10001

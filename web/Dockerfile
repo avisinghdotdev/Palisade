@@ -1,4 +1,4 @@
-FROM node:24.22.1-alpine AS deps
+FROM node:24.22.2-alpine AS deps
 # pnpm's official standalone build for musl on amd64; the checksum pins the exact artifact.
 ADD --checksum=sha256:d33802cc987dcfbe02a991473764ba25ad1b2344189e2097a2570baed66f008a \
   https://github.com/pnpm/pnpm/releases/download/v12.15.0/pnpm-linux-x64-musl.tar.gz /tmp/pnpm.tar.gz
