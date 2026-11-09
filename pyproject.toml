@@ -1,6 +1,6 @@
 [project]
 name = "palisade"
-version = "0.21.1"
+version = "0.22.0"
 requires-python = ">=3.14"
 dependencies = []
 
@@ -21,6 +21,7 @@ dev = [
     "pytest>=9.1.1",
     "ruff>=0.17.1",
     "soft-webauthn>=0.1.3",
+    "hypothesis>=6.170.15",
 ]
 
 [tool.uv.workspace]
@@ -32,7 +33,7 @@ palisade-api = { workspace = true }
 # One release version, bumped with `uv run bump-my-version bump <part>`; the copies below are
 # rewritten in the same run and the `version-sync` pre-commit hook fails when they drift.
 [tool.bumpversion]
-current_version = "0.21.1"
+current_version = "0.22.0"
 # The release worktree is staged when the bump runs, and the version-sync hook runs on dirty trees.
 allow_dirty = true
 
@@ -55,6 +56,8 @@ replace = '"version": "{new_version}"'
 
 [tool.pytest.ini_options]
 testpaths = ["api/tests"]
+# The labelled dispute cases in `evals/` are shared by the test suite and the eval runner.
+pythonpath = ["."]
 
 # `uv run alembic revision -m "..."` writes new migrations into the package's migrations folder.
 [tool.alembic]
@@ -63,7 +66,7 @@ script_location = "palisade_api:migrations"
 [tool.basedpyright]
 # "recommended" is stricter than "strict": it also reports Any, unused call results, and stale ignores.
 typeCheckingMode = "recommended"
-include = ["api", "infra"]
+include = ["api", "infra", "evals"]
 # Test helpers next to the tests import as top-level modules, the way pytest loads them.
 extraPaths = ["api/tests"]
 # Path.write_text() and next() return values nobody needs; flagging them adds only noise.
@@ -105,8 +108,9 @@ ban-relative-imports = "all"
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**" = ["S101", "S106"]
-# Spikes are throwaway scripts that report through stdout.
+# Spikes are throwaway scripts that report through stdout; the eval runners report the same way.
 "spikes/*" = ["T201"]
+"evals/*" = ["T201"]
 "**/__init__.py" = ["F401"]
 # The Bicep check runs the az CLI resolved from PATH.
 "infra/check.py" = ["S603"]

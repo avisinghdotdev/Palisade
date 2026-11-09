@@ -1,12 +1,12 @@
 """The facts record behind a dispute response: what Palisade knows, and nothing it does not.
 
-The narrative is written from this record alone, and the PDF prints it, so both say the same
-thing and neither can say more than the store recorded.
+The narrative is written from this record alone and cites it line by line, and the PDF prints
+it, so both say the same thing and neither can say more than the store recorded.
 """
 
+from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
-from xml.sax.saxutils import escape
 
 from pydantic import BaseModel, JsonValue
 
@@ -17,6 +17,11 @@ from palisade_api.shop.catalog import Money
 MERCHANT_NAME = "Ridgeline Running"
 # What the record says where the store holds nothing.
 NOT_SPECIFIED = "Not specified"
+# How the agent and the mandate are checked, as facts the narrative can cite by name.
+SIGNATURE_SCHEME = (
+    "RFC 9421 HTTP message signatures with an Ed25519 key in the store's registry"
+)
+MANDATE_FORMAT = "SD-JWT in the shape of an AP2 Checkout Mandate, issued by Palisade; the token hash is SHA-256"
 # How each way of signing reads in the record, so the narrative and the PDF never print a code.
 SIGNERS = {
     "passkey": "The buyer's own passkey (WebAuthn)",
@@ -55,6 +60,7 @@ class AgentFacts(BaseModel):
     name: str
     # The Ed25519 public key in the store's registry, which signed the agent's requests.
     public_key: str
+    signature_scheme: str
     # Requests on this purchase whose RFC 9421 signature the store verified.
     verified_requests: int
 
@@ -63,6 +69,7 @@ class MandateFacts(BaseModel):
     id: UUID
     # "cart": one exact cart, signed at checkout; "intent": a cap and categories, signed up front.
     kind: str
+    token_format: str
     # How the buyer signed, in SIGNERS' words; None while unsigned.
     signed_by: str | None
     signed_at: datetime | None
@@ -111,22 +118,39 @@ class Facts(BaseModel):
     paypal_calls: list[CallFacts]
 
 
-def as_xml(facts: Facts) -> str:
-    """The record as nested XML tags, the shape the narrative prompt delimits it with."""
-    return "\n".join(_tags("facts", facts.model_dump(mode="json"), 0))
+@dataclass(frozen=True)
+class Leaf:
+    """One fact in the record: its path, such as `order.lines[0].name`, and its value as text."""
+
+    path: str
+    text: str
+
+    def line(self) -> str:
+        return f"{self.path}: {self.text}"
 
 
-def _tags(name: str, value: JsonValue, depth: int) -> list[str]:
-    pad = "  " * depth
+def leaves(facts: Facts) -> list[Leaf]:
+    """The record as one line per fact, in the record's own order: what the narrative cites."""
+    return _leaves("", facts.model_dump(mode="json"))
+
+
+def record_text(facts: Facts) -> str:
+    return "\n".join(leaf.line() for leaf in leaves(facts))
+
+
+def _leaves(path: str, value: JsonValue) -> list[Leaf]:
     if isinstance(value, dict):
-        inner = [
-            line for key, item in value.items() for line in _tags(key, item, depth + 1)
+        return [
+            leaf
+            for key, item in value.items()
+            for leaf in _leaves(f"{path}.{key}" if path else key, item)
         ]
-        return [f"{pad}<{name}>", *inner, f"{pad}</{name}>"]
     if isinstance(value, list):
         if not value:
-            return [f"{pad}<{name}>none</{name}>"]
-        inner = [line for item in value for line in _tags("item", item, depth + 1)]
-        return [f"{pad}<{name}>", *inner, f"{pad}</{name}>"]
-    text = NOT_SPECIFIED if value is None else escape(str(value))
-    return [f"{pad}<{name}>{text}</{name}>"]
+            return [Leaf(path, "none")]
+        return [
+            leaf
+            for index, item in enumerate(value)
+            for leaf in _leaves(f"{path}[{index}]", item)
+        ]
+    return [Leaf(path, NOT_SPECIFIED if value is None else str(value))]

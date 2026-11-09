@@ -61,8 +61,14 @@ No login or key is needed for the store, the consent page, or the console.
 7. PayPal offers adjudication hours later. "Decide for the Seller" is a sandbox simulator that
    stands in for PayPal's reviewer, and it is labelled as such.
 8. The Analytics page shows agent versus person orders, dispute rate, win rate, and time to
-   evidence, on an AG Studio dashboard. Agents and Policy shows the registered agents, their
-   public keys, the policy in force with its hash, and the filing mode.
+   evidence, on an AG Studio dashboard. "Edit and Ask" opens Studio's chat panel: its built-in
+   agents change the dashboard, and the Palisade agent explains disputes, orders, and mandates
+   from the store's records. The agents take the same access code as the chat. Agents and
+   Policy shows the registered agents, their public keys, the policy in force with its hash,
+   and the filing mode.
+9. Press "Verify the Mandate" on any agent order or its dispute. The JSON that opens is the
+   public verification: the signature against the published key, the claims, the hash, the
+   buyer's proof, the policy, and PayPal's own custom id on the payment, read live.
 
 To shop through your own agent instead of the chat, connect any MCP client to the endpoint, for
 example with the `claude` command-line tool:
@@ -109,10 +115,26 @@ stays unknown goes to a repair job that tries again every five minutes.
 | Where | Model | What it does | What it cannot do |
 |---|---|---|---|
 | The in-page agent on `/shop` | Claude Opus 5.5 through the Anthropic SDK's tool runner, streaming, with adaptive thinking | Searches, explains, fills the cart, requests the mandate, checks it, and places the order once the buyer has signed | Capture money. Checkout is refused without a signed, unexpired mandate that fits the cart; the model only calls the same signed API any agent calls |
-| The dispute narrative | Claude Opus 5.5, one Messages call | Writes at most 2,000 characters from a structured facts record (mandate, agent, order, tracking, policy); the prompt and the output are stored | Invent facts. The record is built in code; the text is checked for length and retried once |
+| The dispute narrative | Claude Opus 5.5, one Messages call with citations on | Writes at most 2,000 characters from a structured facts record (mandate, agent, order, tracking, policy) sent as a citable document, one line per fact; the prompt, the output, and every sentence's cited lines are stored | Invent facts. A grounding check drops any sentence that names an id, amount, date, or hash the record does not hold, before anything is filed; the console shows what was dropped and why. See `disputes/grounding.py` |
+| The analytics dashboard's agents | Claude Opus 5.5 through AG Studio's agent framework, one turn per request through the API | AG Studio's five built-in agents (lead, data, page, planning, widget) build and change the dashboard; a custom Palisade agent the lead delegates to explains disputes, orders, and mandates from the store's records with four read-only tools, one of them the public mandate verification | Change anything on PayPal. The tools read; filing, refunding, and escalating stay with the merchant's buttons |
 
-The Anthropic key never leaves the server. The chat sits behind one access code because every turn
-spends the team's credit; the rest of the site is open.
+The Anthropic key never leaves the server. The chat and the dashboard's agents sit behind one
+access code because every turn spends the team's credit; the rest of the site is open.
+
+### Checked, not asserted
+
+- `docs/evals/dispute-pipeline-2026-11-09.md`: 24 labelled disputes (`evals/dispute_cases.py`)
+  routed by the real code, all as labelled, and 11 narratives written by Claude through the
+  production path, all under the limit, all mentioning what their case requires, no sentence
+  dropped by the grounding check. The routing part runs in the test suite on every push; the
+  runner is `uv run --frozen --env-file .env python -m evals.dispute_eval`.
+- `docs/evals/injection-suite-2026-11-09.md`: 20 prompt-injection attacks on the in-page agent
+  in six families, plus a registered agent that ignores every rule and a stranger with no key,
+  scored on money moved. The runner is `python -m evals.injection_suite` against a running stack.
+- `api/tests/test_policy_properties.py` and `test_policy_mutants.py`: Hypothesis properties over
+  the merchant's policy engine, the signed cart lines, and the mandate token (any single-character
+  change is refused or changes no claim), and eight mutants of the policy engine that the
+  properties must catch.
 
 ## What makes this different
 
@@ -125,6 +147,12 @@ Written for a reviewer who compares entries. Each claim points at the code or th
   Mandate shape, with the buyer's passkey assertion as the key-binding proof, single use, fifteen
   minutes for a cart mandate and twenty-four hours for an intent mandate, and the merchant's
   policy hash inside so a changed policy invalidates it. See `mandates/tokens.py`.
+- Anyone can verify a mandate without the console. `GET /api/mandates/{id}/verify` checks the
+  issuer's signature against the key published at `/.well-known/jwks.json` (the token header
+  names it by `kid`), the claims against the record, the hash the buyer signed, the buyer's own
+  proof (the passkey assertion or the demo signer's signature, checked again read-only), the
+  policy it was signed under, and reads every PayPal order under it live to confirm the custom id
+  still names the mandate. Every order and dispute page links to it. See `mandates/verification.py`.
 - The binding to PayPal is on the order itself. `custom_id` carries the mandate id and hash, so
   the dispute, the capture, and the mandate are one record that PayPal's own objects point at.
 - Evidence is routed by dispute reason and stage, the way PayPal's API requires it. Tracking as
@@ -145,11 +173,21 @@ Written for a reviewer who compares entries. Each claim points at the code or th
 - Measured, not asserted. A buyer filed a dispute on the sandbox site at 20:49:41 UTC on
   2026-11-06; Palisade had the notes ready at 20:53:20, the merchant pressed File at 20:53:40,
   and the evidence was on file at 20:56:50 (PayPal 200, debug id `f5514074d9b3b`).
+- Every sentence Claude files is traceable. The narrative cites the facts record line by line,
+  and the grounding check drops any sentence naming something the record lacks; the dispute page
+  shows each sentence with the record lines it rests on. The committed eval found no fabricated
+  value in 11 narratives. See `disputes/grounding.py` and `docs/evals/`.
+- Tested against the field's two blind spots. Labelled eval results and adversarial results are
+  committed under `docs/evals/`, and the policy gate carries property-based tests with a mutation
+  check, so a reviewer can read what the pipeline does without running it.
+- The dashboard's agents are Studio's own plus one of ours. AG Studio's built-in lead delegates
+  to a custom Palisade agent with read-only tools over the store's records, all on Claude through
+  the API; no model key reaches the browser. See `web/src/analytics-agent.ts`.
 - Production practices throughout: typed end to end (basedpyright recommended mode, TypeScript
   strict, a generated API client), structured logs with request, order, mandate, and dispute ids,
   secrets in Azure Key Vault, rate limits at nginx, a content security policy, health and readiness
-  endpoints, migrations applied at startup under a lock, 173 API tests that run inside a rolled-back
-  transaction.
+  endpoints, migrations applied at startup under a lock, 250 API tests that run inside a rolled-back
+  transaction, 9 web tests.
 
 ### Where to check each claim
 
@@ -164,6 +202,12 @@ Written for a reviewer who compares entries. Each claim points at the code or th
 | The alert refund waits inside PayPal's window and cancels on resolve | `api/src/palisade_api/disputes/alerts.py`; `api/tests/test_alerts.py` |
 | The chat and the MCP endpoint share one tool set | `api/src/palisade_api/assistant/tools.py`, `mcp/server.py`; `api/tests/test_mcp.py` |
 | A live dispute cycle ran end to end | Dispute `PP-R-JRK-10196691` on order `RR-CVQYZP` in the hosted console: filed 2026-11-06 20:49:41 UTC, evidence on file 20:56:50 |
+| The narrative cites the record and ungrounded sentences are dropped | `api/src/palisade_api/disputes/grounding.py`, `narrative.py`; `api/tests/test_grounding.py`; the "sentences kept" line on any dispute page |
+| A mandate verifies with public keys and PayPal's own order | `api/src/palisade_api/mandates/verification.py`; `api/tests/test_mandates.py` (`test_a_mandate_is_verifiable_with_the_published_key_and_paypals_order`); `/.well-known/jwks.json` on the hosted app |
+| The routing and the narratives are evaluated on labelled cases | `evals/dispute_cases.py`, `evals/dispute_eval.py`; `api/tests/test_dispute_cases.py`; `docs/evals/dispute-pipeline-2026-11-09.md` |
+| The agent gate holds under injection and misuse | `evals/injection_attacks.py`, `evals/injection_suite.py`; `docs/evals/injection-suite-2026-11-09.md` |
+| The policy engine's rules hold for every input, and a broken rule is caught | `api/tests/policy_properties.py`, `test_policy_properties.py`, `test_policy_mutants.py` |
+| The dashboard's custom agent talks to Studio's built-in agents | `web/src/analytics-agent.ts`; `api/src/palisade_api/analytics/agent.py`; `api/tests/test_analytics_agent.py` |
 
 ## Architecture
 
@@ -204,7 +248,10 @@ Fill `.env`:
 
 Then `docker compose up --watch` and open http://127.0.0.1:8080. The API has no host port; the
 web container proxies `/api`. Checks: `uv run --frozen --env-file .env pytest`,
-`uv run --frozen basedpyright`, `pnpm --dir web run typecheck lint knip test`.
+`uv run --frozen basedpyright`, `pnpm --dir web run typecheck lint knip test`. The two eval
+runners write dated reports under `docs/evals/`: `uv run --frozen --env-file .env python -m
+evals.dispute_eval` (calls Claude for 11 narratives) and `python -m evals.injection_suite`
+(needs the running stack; places one sandbox order as its control).
 
 ## Limits worth knowing
 
@@ -214,7 +261,13 @@ web container proxies `/api`. Checks: `uv run --frozen --env-file .env pytest`,
   same routes as the reasons that are proven live.
 - PayPal offers adjudication hours after evidence is filed, so a demo that ends with a decision
   uses a dispute opened earlier.
-- The in-page chat needs the access code; the MCP endpoint, the store, and the console do not.
+- The in-page chat and the dashboard's agents need the access code; the MCP endpoint, the store,
+  and the console do not. AG Studio shows its agent panel in edit mode only, on wide screens.
+- The injection suite cannot plant an instruction inside a product description or another tool
+  result, because the catalog is seeded data; the system prompt's untrusted-content rule is the
+  defence there, and it is not measured.
+- A grounding check catches invented ids, amounts, dates, and hashes. It cannot catch a wrong
+  claim made in plain words; the facts record and the PDF are what a reviewer should trust.
 
 ## Licence and credits
 

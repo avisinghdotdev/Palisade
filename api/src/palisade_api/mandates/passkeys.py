@@ -204,6 +204,39 @@ class Passkeys:
                 raise PasskeyRefused(str(error)) from error
             record.sign_count = result.new_sign_count
 
+    async def check(
+        self,
+        passkey_id: UUID,
+        wallet_id: UUID,
+        challenge: bytes,
+        credential: dict[str, JsonValue],
+    ) -> None:
+        """Check a stored assertion over `challenge` again, moving nothing.
+
+        The sign count is not compared: the assertion was accepted once, and this only asks
+        whether the passkey on record made it.
+
+        Raises:
+            UnknownPasskey: the passkey does not sign for the wallet.
+            PasskeyRefused: the assertion does not verify, or the person was not verified.
+        """
+        async with self._sessions() as session:
+            record = await session.get(PasskeyRecord, passkey_id)
+        if record is None or record.wallet_id != wallet_id:
+            raise UnknownPasskey(passkey_id)
+        try:
+            verify_authentication_response(
+                credential=credential,
+                expected_challenge=challenge,
+                expected_rp_id=self._rp_id,
+                expected_origin=self._origin,
+                credential_public_key=unb64url(record.public_key),
+                credential_current_sign_count=0,
+                require_user_verification=True,
+            )
+        except InvalidAuthenticationResponse as error:
+            raise PasskeyRefused(str(error)) from error
+
 
 def _json(text: str) -> dict[str, JsonValue]:
     return OPTIONS.validate_json(text)

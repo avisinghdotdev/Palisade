@@ -221,6 +221,7 @@ def _mandate(facts: Facts) -> list[tuple[str, str]]:
     return [
         ("Mandate id", str(mandate.id)),
         ("Kind", KINDS.get(mandate.kind, mandate.kind)),
+        ("Token format", mandate.token_format),
         ("Signed by", mandate.signed_by or NOT_SPECIFIED),
         ("Signed", when(mandate.signed_at)),
         ("Spending cap", amount(mandate.cap)),
@@ -240,10 +241,8 @@ def _agent(facts: Facts) -> list[tuple[str, str]]:
         ("Agent id", agent.id),
         ("Name", agent.name),
         ("Registered public key (Ed25519, base64)", agent.public_key),
-        (
-            "Signed requests verified",
-            f"{agent.verified_requests} (RFC 9421 HTTP message signatures)",
-        ),
+        ("Signature scheme", agent.signature_scheme),
+        ("Signed requests verified", str(agent.verified_requests)),
     ]
 
 

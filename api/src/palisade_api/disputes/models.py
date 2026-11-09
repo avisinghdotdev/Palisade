@@ -79,6 +79,9 @@ class EvidenceRecord(Base):
     notes: Mapped[str] = mapped_column(Text)
     # The facts record Claude was given, kept for audit; None when the notes were not Claude's.
     prompt: Mapped[str | None] = mapped_column(Text)
+    # Claude's answer sentence by sentence: the record lines each cites, and whether it was
+    # kept or dropped by the grounding check; None when the notes were not Claude's.
+    grounding: Mapped[list[dict[str, JsonValue]] | None] = mapped_column(JSONB)
     document_name: Mapped[str] = mapped_column(Text)
     document: Mapped[bytes] = mapped_column(LargeBinary)
     document_sha256: Mapped[str] = mapped_column(Text)

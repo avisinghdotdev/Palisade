@@ -6,6 +6,7 @@ import type {
   DisputeResponse,
   Evidence,
   EvidenceDocumentData,
+  Statement,
 } from "@/api/client";
 
 import {
@@ -83,6 +84,47 @@ function RecordDocument({
   );
 }
 
+/** How a kept sentence is backed, or why a dropped one was removed, in one short line. */
+function groundingNote(statement: Statement): string {
+  if (!statement.kept) return `Dropped: ${statement.dropped_because ?? ""}`;
+  if (statement.sources.length === 0) return "Plain prose, nothing to check";
+  return `Rests on ${statement.sources.join(", ")}`;
+}
+
+/** Claude's notes sentence by sentence: the record lines each cites, and what the check removed. */
+function Grounding({ statements }: { statements: Statement[] }) {
+  const kept = statements.filter((statement) => statement.kept).length;
+  const dropped = statements.length - kept;
+
+  return (
+    <details className="mt-3 rounded-lg border bg-muted/30 px-3 py-2">
+      <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+        {kept} of {statements.length} sentences kept, each checked against the
+        facts record
+        {dropped > 0 && `; ${String(dropped)} dropped before filing`}
+      </summary>
+      <ol className="mt-2 grid gap-2 text-sm">
+        {statements.map((statement) => (
+          <li key={statement.text}>
+            <p
+              className={
+                statement.kept
+                  ? ""
+                  : "text-muted-foreground line-through decoration-destructive/60"
+              }
+            >
+              {statement.text}
+            </p>
+            <p className="mt-0.5 font-mono text-[11px] break-all text-muted-foreground">
+              {groundingNote(statement)}
+            </p>
+          </li>
+        ))}
+      </ol>
+    </details>
+  );
+}
+
 function EvidenceCard({
   disputeId,
   evidence,
@@ -117,9 +159,14 @@ function EvidenceCard({
       <p className="mt-1 text-xs text-muted-foreground">
         {evidence.prompt === null
           ? "Notes written by Palisade from the shipment record."
-          : "Notes written by Claude from the facts record, and nothing else."}
+          : evidence.grounding === null
+            ? "Notes written by Claude from the facts record, and nothing else."
+            : "Notes written by Claude from the facts record, and nothing else; every sentence is checked against it."}
       </p>
       <p className="mt-2 text-sm whitespace-pre-line">{evidence.notes}</p>
+      {evidence.grounding !== null && (
+        <Grounding statements={evidence.grounding} />
+      )}
       <RecordDocument disputeId={disputeId} evidence={evidence} />
       {evidence.request_id !== null && (
         <p className="mt-3 font-mono text-xs break-all text-muted-foreground">

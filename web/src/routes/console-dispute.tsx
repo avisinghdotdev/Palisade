@@ -29,6 +29,7 @@ import { CopyButton } from "@/components/copy-button";
 import { DetailField } from "@/components/detail-field";
 import { DisputeResponsePanel } from "@/components/dispute-response";
 import { DisputeStatus } from "@/components/dispute-status";
+import { MandateVerifyLink } from "@/components/mandate-verify-link";
 import { Timeline } from "@/components/timeline";
 import { Button } from "@/components/ui/button";
 import {
@@ -198,6 +199,11 @@ function OrderPanel({ dispute }: { dispute: Dispute }) {
           />
         )}
       </dl>
+      {dispute.mandate_id !== null && (
+        <div className="mt-3">
+          <MandateVerifyLink mandateId={dispute.mandate_id} />
+        </div>
+      )}
     </aside>
   );
 }

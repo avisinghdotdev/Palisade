@@ -28,6 +28,9 @@ from palisade_api.mandates.service import (
     Mandates,
     UnknownMandate,
 )
+from palisade_api.mandates.tokens import JWKS_PATH, MandateTokens
+from palisade_api.mandates.verification import MandateVerification, Verifier
+from palisade_api.paypal.client import PayPalError
 
 router = APIRouter(tags=["mandates"])
 
@@ -47,6 +50,16 @@ def mandates(request: Request) -> Mandates:
 
 def passkeys(request: Request) -> Passkeys:
     service: Passkeys = request.state.passkeys  # pyright: ignore[reportAny]
+    return service
+
+
+def verifier(request: Request) -> Verifier:
+    service: Verifier = request.state.verifier  # pyright: ignore[reportAny]
+    return service
+
+
+def tokens(request: Request) -> MandateTokens:
+    service: MandateTokens = request.state.mandate_tokens  # pyright: ignore[reportAny]
     return service
 
 
@@ -101,6 +114,36 @@ async def get_mandate(
         return await service.get(mandate_id)
     except UnknownMandate as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
+
+
+@router.get("/api/mandates/{mandate_id}/verify", operation_id="verify_mandate")
+async def verify_mandate(
+    mandate_id: MandateId, service: Annotated[Verifier, Depends(verifier)]
+) -> MandateVerification:
+    """Check the mandate with public information alone.
+
+    The checks: the issuer's signature on the token, the claims against the record, the hash
+    the buyer signed, the buyer's proof over it, the policy it was signed under, and the custom
+    id PayPal holds on every order it paid for. The issuer key is at `/.well-known/jwks.json`.
+    A 502 means PayPal would not show an order.
+    """
+    try:
+        return await service.verify(mandate_id)
+    except UnknownMandate as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
+    except PayPalError as error:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            f"PayPal could not show an order under this mandate: {', '.join(error.issues)}",
+        ) from error
+
+
+@router.get(JWKS_PATH, operation_id="jwks")
+async def jwks(
+    service: Annotated[MandateTokens, Depends(tokens)],
+) -> dict[str, JsonValue]:
+    """The issuer's public key as a JWK Set; a mandate token's `kid` names the key in it."""
+    return service.jwks()
 
 
 @router.post(

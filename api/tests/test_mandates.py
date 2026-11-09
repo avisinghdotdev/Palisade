@@ -16,7 +16,13 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from fido2 import cbor
 from fido2.utils import sha256
-from order_fixtures import CAPTURE_PATH, CREATE_PATH, cart_with_shoes, created_order
+from order_fixtures import (
+    CAPTURE_PATH,
+    CREATE_PATH,
+    ORDER_PATH,
+    cart_with_shoes,
+    created_order,
+)
 from paypal_stub import PayPalStub, json_answer
 from pydantic import BaseModel, JsonValue
 from soft_webauthn import SoftWebauthnDevice
@@ -32,8 +38,11 @@ from palisade_api.mandates.models import MandateRecord
 from palisade_api.mandates.passkeys import Passkeys
 from palisade_api.mandates.router import mandates as mandates_dependency
 from palisade_api.mandates.router import passkeys as passkeys_dependency
+from palisade_api.mandates.router import tokens as tokens_dependency
+from palisade_api.mandates.router import verifier as verifier_dependency
 from palisade_api.mandates.service import IssuedMandate, Mandate, Mandates
-from palisade_api.mandates.tokens import MandateTokens
+from palisade_api.mandates.tokens import JWKS_PATH, MandateTokens, header
+from palisade_api.mandates.verification import MandateVerification, Verifier
 from palisade_api.orders.calls import PayPalCalls
 from palisade_api.orders.checkout import Checkout
 from palisade_api.orders.models import OrderRecord
@@ -52,6 +61,7 @@ pytestmark = pytest.mark.anyio
 OTHER_AGENT = "other-agent"
 # The authenticator data's "user verified" flag: the device checked the person, not only a touch.
 USER_VERIFIED = 0x04
+DEMO_SIGNER_SEED = seed()
 
 
 class Unit(BaseModel):
@@ -123,15 +133,20 @@ def shop(
     tokens: MandateTokens,
 ) -> Iterator[Mandates]:
     http = paypal.client()
-    calls = PayPalCalls(sessions, PayPalClient(http, PayPalAuth(http, "id", "secret")))
+    paypal_client = PayPalClient(http, PayPalAuth(http, "id", "secret"))
+    calls = PayPalCalls(sessions, paypal_client)
     agents = Agents(sessions)
     orders = Orders(sessions)
     policies = Policies(sessions)
     activities = Activities(sessions)
     passkeys = Passkeys(sessions, ORIGIN)
     mandates = Mandates(
-        sessions, tokens, passkeys, policies, activities, seed(), ORIGIN
+        sessions, tokens, passkeys, policies, activities, DEMO_SIGNER_SEED, ORIGIN
     )
+    app.dependency_overrides[verifier_dependency] = lambda: Verifier(
+        sessions, tokens, passkeys, policies, paypal_client, DEMO_SIGNER_SEED
+    )
+    app.dependency_overrides[tokens_dependency] = lambda: tokens
     app.dependency_overrides[carts_dependency] = lambda: Carts(sessions)
     app.dependency_overrides[checkout_dependency] = lambda: Checkout(
         sessions, calls, orders, policies, mandates, activities, source="api"
@@ -285,6 +300,134 @@ async def test_a_cart_mandate_is_asked_signed_and_spent(
     public = await client.get(f"/api/mandates/{asked.id}")
     assert public.json()["spent"]["value"] == "500.00"
     assert asked.key not in public.text
+
+
+async def verification(
+    client: httpx2.AsyncClient, mandate_id: UUID
+) -> MandateVerification:
+    response = await client.get(f"/api/mandates/{mandate_id}/verify")
+    assert response.status_code == 200, response.text
+    return MandateVerification.model_validate_json(response.content)
+
+
+@pytest.mark.usefixtures("shop")
+async def test_a_mandate_is_verifiable_with_the_published_key_and_paypals_order(
+    client: httpx2.AsyncClient,
+    wallet_id: UUID,
+    agent_seed: str,
+    sessions: async_sessionmaker[AsyncSession],
+    paypal: PayPalStub,
+    tokens: MandateTokens,
+) -> None:
+    await allow(sessions)
+    cart_id, asked = await cart_mandate(client, wallet_id, agent_seed)
+
+    unsigned = await verification(client, asked.id)
+    assert (unsigned.verified, unsigned.buyer_proof.verified) == (False, False)
+    assert unsigned.buyer_proof.detail == "The buyer has not signed this mandate."
+    assert unsigned.token.signature_valid is True
+    assert unsigned.token.claims_match_record is True
+    assert unsigned.payments == []
+
+    await approve(client, asked)
+    paid = await checkout(client, agent_seed, cart_id, asked)
+    assert paid.status_code == 200, paid.text
+    order = Order.model_validate_json(paid.content)
+    paypal.on(
+        "GET",
+        ORDER_PATH,
+        json_answer(
+            200,
+            {"id": "PP-ORDER-1", "purchase_units": [{"custom_id": order.custom_id}]},
+        ),
+    )
+
+    checked = await verification(client, asked.id)
+
+    assert checked.verified is True
+    assert (checked.status, checked.token_hash.matches, checked.policy.in_force) == (
+        "signed",
+        True,
+        True,
+    )
+    assert checked.buyer_proof.signed_by == "demo_signer"
+    assert checked.buyer_proof.method is not None
+    assert "simulated" in checked.buyer_proof.method.lower() or "stands in" in (
+        checked.buyer_proof.method
+    )
+    [payment] = checked.payments
+    assert (payment.order_number, payment.custom_id_at_paypal, payment.matches) == (
+        order.number,
+        order.custom_id,
+        True,
+    )
+    assert checked.policy.rules is not None
+    assert checked.policy.rules.allowed_agents == [AGENT]
+    # The token names the key the JWKS publishes.
+    published = await client.get(JWKS_PATH)
+    assert published.status_code == 200
+    [key] = published.json()["keys"]
+    assert (key["kty"], key["crv"], key["alg"], key["kid"]) == (
+        "OKP",
+        "Ed25519",
+        "EdDSA",
+        tokens.kid,
+    )
+    assert "d" not in key
+    assert checked.token.kid == tokens.kid
+    async with sessions() as session:
+        record = await session.get_one(MandateRecord, asked.id)
+        assert header(record.token)["kid"] == tokens.kid
+    assert checked.jwks_path == JWKS_PATH
+    assert (await client.get(f"/api/mandates/{uuid7()}/verify")).status_code == 404
+
+
+@pytest.mark.usefixtures("shop")
+async def test_verification_fails_on_a_foreign_token_and_a_payment_that_names_another(
+    client: httpx2.AsyncClient,
+    wallet_id: UUID,
+    agent_seed: str,
+    sessions: async_sessionmaker[AsyncSession],
+    paypal: PayPalStub,
+) -> None:
+    await allow(sessions)
+    cart_id, asked = await cart_mandate(client, wallet_id, agent_seed)
+    await approve(client, asked)
+    assert (await checkout(client, agent_seed, cart_id, asked)).status_code == 200
+    paypal.on(
+        "GET",
+        ORDER_PATH,
+        json_answer(
+            200,
+            {
+                "id": "PP-ORDER-1",
+                "purchase_units": [{"custom_id": "someone-else:0000"}],
+            },
+        ),
+    )
+
+    mismatched = await verification(client, asked.id)
+
+    assert mismatched.verified is False
+    [payment] = mismatched.payments
+    assert (payment.matches, payment.custom_id_at_paypal) == (
+        False,
+        "someone-else:0000",
+    )
+    assert mismatched.token.signature_valid is True
+    # A token another issuer signed, swapped into the record: the hash the buyer signed no
+    # longer matches it, and the published key does not verify it.
+    stranger = MandateTokens(seed())
+    async with sessions.begin() as session:
+        record = await session.get_one(MandateRecord, asked.id)
+        record.token = stranger.issue("cart", {"jti": str(asked.id)})
+
+    foreign = await verification(client, asked.id)
+
+    assert (foreign.verified, foreign.token.signature_valid) == (False, False)
+    assert foreign.token.claims is None
+    assert foreign.token_hash.matches is False
+    assert foreign.token.kid == stranger.kid
 
 
 @pytest.mark.usefixtures("shop")
@@ -812,6 +955,7 @@ async def test_a_passkey_registers_for_its_wallet_and_signs_a_mandate(
     own_wallet_id: UUID,
     agent_seed: str,
     sessions: async_sessionmaker[AsyncSession],
+    paypal: PayPalStub,
 ) -> None:
     await allow(sessions)
     device = VerifyingDevice()
@@ -825,6 +969,27 @@ async def test_a_passkey_registers_for_its_wallet_and_signs_a_mandate(
     assert approved.json()["signed_by"] == "passkey"
     paid = await checkout(client, agent_seed, cart_id, asked)
     assert paid.status_code == 200, paid.text
+    paypal.on(
+        "GET",
+        ORDER_PATH,
+        json_answer(
+            200,
+            {
+                "id": "PP-ORDER-1",
+                "purchase_units": [
+                    {"custom_id": Order.model_validate_json(paid.content).custom_id}
+                ],
+            },
+        ),
+    )
+    # The stored assertion verifies again, read-only, against the passkey on record.
+    checked = await verification(client, asked.id)
+    assert (checked.buyer_proof.signed_by, checked.buyer_proof.verified) == (
+        "passkey",
+        True,
+    )
+    assert checked.buyer_proof.method is not None
+    assert "WebAuthn" in checked.buyer_proof.method
 
 
 @pytest.mark.usefixtures("shop")
