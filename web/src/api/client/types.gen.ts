@@ -76,6 +76,72 @@ export type Agent = {
 };
 
 /**
+ * AgentAnswer
+ *
+ * Claude's answer: its content blocks as sent, for the browser to show and to replay.
+ */
+export type AgentAnswer = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Model
+     */
+    model: string;
+    /**
+     * Stop Reason
+     */
+    stop_reason: string | null;
+    /**
+     * Content
+     */
+    content: Array<{
+        [key: string]: JsonValue;
+    }>;
+    usage: AgentUsage;
+};
+
+/**
+ * AgentTurn
+ *
+ * One turn as Studio's adapter hands it over.
+ */
+export type AgentTurn = {
+    /**
+     * Instructions
+     */
+    instructions?: string;
+    /**
+     * Input
+     */
+    input: Array<UserTurn | AssistantTurn | AssistantCalls | ToolResults>;
+    /**
+     * Tools
+     */
+    tools?: Array<ToolSchema>;
+    /**
+     * Tool Choice
+     */
+    tool_choice?: string;
+    format?: JsonFormat | null;
+};
+
+/**
+ * AgentUsage
+ */
+export type AgentUsage = {
+    /**
+     * Input Tokens
+     */
+    input_tokens: number;
+    /**
+     * Output Tokens
+     */
+    output_tokens: number;
+};
+
+/**
  * AlertRefund
  *
  * Where a pre-chargeback alert's refund stands, as the dispute page shows it.
@@ -140,6 +206,44 @@ export type Approval = {
     credential?: {
         [key: string]: JsonValue;
     } | null;
+};
+
+/**
+ * AssistantCalls
+ *
+ * An earlier answer the browser no longer holds whole: its words and the tools it called.
+ */
+export type AssistantCalls = {
+    /**
+     * Type
+     */
+    type: 'assistant_calls';
+    /**
+     * Text
+     */
+    text: string;
+    /**
+     * Calls
+     */
+    calls: Array<ToolCall>;
+};
+
+/**
+ * AssistantTurn
+ *
+ * Claude's own answer from an earlier turn, replayed block for block, thinking included.
+ */
+export type AssistantTurn = {
+    /**
+     * Type
+     */
+    type: 'assistant';
+    /**
+     * Content
+     */
+    content: Array<{
+        [key: string]: JsonValue;
+    }>;
 };
 
 /**
@@ -655,6 +759,10 @@ export type Evidence = {
      */
     prompt: string | null;
     /**
+     * Grounding
+     */
+    grounding: Array<Statement> | null;
+    /**
      * Document Name
      */
     document_name: string;
@@ -706,6 +814,26 @@ export type HttpValidationError = {
      * Detail
      */
     detail?: Array<ValidationError>;
+};
+
+/**
+ * HashCheck
+ *
+ * The hash the buyer signed and the payment names, recomputed from the token.
+ */
+export type HashCheck = {
+    /**
+     * Recorded
+     */
+    recorded: string;
+    /**
+     * Computed
+     */
+    computed: string;
+    /**
+     * Matches
+     */
+    matches: boolean;
 };
 
 /**
@@ -793,6 +921,22 @@ export type IssuedMandate = {
      * Consent Path
      */
     consent_path: string;
+};
+
+/**
+ * JsonFormat
+ */
+export type JsonFormat = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Schema
+     */
+    schema: {
+        [key: string]: JsonValue;
+    };
 };
 
 export type JsonValue = unknown;
@@ -1048,6 +1192,44 @@ export type MandateSummary = {
      * Token Hash
      */
     token_hash: string;
+};
+
+/**
+ * MandateVerification
+ */
+export type MandateVerification = {
+    /**
+     * Mandate Id
+     */
+    mandate_id: string;
+    /**
+     * Kind
+     */
+    kind: 'intent' | 'cart';
+    /**
+     * Status
+     */
+    status: 'pending' | 'signed' | 'declined' | 'expired';
+    token: TokenCheck;
+    token_hash: HashCheck;
+    buyer_proof: ProofCheck;
+    policy: PolicyCheck;
+    /**
+     * Payments
+     */
+    payments: Array<PaymentCheck>;
+    /**
+     * Verified
+     */
+    verified: boolean;
+    /**
+     * Jwks Path
+     */
+    jwks_path: string;
+    /**
+     * Checked At
+     */
+    checked_at: string;
 };
 
 /**
@@ -1395,6 +1577,34 @@ export type PayPalHealth = {
 };
 
 /**
+ * PaymentCheck
+ *
+ * One PayPal order the mandate paid for, and the custom id PayPal holds on it now.
+ */
+export type PaymentCheck = {
+    /**
+     * Order Number
+     */
+    order_number: string;
+    /**
+     * Paypal Order Id
+     */
+    paypal_order_id: string;
+    /**
+     * Custom Id Sent
+     */
+    custom_id_sent: string;
+    /**
+     * Custom Id At Paypal
+     */
+    custom_id_at_paypal: string | null;
+    /**
+     * Matches
+     */
+    matches: boolean;
+};
+
+/**
  * PhotoCredit
  *
  * Who took the product photo and where it lives on Unsplash.
@@ -1427,6 +1637,23 @@ export type Policy = {
      * Dispute Filing
      */
     dispute_filing: 'review' | 'automatic';
+};
+
+/**
+ * PolicyCheck
+ *
+ * The merchant's rules the mandate was signed under, by their hash.
+ */
+export type PolicyCheck = {
+    /**
+     * Hash
+     */
+    hash: string;
+    /**
+     * In Force
+     */
+    in_force: boolean;
+    rules: Rules | null;
 };
 
 /**
@@ -1504,6 +1731,32 @@ export type ProductsAttachment = {
      * Products
      */
     products: Array<ProductCard>;
+};
+
+/**
+ * ProofCheck
+ */
+export type ProofCheck = {
+    /**
+     * Signed By
+     */
+    signed_by: 'passkey' | 'demo_signer' | null;
+    /**
+     * Signed At
+     */
+    signed_at: string | null;
+    /**
+     * Method
+     */
+    method: string | null;
+    /**
+     * Verified
+     */
+    verified: boolean;
+    /**
+     * Detail
+     */
+    detail: string | null;
 };
 
 /**
@@ -1672,6 +1925,30 @@ export type ShopperMessage = {
 };
 
 /**
+ * Statement
+ *
+ * One sentence of the narrative and the record lines it rests on.
+ */
+export type Statement = {
+    /**
+     * Text
+     */
+    text: string;
+    /**
+     * Sources
+     */
+    sources: Array<string>;
+    /**
+     * Kept
+     */
+    kept: boolean;
+    /**
+     * Dropped Because
+     */
+    dropped_because: string | null;
+};
+
+/**
  * TextEvent
  */
 export type TextEvent = {
@@ -1683,6 +1960,50 @@ export type TextEvent = {
      * Text
      */
     text: string;
+};
+
+/**
+ * TokenCheck
+ *
+ * The issuer's signature, and whether the token says what the record says.
+ */
+export type TokenCheck = {
+    /**
+     * Signature Valid
+     */
+    signature_valid: boolean;
+    /**
+     * Kid
+     */
+    kid: string | null;
+    /**
+     * Claims
+     */
+    claims: {
+        [key: string]: JsonValue;
+    } | null;
+    /**
+     * Claims Match Record
+     */
+    claims_match_record: boolean;
+};
+
+/**
+ * ToolCall
+ */
+export type ToolCall = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Arguments
+     */
+    arguments: string;
 };
 
 /**
@@ -1707,6 +2028,20 @@ export type ToolCallEvent = {
     input: {
         [key: string]: JsonValue;
     };
+};
+
+/**
+ * ToolResult
+ */
+export type ToolResult = {
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Output
+     */
+    output: string;
 };
 
 /**
@@ -1748,6 +2083,40 @@ export type ToolResultEvent = {
 };
 
 /**
+ * ToolResults
+ */
+export type ToolResults = {
+    /**
+     * Type
+     */
+    type: 'tool_results';
+    /**
+     * Results
+     */
+    results: Array<ToolResult>;
+};
+
+/**
+ * ToolSchema
+ */
+export type ToolSchema = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Parameters
+     */
+    parameters: {
+        [key: string]: JsonValue;
+    };
+};
+
+/**
  * Turn
  */
 export type Turn = {
@@ -1786,6 +2155,20 @@ export type TurnRequest = {
      * Mandate Id
      */
     mandate_id?: string | null;
+};
+
+/**
+ * UserTurn
+ */
+export type UserTurn = {
+    /**
+     * Type
+     */
+    type: 'user';
+    /**
+     * Text
+     */
+    text: string;
 };
 
 /**
@@ -2921,6 +3304,56 @@ export type MandateResponses = {
 
 export type MandateResponse = MandateResponses[keyof MandateResponses];
 
+export type VerifyMandateData = {
+    body?: never;
+    path: {
+        /**
+         * Mandate Id
+         */
+        mandate_id: string;
+    };
+    query?: never;
+    url: '/api/mandates/{mandate_id}/verify';
+};
+
+export type VerifyMandateErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type VerifyMandateError = VerifyMandateErrors[keyof VerifyMandateErrors];
+
+export type VerifyMandateResponses = {
+    /**
+     * Successful Response
+     */
+    200: MandateVerification;
+};
+
+export type VerifyMandateResponse = VerifyMandateResponses[keyof VerifyMandateResponses];
+
+export type JwksData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/.well-known/jwks.json';
+};
+
+export type JwksResponses = {
+    /**
+     * Response Jwks
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: JsonValue;
+    };
+};
+
+export type JwksResponse = JwksResponses[keyof JwksResponses];
+
 export type StartPasskeyRegistrationData = {
     body?: never;
     path: {
@@ -3186,6 +3619,31 @@ export type AnalyticsResponses = {
 };
 
 export type AnalyticsResponse = AnalyticsResponses[keyof AnalyticsResponses];
+
+export type AnalyticsAgentTurnData = {
+    body: AgentTurn;
+    path?: never;
+    query?: never;
+    url: '/api/analytics/agent/turn';
+};
+
+export type AnalyticsAgentTurnErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AnalyticsAgentTurnError = AnalyticsAgentTurnErrors[keyof AnalyticsAgentTurnErrors];
+
+export type AnalyticsAgentTurnResponses = {
+    /**
+     * Successful Response
+     */
+    200: AgentAnswer;
+};
+
+export type AnalyticsAgentTurnResponse = AnalyticsAgentTurnResponses[keyof AnalyticsAgentTurnResponses];
 
 export type AssistantAccessData = {
     body?: never;

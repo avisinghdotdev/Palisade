@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Palisade API",
-    "version": "0.21.1"
+    "version": "0.22.0"
   },
   "paths": {
     "/api/paypal/health": {
@@ -1439,6 +1439,76 @@
         }
       }
     },
+    "/api/mandates/{mandate_id}/verify": {
+      "get": {
+        "tags": [
+          "mandates"
+        ],
+        "summary": "Verify Mandate",
+        "description": "Check the mandate with public information alone.\n\nThe checks: the issuer's signature on the token, the claims against the record, the hash\nthe buyer signed, the buyer's proof over it, the policy it was signed under, and the custom\nid PayPal holds on every order it paid for. The issuer key is at `/.well-known/jwks.json`.\nA 502 means PayPal would not show an order.",
+        "operationId": "verify_mandate",
+        "parameters": [
+          {
+            "name": "mandate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Mandate Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MandateVerification"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/.well-known/jwks.json": {
+      "get": {
+        "tags": [
+          "mandates"
+        ],
+        "summary": "Jwks",
+        "description": "The issuer's public key as a JWK Set; a mandate token's `kid` names the key in it.",
+        "operationId": "jwks",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "$ref": "#/components/schemas/JsonValue"
+                  },
+                  "type": "object",
+                  "title": "Response Jwks"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/mandates/{mandate_id}/passkey-registration": {
       "post": {
         "tags": [
@@ -1899,6 +1969,53 @@
         }
       }
     },
+    "/api/analytics/agent/turn": {
+      "post": {
+        "tags": [
+          "analytics"
+        ],
+        "summary": "Agent Turn",
+        "description": "One turn of a dashboard agent on Claude, for AG Studio's agent loop in the browser.\n\nThe browser sends the conversation, the agent's instructions, and its tools; the answer is\nClaude's content blocks, which the browser shows, runs the tool calls of, and sends back on\nthe next turn. A 401 means the chat access code is wrong; a 502 means Claude did not answer.",
+        "operationId": "analytics_agent_turn",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentTurn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentAnswer"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ChatKey": []
+          }
+        ]
+      }
+    },
     "/api/assistant/access": {
       "get": {
         "tags": [
@@ -2311,6 +2428,137 @@
         ],
         "title": "Agent"
       },
+      "AgentAnswer": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "stop_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Reason"
+          },
+          "content": {
+            "items": {
+              "additionalProperties": {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Content"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/AgentUsage"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "model",
+          "stop_reason",
+          "content",
+          "usage"
+        ],
+        "title": "AgentAnswer",
+        "description": "Claude's answer: its content blocks as sent, for the browser to show and to replay."
+      },
+      "AgentTurn": {
+        "properties": {
+          "instructions": {
+            "type": "string",
+            "title": "Instructions",
+            "default": ""
+          },
+          "input": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/UserTurn"
+                },
+                {
+                  "$ref": "#/components/schemas/AssistantTurn"
+                },
+                {
+                  "$ref": "#/components/schemas/AssistantCalls"
+                },
+                {
+                  "$ref": "#/components/schemas/ToolResults"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "type",
+                "mapping": {
+                  "assistant": "#/components/schemas/AssistantTurn",
+                  "assistant_calls": "#/components/schemas/AssistantCalls",
+                  "tool_results": "#/components/schemas/ToolResults",
+                  "user": "#/components/schemas/UserTurn"
+                }
+              }
+            },
+            "type": "array",
+            "title": "Input"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/ToolSchema"
+            },
+            "type": "array",
+            "title": "Tools",
+            "default": []
+          },
+          "tool_choice": {
+            "type": "string",
+            "title": "Tool Choice",
+            "default": "auto"
+          },
+          "format": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JsonFormat"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "input"
+        ],
+        "title": "AgentTurn",
+        "description": "One turn as Studio's adapter hands it over."
+      },
+      "AgentUsage": {
+        "properties": {
+          "input_tokens": {
+            "type": "integer",
+            "title": "Input Tokens"
+          },
+          "output_tokens": {
+            "type": "integer",
+            "title": "Output Tokens"
+          }
+        },
+        "type": "object",
+        "required": [
+          "input_tokens",
+          "output_tokens"
+        ],
+        "title": "AgentUsage"
+      },
       "AlertRefund": {
         "properties": {
           "filing_mode": {
@@ -2440,6 +2688,60 @@
           "signed_by"
         ],
         "title": "Approval"
+      },
+      "AssistantCalls": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "assistant_calls",
+            "title": "Type"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "calls": {
+            "items": {
+              "$ref": "#/components/schemas/ToolCall"
+            },
+            "type": "array",
+            "title": "Calls"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "text",
+          "calls"
+        ],
+        "title": "AssistantCalls",
+        "description": "An earlier answer the browser no longer holds whole: its words and the tools it called."
+      },
+      "AssistantTurn": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "assistant",
+            "title": "Type"
+          },
+          "content": {
+            "items": {
+              "additionalProperties": {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Content"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "content"
+        ],
+        "title": "AssistantTurn",
+        "description": "Claude's own answer from an earlier turn, replayed block for block, thinking included."
       },
       "Cart": {
         "properties": {
@@ -3466,6 +3768,20 @@
             ],
             "title": "Prompt"
           },
+          "grounding": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/Statement"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grounding"
+          },
           "document_name": {
             "type": "string",
             "title": "Document Name"
@@ -3542,6 +3858,7 @@
           "evidence_type",
           "notes",
           "prompt",
+          "grounding",
           "document_name",
           "document_sha256",
           "status",
@@ -3583,6 +3900,30 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "HashCheck": {
+        "properties": {
+          "recorded": {
+            "type": "string",
+            "title": "Recorded"
+          },
+          "computed": {
+            "type": "string",
+            "title": "Computed"
+          },
+          "matches": {
+            "type": "boolean",
+            "title": "Matches"
+          }
+        },
+        "type": "object",
+        "required": [
+          "recorded",
+          "computed",
+          "matches"
+        ],
+        "title": "HashCheck",
+        "description": "The hash the buyer signed and the payment names, recomputed from the token."
       },
       "Health": {
         "properties": {
@@ -3736,6 +4077,27 @@
         ],
         "title": "IssuedMandate",
         "description": "A new mandate as its requesting agent gets it: the one time its key is handed out.\n\n`consent_path` carries the key after `#`, so browsers send it to no server and no Referer."
+      },
+      "JsonFormat": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "schema": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Schema"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "schema"
+        ],
+        "title": "JsonFormat"
       },
       "JsonValue": {},
       "LineChange": {
@@ -4201,6 +4563,80 @@
         ],
         "title": "MandateSummary",
         "description": "The mandate as an order carries it, decoded for the console."
+      },
+      "MandateVerification": {
+        "properties": {
+          "mandate_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Mandate Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "intent",
+              "cart"
+            ],
+            "title": "Kind"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "signed",
+              "declined",
+              "expired"
+            ],
+            "title": "Status"
+          },
+          "token": {
+            "$ref": "#/components/schemas/TokenCheck"
+          },
+          "token_hash": {
+            "$ref": "#/components/schemas/HashCheck"
+          },
+          "buyer_proof": {
+            "$ref": "#/components/schemas/ProofCheck"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/PolicyCheck"
+          },
+          "payments": {
+            "items": {
+              "$ref": "#/components/schemas/PaymentCheck"
+            },
+            "type": "array",
+            "title": "Payments"
+          },
+          "verified": {
+            "type": "boolean",
+            "title": "Verified"
+          },
+          "jwks_path": {
+            "type": "string",
+            "title": "Jwks Path"
+          },
+          "checked_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Checked At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mandate_id",
+          "kind",
+          "status",
+          "token",
+          "token_hash",
+          "buyer_proof",
+          "policy",
+          "payments",
+          "verified",
+          "jwks_path",
+          "checked_at"
+        ],
+        "title": "MandateVerification"
       },
       "Money": {
         "properties": {
@@ -4930,6 +5366,47 @@
         ],
         "title": "PayPalHealth"
       },
+      "PaymentCheck": {
+        "properties": {
+          "order_number": {
+            "type": "string",
+            "title": "Order Number"
+          },
+          "paypal_order_id": {
+            "type": "string",
+            "title": "Paypal Order Id"
+          },
+          "custom_id_sent": {
+            "type": "string",
+            "title": "Custom Id Sent"
+          },
+          "custom_id_at_paypal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Id At Paypal"
+          },
+          "matches": {
+            "type": "boolean",
+            "title": "Matches"
+          }
+        },
+        "type": "object",
+        "required": [
+          "order_number",
+          "paypal_order_id",
+          "custom_id_sent",
+          "custom_id_at_paypal",
+          "matches"
+        ],
+        "title": "PaymentCheck",
+        "description": "One PayPal order the mandate paid for, and the custom id PayPal holds on it now."
+      },
       "PhotoCredit": {
         "properties": {
           "by": {
@@ -4979,6 +5456,36 @@
           "dispute_filing"
         ],
         "title": "Policy"
+      },
+      "PolicyCheck": {
+        "properties": {
+          "hash": {
+            "type": "string",
+            "title": "Hash"
+          },
+          "in_force": {
+            "type": "boolean",
+            "title": "In Force"
+          },
+          "rules": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Rules"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "hash",
+          "in_force",
+          "rules"
+        ],
+        "title": "PolicyCheck",
+        "description": "The merchant's rules the mandate was signed under, by their hash."
       },
       "Product": {
         "properties": {
@@ -5092,6 +5599,72 @@
           "products"
         ],
         "title": "ProductsAttachment"
+      },
+      "ProofCheck": {
+        "properties": {
+          "signed_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "passkey",
+                  "demo_signer"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signed By"
+          },
+          "signed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signed At"
+          },
+          "method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Method"
+          },
+          "verified": {
+            "type": "boolean",
+            "title": "Verified"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "signed_by",
+          "signed_at",
+          "method",
+          "verified",
+          "detail"
+        ],
+        "title": "ProofCheck"
       },
       "QueuedJob": {
         "properties": {
@@ -5341,6 +5914,45 @@
         ],
         "title": "ShopperMessage"
       },
+      "Statement": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sources"
+          },
+          "kept": {
+            "type": "boolean",
+            "title": "Kept"
+          },
+          "dropped_because": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dropped Because"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text",
+          "sources",
+          "kept",
+          "dropped_because"
+        ],
+        "title": "Statement",
+        "description": "One sentence of the narrative and the record lines it rests on."
+      },
       "TextEvent": {
         "properties": {
           "type": {
@@ -5359,6 +5971,75 @@
           "text"
         ],
         "title": "TextEvent"
+      },
+      "TokenCheck": {
+        "properties": {
+          "signature_valid": {
+            "type": "boolean",
+            "title": "Signature Valid"
+          },
+          "kid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kid"
+          },
+          "claims": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Claims"
+          },
+          "claims_match_record": {
+            "type": "boolean",
+            "title": "Claims Match Record"
+          }
+        },
+        "type": "object",
+        "required": [
+          "signature_valid",
+          "kid",
+          "claims",
+          "claims_match_record"
+        ],
+        "title": "TokenCheck",
+        "description": "The issuer's signature, and whether the token says what the record says."
+      },
+      "ToolCall": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "arguments": {
+            "type": "string",
+            "title": "Arguments"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "arguments"
+        ],
+        "title": "ToolCall"
       },
       "ToolCallEvent": {
         "properties": {
@@ -5401,6 +6082,24 @@
           "input"
         ],
         "title": "ToolCallEvent"
+      },
+      "ToolResult": {
+        "properties": {
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "output": {
+            "type": "string",
+            "title": "Output"
+          }
+        },
+        "type": "object",
+        "required": [
+          "call_id",
+          "output"
+        ],
+        "title": "ToolResult"
       },
       "ToolResultEvent": {
         "properties": {
@@ -5479,6 +6178,54 @@
           "attachment"
         ],
         "title": "ToolResultEvent"
+      },
+      "ToolResults": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "tool_results",
+            "title": "Type"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/ToolResult"
+            },
+            "type": "array",
+            "title": "Results"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "results"
+        ],
+        "title": "ToolResults"
+      },
+      "ToolSchema": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "parameters": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Parameters"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "parameters"
+        ],
+        "title": "ToolSchema"
       },
       "Turn": {
         "properties": {
@@ -5570,6 +6317,25 @@
           "text"
         ],
         "title": "TurnRequest"
+      },
+      "UserTurn": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "user",
+            "title": "Type"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "text"
+        ],
+        "title": "UserTurn"
       },
       "ValidationError": {
         "properties": {

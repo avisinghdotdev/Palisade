@@ -21,6 +21,7 @@ from palisade_api.agents.client import AgentHttp, AgentSigner
 from palisade_api.agents.registry import Agents, BuiltinAgent
 from palisade_api.agents.signatures import AgentSignatures
 from palisade_api.analytics import router as analytics_router
+from palisade_api.analytics.agent import StudioAgent
 from palisade_api.analytics.service import Analytics
 from palisade_api.assistant import router as assistant_router
 from palisade_api.assistant.access import ChatAccess
@@ -43,6 +44,7 @@ from palisade_api.mandates import router as mandates_router
 from palisade_api.mandates.passkeys import Passkeys
 from palisade_api.mandates.service import Mandates
 from palisade_api.mandates.tokens import MandateTokens
+from palisade_api.mandates.verification import Verifier
 from palisade_api.mcp.server import MOUNT, MountedServer, asgi, build
 from palisade_api.migrate import upgrade_to_head
 from palisade_api.orders import router as orders_router
@@ -100,9 +102,12 @@ class State(TypedDict):
     simulator: Simulator
     agent_signatures: AgentSignatures
     mandates: Mandates
+    mandate_tokens: MandateTokens
+    verifier: Verifier
     passkeys: Passkeys
     activities: Activities
     analytics: Analytics
+    studio_agent: StudioAgent
     chat_access: ChatAccess
     assistant: Assistant
     mcp_app: ASGIApp
@@ -171,14 +176,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[State]:
             orders = Orders(sessions)
             calls = PayPalCalls(sessions, paypal_client)
             passkeys = Passkeys(sessions, settings.public_origin)
+            tokens = MandateTokens(settings.mandate_issuer_key.get_secret_value())
             mandates = Mandates(
                 sessions,
-                MandateTokens(settings.mandate_issuer_key.get_secret_value()),
+                tokens,
                 passkeys,
                 policies,
                 activities,
                 settings.demo_signer_key.get_secret_value(),
                 settings.public_origin,
+            )
+            verifier = Verifier(
+                sessions,
+                tokens,
+                passkeys,
+                policies,
+                paypal_client,
+                settings.demo_signer_key.get_secret_value(),
             )
             responses = Responses(
                 sessions,
@@ -307,9 +321,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[State]:
                     sessions, agents, activities, settings.public_origin
                 ),
                 mandates=mandates,
+                mandate_tokens=tokens,
+                verifier=verifier,
                 passkeys=passkeys,
                 activities=activities,
                 analytics=Analytics(sessions, settings.ag_studio_license_key),
+                studio_agent=StudioAgent(claude),
                 chat_access=ChatAccess(settings.chat_access_key.get_secret_value()),
                 assistant=assistant,
                 mcp_app=mcp_app,

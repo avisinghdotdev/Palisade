@@ -7,7 +7,6 @@ from uuid import UUID
 import httpx2
 import psycopg
 import pytest
-from anthropic import AsyncAnthropic
 from dispute_fixtures import (
     DISPUTES_PATH,
     TRACKING,
@@ -22,11 +21,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from palisade_api.activity.router import activities as activities_dependency
 from palisade_api.activity.store import Activities
-from palisade_api.disputes.narrative import (
-    NOTES_LIMIT,
-    ClaudeNarrator,
-    NarrativeUnavailable,
-)
+from palisade_api.disputes.facts import Facts
+from palisade_api.disputes.grounding import Statement
+from palisade_api.disputes.narrative import Narrative, prompt
 from palisade_api.disputes.responses import (
     DisputeResponse,
     NotYetOffered,
@@ -62,25 +59,32 @@ class EvidenceInput(BaseModel):
     evidences: list[EvidenceItem]
 
 
-class ClaudeMessage(BaseModel):
-    role: str
-    content: str
-
-
-class ClaudeRequest(BaseModel):
-    messages: list[ClaudeMessage]
-
-
 @final
 class ScriptedNarrator:
-    """Answers every prompt with the same notes and keeps the prompts it was given."""
+    """Answers every record with the same notes and keeps the prompts it was given."""
 
     def __init__(self) -> None:
         self.prompts: list[str] = []
 
-    async def write(self, prompt: str) -> str:
-        self.prompts.append(prompt)
-        return NOTES
+    async def write(self, facts: Facts) -> Narrative:
+        self.prompts.append(prompt(facts))
+        return Narrative(
+            text=NOTES,
+            statements=[
+                Statement(
+                    text=NOTES,
+                    sources=["mandate.id", "mandate.signed_by"],
+                    kept=True,
+                    dropped_because=None,
+                ),
+                Statement(
+                    text="The order shipped on 2026-10-30.",
+                    sources=[],
+                    kept=False,
+                    dropped_because="2026-10-30 is not in the record",
+                ),
+            ],
+        )
 
 
 @pytest.fixture
@@ -226,11 +230,19 @@ async def test_an_agent_dispute_is_prepared_for_review_then_escalated_and_filed(
     )
     assert evidence.notes == NOTES
     assert evidence.prompt is not None
-    assert f"<custom_id>{order.custom_id}</custom_id>" in evidence.prompt
+    assert f"\norder.custom_id: {order.custom_id}\n" in evidence.prompt
     # The signer in words a reviewer reads, never the stored code.
-    assert "<signed_by>The demo signer, a simulated stand-in" in evidence.prompt
+    assert (
+        "\nmandate.signed_by: The demo signer, a simulated stand-in" in evidence.prompt
+    )
     assert "demo_signer" not in evidence.prompt
     assert narrator.prompts == [evidence.prompt]
+    assert evidence.grounding is not None
+    assert [(row.kept, row.sources) for row in evidence.grounding] == [
+        (True, ["mandate.id", "mandate.signed_by"]),
+        (False, []),
+    ]
+    assert evidence.grounding[1].dropped_because is not None
     document = await client.get(
         f"/api/disputes/{dispute_id}/evidence/{evidence.id}/document"
     )
@@ -293,6 +305,12 @@ async def test_an_agent_dispute_is_prepared_for_review_then_escalated_and_filed(
         "dispute_updated",
         "evidence_filed",
     ]
+    [prepared_row] = [
+        row
+        for row in await Activities(sessions).for_dispute(dispute_id)
+        if row.kind == "evidence_prepared"
+    ]
+    assert prepared_row.details["dropped"] == 1
     shown = Order.model_validate_json(
         (await client.get(f"/api/orders/{order.number}")).content
     )
@@ -378,6 +396,7 @@ async def test_automatic_mode_files_the_tracking_on_a_shipped_inquiry_from_the_j
         "PROOF_OF_FULFILLMENT",
         None,
     )
+    assert row.grounding is None
     assert TRACKING in row.notes
     assert narrator.prompts == []
     [sent] = paypal.sent("POST", f"{detail}/provide-evidence")
@@ -641,54 +660,3 @@ async def test_evidence_paypal_refuses_is_marked_refused(
         "evidence_prepared",
         "evidence_refused",
     ]
-
-
-def claude_answer(text: str, stop_reason: str = "end_turn") -> httpx2.Response:
-    return httpx2.Response(
-        200,
-        json={
-            "id": "msg_test",
-            "type": "message",
-            "role": "assistant",
-            "model": "claude-opus-5-5",
-            "content": [{"type": "text", "text": text}],
-            "stop_reason": stop_reason,
-            "stop_sequence": None,
-            "usage": {"input_tokens": 900, "output_tokens": 500},
-        },
-    )
-
-
-async def test_claude_is_asked_again_once_when_the_notes_run_long() -> None:
-    answers = [claude_answer("x" * (NOTES_LIMIT + 100)), claude_answer("y" * 1500)]
-    requests: list[httpx2.Request] = []
-
-    def handle(request: httpx2.Request) -> httpx2.Response:
-        requests.append(request)
-        return answers.pop(0)
-
-    async with AsyncAnthropic(
-        api_key="test",
-        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handle)),
-    ) as client:
-        notes = await ClaudeNarrator(client).write("Write the response.")
-
-    assert notes == "y" * 1500
-    [first, second] = requests
-    assert len(ClaudeRequest.model_validate_json(first.content).messages) == 1
-    retry = ClaudeRequest.model_validate_json(second.content).messages
-    assert [message.role for message in retry] == ["user", "assistant", "user"]
-    assert str(NOTES_LIMIT) in retry[2].content
-
-
-async def test_a_refusal_leaves_the_notes_unwritten() -> None:
-    async with AsyncAnthropic(
-        api_key="test",
-        http_client=httpx2.AsyncClient(
-            transport=httpx2.MockTransport(
-                lambda _request: claude_answer("", "refusal")
-            )
-        ),
-    ) as client:
-        with pytest.raises(NarrativeUnavailable):
-            _ = await ClaudeNarrator(client).write("Write the response.")

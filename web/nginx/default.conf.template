@@ -97,6 +97,15 @@ server {
     proxy_read_timeout 300s;
   }
 
+  # The analytics dashboard's agents: one Claude turn per request, which can run past the
+  # default minute, with a conversation and tool results in the body. Behind the access code,
+  # like the chat, so no request limit.
+  location = /api/analytics/agent/turn {
+    client_max_body_size 1m;
+    proxy_pass http://${API_UPSTREAM};
+    proxy_read_timeout 300s;
+  }
+
   # MCP clients post here; a reply may stream as server-sent events, and a tool call that
   # pays takes a few seconds.
   location = /api/shop/mcp {
@@ -106,6 +115,12 @@ server {
     proxy_pass http://${API_UPSTREAM};
     proxy_buffering off;
     proxy_read_timeout 300s;
+  }
+
+  # The mandate issuer's public key, which the API serves at the path verifiers look for.
+  location = /.well-known/jwks.json {
+    limit_req zone=api_reads burst=100 nodelay;
+    proxy_pass http://${API_UPSTREAM};
   }
 
   # The platform's health probes, every few seconds, so they stay out of the access log.

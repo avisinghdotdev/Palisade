@@ -13,3 +13,7 @@ minimumReleaseAgeExclude:
   - ag-stack@36.3.0
   - ag-studio@3.1.0
   - ag-studio-react@3.1.0
+# The API client generator pins js-yaml 4.2.0, which carries three High advisories (GHSA-52cp-r559-cp3m,
+# GHSA-5p4m-2wfm-xmqj, GHSA-2883-xcg3-v3hh); 4.3.2 fixes them and keeps the same API.
+overrides:
+  "@hey-api/json-schema-ref-parser>js-yaml": "4.3.2"

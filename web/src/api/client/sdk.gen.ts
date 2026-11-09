@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { ActivityData, ActivityErrors, ActivityResponses, AgentsData, AgentsResponses, AnalyticsData, AnalyticsResponses, ApproveMandateData, ApproveMandateErrors, ApproveMandateResponses, AssistantAccessData, AssistantAccessResponses, CartData, CartErrors, CartResponses, CheckoutData, CheckoutErrors, CheckoutResponses, ConfirmWalletLinkData, ConfirmWalletLinkErrors, ConfirmWalletLinkResponses, ConversationData, ConversationErrors, ConversationResponses, CreateCartData, CreateCartErrors, CreateCartResponses, CreateConversationData, CreateConversationErrors, CreateConversationResponses, CreateMandateData, CreateMandateErrors, CreateMandateResponses, DeclineMandateData, DeclineMandateErrors, DeclineMandateResponses, DemoWalletData, DemoWalletResponses, DisputeActivityData, DisputeActivityErrors, DisputeActivityResponses, DisputeAlertData, DisputeAlertErrors, DisputeAlertResponses, DisputeData, DisputeErrors, DisputeResponseData, DisputeResponseErrors, DisputeResponseResponses, DisputeResponses, DisputesData, DisputesErrors, DisputesResponses, EvidenceDocumentData, EvidenceDocumentErrors, EvidenceDocumentResponses, FileEvidenceData, FileEvidenceErrors, FileEvidenceResponses, HealthData, HealthResponses, MandateData, MandateErrors, MandatePasskeyOptionsData, MandatePasskeyOptionsErrors, MandatePasskeyOptionsResponses, MandateResponses, OrderActivityData, OrderActivityErrors, OrderActivityResponses, OrderData, OrderErrors, OrderResponses, OrdersData, OrdersResponses, PaypalHealthData, PaypalHealthResponses, PaypalWebhookData, PaypalWebhookErrors, PaypalWebhookResponses, PolicyData, PolicyResponses, PrepareResponseData, PrepareResponseErrors, PrepareResponseResponses, ProductData, ProductErrors, ProductResponses, ProductsData, ProductsResponses, ReadyData, ReadyErrors, ReadyResponses, RefundAlertData, RefundAlertErrors, RefundAlertResponses, RegisterPasskeyData, RegisterPasskeyErrors, RegisterPasskeyResponses, ReplayWebhookEventData, ReplayWebhookEventErrors, ReplayWebhookEventResponses, SendMessageData, SendMessageErrors, SendMessageResponse, SendMessageResponses, SetCartLineData, SetCartLineErrors, SetCartLineResponses, SetCartWalletData, SetCartWalletErrors, SetCartWalletResponses, SetDisputeFilingData, SetDisputeFilingErrors, SetDisputeFilingResponses, ShipOrderData, ShipOrderErrors, ShipOrderResponses, SimulateAdjudicationData, SimulateAdjudicationErrors, SimulateAdjudicationResponses, SimulateDisputeData, SimulateDisputeErrors, SimulateDisputeResponses, StartPasskeyRegistrationData, StartPasskeyRegistrationErrors, StartPasskeyRegistrationResponses, StartWalletLinkData, StartWalletLinkResponses, SyncDisputeData, SyncDisputeErrors, SyncDisputeResponses, WalletData, WalletErrors, WalletResponses, WebhookEventsData, WebhookEventsResponses } from './types.gen';
+import type { ActivityData, ActivityErrors, ActivityResponses, AgentsData, AgentsResponses, AnalyticsAgentTurnData, AnalyticsAgentTurnErrors, AnalyticsAgentTurnResponses, AnalyticsData, AnalyticsResponses, ApproveMandateData, ApproveMandateErrors, ApproveMandateResponses, AssistantAccessData, AssistantAccessResponses, CartData, CartErrors, CartResponses, CheckoutData, CheckoutErrors, CheckoutResponses, ConfirmWalletLinkData, ConfirmWalletLinkErrors, ConfirmWalletLinkResponses, ConversationData, ConversationErrors, ConversationResponses, CreateCartData, CreateCartErrors, CreateCartResponses, CreateConversationData, CreateConversationErrors, CreateConversationResponses, CreateMandateData, CreateMandateErrors, CreateMandateResponses, DeclineMandateData, DeclineMandateErrors, DeclineMandateResponses, DemoWalletData, DemoWalletResponses, DisputeActivityData, DisputeActivityErrors, DisputeActivityResponses, DisputeAlertData, DisputeAlertErrors, DisputeAlertResponses, DisputeData, DisputeErrors, DisputeResponseData, DisputeResponseErrors, DisputeResponseResponses, DisputeResponses, DisputesData, DisputesErrors, DisputesResponses, EvidenceDocumentData, EvidenceDocumentErrors, EvidenceDocumentResponses, FileEvidenceData, FileEvidenceErrors, FileEvidenceResponses, HealthData, HealthResponses, JwksData, JwksResponses, MandateData, MandateErrors, MandatePasskeyOptionsData, MandatePasskeyOptionsErrors, MandatePasskeyOptionsResponses, MandateResponses, OrderActivityData, OrderActivityErrors, OrderActivityResponses, OrderData, OrderErrors, OrderResponses, OrdersData, OrdersResponses, PaypalHealthData, PaypalHealthResponses, PaypalWebhookData, PaypalWebhookErrors, PaypalWebhookResponses, PolicyData, PolicyResponses, PrepareResponseData, PrepareResponseErrors, PrepareResponseResponses, ProductData, ProductErrors, ProductResponses, ProductsData, ProductsResponses, ReadyData, ReadyErrors, ReadyResponses, RefundAlertData, RefundAlertErrors, RefundAlertResponses, RegisterPasskeyData, RegisterPasskeyErrors, RegisterPasskeyResponses, ReplayWebhookEventData, ReplayWebhookEventErrors, ReplayWebhookEventResponses, SendMessageData, SendMessageErrors, SendMessageResponse, SendMessageResponses, SetCartLineData, SetCartLineErrors, SetCartLineResponses, SetCartWalletData, SetCartWalletErrors, SetCartWalletResponses, SetDisputeFilingData, SetDisputeFilingErrors, SetDisputeFilingResponses, ShipOrderData, ShipOrderErrors, ShipOrderResponses, SimulateAdjudicationData, SimulateAdjudicationErrors, SimulateAdjudicationResponses, SimulateDisputeData, SimulateDisputeErrors, SimulateDisputeResponses, StartPasskeyRegistrationData, StartPasskeyRegistrationErrors, StartPasskeyRegistrationResponses, StartWalletLinkData, StartWalletLinkResponses, SyncDisputeData, SyncDisputeErrors, SyncDisputeResponses, VerifyMandateData, VerifyMandateErrors, VerifyMandateResponses, WalletData, WalletErrors, WalletResponses, WebhookEventsData, WebhookEventsResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -337,6 +337,25 @@ export const createMandate = <ThrowOnError extends boolean = false>(options: Opt
 export const mandate = <ThrowOnError extends boolean = false>(options: Options<MandateData, ThrowOnError>): RequestResult<MandateResponses, MandateErrors, ThrowOnError> => (options.client ?? client).get<MandateResponses, MandateErrors, ThrowOnError>({ url: '/api/mandates/{mandate_id}', ...options });
 
 /**
+ * Verify Mandate
+ *
+ * Check the mandate with public information alone.
+ *
+ * The checks: the issuer's signature on the token, the claims against the record, the hash
+ * the buyer signed, the buyer's proof over it, the policy it was signed under, and the custom
+ * id PayPal holds on every order it paid for. The issuer key is at `/.well-known/jwks.json`.
+ * A 502 means PayPal would not show an order.
+ */
+export const verifyMandate = <ThrowOnError extends boolean = false>(options: Options<VerifyMandateData, ThrowOnError>): RequestResult<VerifyMandateResponses, VerifyMandateErrors, ThrowOnError> => (options.client ?? client).get<VerifyMandateResponses, VerifyMandateErrors, ThrowOnError>({ url: '/api/mandates/{mandate_id}/verify', ...options });
+
+/**
+ * Jwks
+ *
+ * The issuer's public key as a JWK Set; a mandate token's `kid` names the key in it.
+ */
+export const jwks = <ThrowOnError extends boolean = false>(options?: Options<JwksData, ThrowOnError>): RequestResult<JwksResponses, unknown, ThrowOnError> => (options?.client ?? client).get<JwksResponses, unknown, ThrowOnError>({ url: '/.well-known/jwks.json', ...options });
+
+/**
  * Start Passkey Registration
  *
  * A challenge and the options for a new passkey that signs for this mandate's wallet.
@@ -430,6 +449,25 @@ export const disputeActivity = <ThrowOnError extends boolean = false>(options: O
  * Every paid order and every dispute as rows, with the licence key of the dashboard that charts them.
  */
 export const analytics = <ThrowOnError extends boolean = false>(options?: Options<AnalyticsData, ThrowOnError>): RequestResult<AnalyticsResponses, unknown, ThrowOnError> => (options?.client ?? client).get<AnalyticsResponses, unknown, ThrowOnError>({ url: '/api/analytics', ...options });
+
+/**
+ * Agent Turn
+ *
+ * One turn of a dashboard agent on Claude, for AG Studio's agent loop in the browser.
+ *
+ * The browser sends the conversation, the agent's instructions, and its tools; the answer is
+ * Claude's content blocks, which the browser shows, runs the tool calls of, and sends back on
+ * the next turn. A 401 means the chat access code is wrong; a 502 means Claude did not answer.
+ */
+export const analyticsAgentTurn = <ThrowOnError extends boolean = false>(options: Options<AnalyticsAgentTurnData, ThrowOnError>): RequestResult<AnalyticsAgentTurnResponses, AnalyticsAgentTurnErrors, ThrowOnError> => (options.client ?? client).post<AnalyticsAgentTurnResponses, AnalyticsAgentTurnErrors, ThrowOnError>({
+    security: [{ name: 'X-Chat-Key', type: 'apiKey' }],
+    url: '/api/analytics/agent/turn',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 /**
  * Access
