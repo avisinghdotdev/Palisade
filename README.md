@@ -224,7 +224,7 @@ Written for a reviewer who compares entries. Each claim points at the code or th
 - Production practices throughout: typed end to end (basedpyright recommended mode, TypeScript
   strict, a generated API client), structured logs with request, order, mandate, and dispute ids,
   secrets in Azure Key Vault, rate limits at nginx, a content security policy, health and readiness
-  endpoints, migrations applied at startup under a lock, 286 API tests that run inside a rolled-back
+  endpoints, migrations applied at startup under a lock, 287 API tests that run inside a rolled-back
   transaction, 16 web tests.
 
 ### Where to check each claim
