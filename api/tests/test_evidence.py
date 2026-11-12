@@ -201,6 +201,8 @@ async def test_an_agent_dispute_is_prepared_for_review_then_escalated_and_filed(
     client: httpx2.AsyncClient,
     wallet_id: UUID,
 ) -> None:
+    # The database is shared, so it holds whatever filing mode the deployed shop is in.
+    await filing_mode(client, "review")
     order = await paid_order(sessions, wallet_id, agent=True)
     dispute_id = new_dispute_id()
     detail = f"{DISPUTES_PATH}/{dispute_id}"

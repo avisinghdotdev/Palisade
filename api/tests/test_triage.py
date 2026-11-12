@@ -323,7 +323,12 @@ async def an_inquiry(
     disputes: Disputes,
     wallet_id: UUID,
 ) -> str:
-    """A person's unshipped order under an inquiry that waits for the seller; the dispute id."""
+    """A person's unshipped order under an inquiry that waits for the seller; the dispute id.
+
+    The filing mode is set to review first: the database is shared, so it holds whatever mode
+    the deployed shop is in.
+    """
+    _ = await Policies(sessions).set_dispute_filing("review")
     order = await paid_order(sessions, wallet_id)
     dispute_id = new_dispute_id()
     paypal.on(
@@ -617,3 +622,55 @@ def test_the_simulators_complaint_is_marked_and_read_first() -> None:
         *record.dispute.buyer_messages,
     ]
     assert with_complaint(record, None) is record
+
+
+async def test_a_persons_order_is_not_left_to_the_merchant_before_paypal_asks(
+    sessions: async_sessionmaker[AsyncSession],
+    paypal: PayPalStub,
+    disputes: Disputes,
+    responses: Responses,
+    reader: ScriptedReader,
+    wallet_id: UUID,
+) -> None:
+    """PayPal asks the seller minutes after an inquiry opens; the triage gets its turn first.
+
+    Seen live on 2026-11-12: the dispute was flagged for the merchant the second it opened and
+    triaged four minutes later.
+    """
+    order = await paid_order(sessions, wallet_id)
+    dispute_id = new_dispute_id()
+    detail = f"{DISPUTES_PATH}/{dispute_id}"
+    paypal.on(
+        "GET",
+        detail,
+        json_answer(200, paypal_dispute(dispute_id, order.capture_id, status="OPEN")),
+    )
+    _ = await disputes.sync(dispute_id, "webhook")
+
+    opened = await responses.respond(dispute_id)
+
+    assert opened.action == "wait"
+    assert "dispute_flagged" not in await kinds(sessions, dispute_id)
+    assert reader.asked == []
+
+    # PayPal asks and offers nothing but evidence the store does not hold: now it is the merchant's.
+    paypal.on(
+        "GET",
+        detail,
+        json_answer(
+            200,
+            paypal_dispute(
+                dispute_id,
+                order.capture_id,
+                updated="2026-11-01T08:07:00.000Z",
+                status="WAITING_FOR_SELLER_RESPONSE",
+                actions=("provide_evidence",),
+            ),
+        ),
+    )
+    _ = await disputes.sync(dispute_id, "webhook")
+
+    asked = await responses.respond(dispute_id)
+
+    assert asked.action == "merchant"
+    assert (await kinds(sessions, dispute_id))[-1] == "dispute_flagged"
