@@ -1,4 +1,4 @@
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, Code, Play } from "lucide-react";
 import { Link } from "react-router";
 
 import { AboutDialog } from "@/components/about-dialog";
@@ -160,6 +160,52 @@ export default function Home() {
               </CardHeader>
             </Card>
           </Link>
+          <a
+            className="rounded-xl focus-visible:outline-2"
+            href="https://youtu.be/LMFKdE9MDio"
+            rel="noreferrer"
+            target="_blank"
+          >
+            <Card className="h-full transition-colors hover:bg-accent/60">
+              <CardHeader>
+                <div className="flex items-start justify-between">
+                  <Play aria-hidden className="size-6 text-primary" />
+                  <ArrowUpRight
+                    aria-hidden
+                    className="size-4 text-muted-foreground"
+                  />
+                </div>
+                <CardTitle>Demo Video</CardTitle>
+                <CardDescription>
+                  The whole loop in three minutes, on YouTube.
+                  <span className="sr-only"> (opens in a new tab)</span>
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          </a>
+          <a
+            className="rounded-xl focus-visible:outline-2"
+            href="https://github.com/avisinghdotdev/Palisade"
+            rel="noreferrer"
+            target="_blank"
+          >
+            <Card className="h-full transition-colors hover:bg-accent/60">
+              <CardHeader>
+                <div className="flex items-start justify-between">
+                  <Code aria-hidden className="size-6 text-primary" />
+                  <ArrowUpRight
+                    aria-hidden
+                    className="size-4 text-muted-foreground"
+                  />
+                </div>
+                <CardTitle>Source Code</CardTitle>
+                <CardDescription>
+                  The repository on GitHub, with setup steps.
+                  <span className="sr-only"> (opens in a new tab)</span>
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          </a>
         </div>
       </main>
     </div>

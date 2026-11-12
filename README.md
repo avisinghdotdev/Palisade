@@ -7,6 +7,7 @@ evidence and a narrative written by Claude.
 
 It is an entry to the PayPal AI Hackathon 2026. Everything runs against the PayPal sandbox.
 
+- Demo video (three minutes): https://youtu.be/LMFKdE9MDio
 - Hosted demo: https://palisade.avisingh.dev (the store at `/shop`, the merchant console at
   `/console`, an MCP endpoint for agents at `/api/shop/mcp`)
 - Stack: FastAPI, React Router, PostgreSQL, Claude (Anthropic API), PayPal REST APIs, AG Grid and
