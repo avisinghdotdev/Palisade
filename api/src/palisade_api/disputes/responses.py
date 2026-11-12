@@ -299,7 +299,19 @@ def triage_step(live: PayPalDispute, loaded: Loaded) -> tuple[FilingAction, str]
             + " the record and picks one: fight with the record, write to the buyer, offer"
             + " a partial refund, or refund in full.",
         )
-    if last is None or last.action == "fight":
+    if last is None:
+        # PayPal asks the seller minutes after an inquiry opens. Until it does, an order with
+        # nothing to file is not yet the merchant's alone to answer: the triage comes first.
+        if live.status != "WAITING_FOR_SELLER_RESPONSE" and isinstance(
+            plan(loaded.order, live.reason), MerchantOnly
+        ):
+            return (
+                "wait",
+                "PayPal is not waiting for the seller on this inquiry now. When it is, Claude"
+                + " reads the buyer's complaint and the record and picks the answer.",
+            )
+        return None
+    if last.action == "fight":
         return None
     if last.status == "refused":
         return (
