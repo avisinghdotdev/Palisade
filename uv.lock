@@ -961,7 +961,7 @@ wheels = [
 
 [[package]]
 name = "palisade"
-version = "0.23.1"
+version = "0.23.2"
 source = { virtual = "." }
 
 [package.dev-dependencies]
@@ -996,7 +996,7 @@ dev = [
 
 [[package]]
 name = "palisade-api"
-version = "0.23.1"
+version = "0.23.2"
 source = { editable = "api" }
 dependencies = [
     { name = "alembic" },
