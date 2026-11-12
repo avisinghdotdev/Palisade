@@ -238,7 +238,10 @@ module webApp 'br/public:avm/res/app/container-app:0.23.0' = {
       }
     ]
     revisionSuffix: revisionSuffix
-    scaleSettings: { minReplicas: 0, maxReplicas: 2 }
+    // One replica always: a replica scaled to zero kept the first visitor waiting 17 to 48
+    // seconds for a cold start (measured 2026-10-25). Back to 0 after judging ends, a few days
+    // past 2026-12-15.
+    scaleSettings: { minReplicas: 1, maxReplicas: 2 }
     containers: [
       {
         name: 'web'
