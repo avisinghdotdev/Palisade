@@ -2,6 +2,7 @@ import {
   CellStyleModule,
   ClientSideRowModelModule,
   ModuleRegistry,
+  RowAutoHeightModule,
   RowStyleModule,
   themeQuartz,
   TooltipModule,
@@ -14,6 +15,7 @@ import {
 ModuleRegistry.registerModules([
   CellStyleModule,
   ClientSideRowModelModule,
+  RowAutoHeightModule,
   RowStyleModule,
   TooltipModule,
   ...(import.meta.env.DEV ? [ValidationModule] : []),

@@ -37,6 +37,7 @@ from palisade_api.disputes.narrative import ClaudeNarrator
 from palisade_api.disputes.responses import Responses
 from palisade_api.disputes.service import Disputes
 from palisade_api.disputes.tasks import cancel_refund, enqueue_response, schedule_refund
+from palisade_api.disputes.triage import ClaudeReader, Triage
 from palisade_api.jobs import run_worker
 from palisade_api.logging import RequestLogMiddleware
 from palisade_api.maintenance import Housekeeping
@@ -51,6 +52,7 @@ from palisade_api.orders import router as orders_router
 from palisade_api.orders import webhooks as order_webhooks
 from palisade_api.orders.calls import PayPalCalls
 from palisade_api.orders.checkout import Checkout
+from palisade_api.orders.ledger import Ledger
 from palisade_api.orders.repair import Repairs
 from palisade_api.orders.shipping import Shipments
 from palisade_api.orders.store import Orders
@@ -94,6 +96,7 @@ class State(TypedDict):
     checkout: Checkout
     orders: Orders
     shipments: Shipments
+    ledger: Ledger
     disputes: Disputes
     responses: Responses
     alerts: Alerts
@@ -201,6 +204,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[State]:
                 policies,
                 activities,
                 ClaudeNarrator(claude),
+                Triage(sessions, calls, activities, ClaudeReader(claude)),
                 enqueue_response,
             )
             alerts = Alerts(
@@ -309,6 +313,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[State]:
                 ),
                 orders=orders,
                 shipments=Shipments(sessions, calls, orders),
+                ledger=Ledger(sessions, paypal_client),
                 disputes=disputes,
                 responses=responses,
                 alerts=alerts,
@@ -350,6 +355,7 @@ app.include_router(webhooks.router)
 app.include_router(shop.router)
 app.include_router(wallets_router.router)
 app.include_router(orders_router.router)
+app.include_router(orders_router.ledger_router)
 app.include_router(disputes_router.router)
 app.include_router(policy_router.router)
 app.include_router(agents_router.router)

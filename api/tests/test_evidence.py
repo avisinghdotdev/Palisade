@@ -10,19 +10,21 @@ import pytest
 from dispute_fixtures import (
     DISPUTES_PATH,
     TRACKING,
+    ScriptedReader,
     new_dispute_id,
     paid_order,
     paypal_dispute,
 )
 from paypal_stub import PayPalStub, json_answer
 from pydantic import BaseModel, JsonValue
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from palisade_api.activity.router import activities as activities_dependency
 from palisade_api.activity.store import Activities
 from palisade_api.disputes.facts import Facts
 from palisade_api.disputes.grounding import Statement
+from palisade_api.disputes.models import DisputeRecord, TriageRecord
 from palisade_api.disputes.narrative import Narrative, prompt
 from palisade_api.disputes.responses import (
     DisputeResponse,
@@ -33,6 +35,7 @@ from palisade_api.disputes.router import disputes as disputes_dependency
 from palisade_api.disputes.router import responses as responses_dependency
 from palisade_api.disputes.service import Disputes
 from palisade_api.disputes.tasks import enqueue_response
+from palisade_api.disputes.triage import Triage
 from palisade_api.main import app
 from palisade_api.orders.calls import PayPalCalls
 from palisade_api.orders.router import orders as orders_dependency
@@ -129,13 +132,16 @@ def responses(
         return len(enqueued)
 
     http = paypal.client()
+    calls = PayPalCalls(sessions, PayPalClient(http, PayPalAuth(http, "id", "secret")))
     service = Responses(
         sessions,
-        PayPalCalls(sessions, PayPalClient(http, PayPalAuth(http, "id", "secret"))),
+        calls,
         disputes,
         Policies(sessions),
         Activities(sessions),
         narrator,
+        # Every inquiry here is fought; the triage's other answers have their own tests.
+        Triage(sessions, calls, Activities(sessions), ScriptedReader()),
         enqueue,
     )
     disputes.on_change(service.schedule)
@@ -209,18 +215,28 @@ async def test_an_agent_dispute_is_prepared_for_review_then_escalated_and_filed(
     _ = await disputes.sync(dispute_id, "webhook")
     _ = await disputes.sync(dispute_id, "webhook")
     assert enqueued == [dispute_id]
+    async with sessions.begin() as session:
+        stored = await session.get_one(DisputeRecord, dispute_id)
+        stored.sandbox_complaint = "I never ordered these."
 
     before = DisputeResponse.model_validate_json(
         (await client.get(f"/api/disputes/{dispute_id}/response")).content
     )
     assert (before.filing_mode, before.action, before.evidence) == (
         "review",
-        "prepare",
+        "triage",
         [],
     )
 
     prepared = DisputeResponse.model_validate_json(
         (await client.post(f"/api/disputes/{dispute_id}/response")).content
+    )
+    # The picked fight needs no call to PayPal, so the notes and the record follow at once.
+    [picked] = prepared.triage
+    assert (picked.action, picked.status, picked.options) == (
+        "fight",
+        "done",
+        ["fight", "message", "accept"],
     )
     [evidence] = prepared.evidence
     assert (prepared.action, evidence.status, evidence.evidence_type) == (
@@ -237,6 +253,15 @@ async def test_an_agent_dispute_is_prepared_for_review_then_escalated_and_filed(
     )
     assert "demo_signer" not in evidence.prompt
     assert narrator.prompts == [evidence.prompt]
+    # The simulator's complaint is the triage's to read. PayPal does not hold it, so the notes
+    # filed with PayPal are written without it.
+    assert "I never ordered these." not in evidence.prompt
+    async with sessions() as session:
+        asked = await session.scalar(
+            select(TriageRecord.prompt).where(TriageRecord.dispute_id == dispute_id)
+        )
+    assert asked is not None
+    assert "[Sandbox simulator] I never ordered these." in asked
     assert evidence.grounding is not None
     assert [(row.kept, row.sources) for row in evidence.grounding] == [
         (True, ["mandate.id", "mandate.signed_by"]),
@@ -300,6 +325,7 @@ async def test_an_agent_dispute_is_prepared_for_review_then_escalated_and_filed(
     assert sent.headers["PayPal-Request-Id"] == row.request_id
     assert await kinds(sessions, dispute_id) == [
         "dispute_opened",
+        "triage_decided",
         "evidence_prepared",
         "dispute_escalated",
         "dispute_updated",
@@ -508,14 +534,16 @@ async def test_a_change_while_a_job_waits_is_stored_and_queued_on_the_real_queue
     aborted the transaction around it, so PayPal's newer state was never stored.
     """
     http = paypal.client()
+    calls = PayPalCalls(sessions, PayPalClient(http, PayPalAuth(http, "id", "secret")))
     disputes.on_change(
         Responses(
             sessions,
-            PayPalCalls(sessions, PayPalClient(http, PayPalAuth(http, "id", "secret"))),
+            calls,
             disputes,
             Policies(sessions),
             Activities(sessions),
             narrator,
+            Triage(sessions, calls, Activities(sessions), ScriptedReader()),
             enqueue_response,
         ).schedule
     )

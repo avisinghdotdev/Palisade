@@ -37,15 +37,28 @@ from palisade_api.disputes.facts import (
     OrderFacts,
     PolicyFacts,
     ShipmentFacts,
+    with_complaint,
 )
 from palisade_api.disputes.grounding import Statement
-from palisade_api.disputes.models import DisputeRecord, EvidenceRecord
+from palisade_api.disputes.models import DisputeRecord, EvidenceRecord, TriageRecord
 from palisade_api.disputes.narrative import Narrator, prompt
 from palisade_api.disputes.service import (
     Change,
     Disputes,
     PayPalDispute,
+    SyncSource,
     UnknownDispute,
+)
+from palisade_api.disputes.triage import (
+    MAX_MESSAGES,
+    Triage,
+    TriageAction,
+    TriageDecision,
+    decision,
+    due,
+    messages_sent,
+    options,
+    rounds,
 )
 from palisade_api.jobs import driver_connection
 from palisade_api.mandates.service import LINES
@@ -61,6 +74,8 @@ EvidenceType = Literal["PROOF_OF_FULFILLMENT", "OTHER"]
 # "prepared" awaits the merchant; "approved" files as soon as PayPal takes it.
 EvidenceStatus = Literal["prepared", "approved", "filed", "refused"]
 # What the console can do about the dispute now:
+#   triage: an inquiry waits for the seller, and Claude has yet to pick the answer
+#   confirm: the picked answer waits for the merchant, or for PayPal to take it
 #   prepare: PayPal asks the seller and nothing is prepared yet
 #   review: evidence is prepared and waits for the merchant to send it
 #   escalate: approved evidence needs the claim stage, which PayPal offers to open
@@ -69,7 +84,15 @@ EvidenceStatus = Literal["prepared", "approved", "filed", "refused"]
 #   merchant: nothing Palisade holds answers this dispute
 #   done: filed in this stage, or decided
 FilingAction = Literal[
-    "prepare", "review", "escalate", "file", "wait", "merchant", "done"
+    "triage",
+    "confirm",
+    "prepare",
+    "review",
+    "escalate",
+    "file",
+    "wait",
+    "merchant",
+    "done",
 ]
 ESCALATE_NOTE = (
     "The order was placed by a shopping agent under a mandate the buyer signed; the record is"
@@ -80,6 +103,23 @@ ESCALATE_NOTE = (
 Enqueue = Callable[[psycopg.AsyncConnection[object], str], Awaitable[int]]
 STATEMENTS = TypeAdapter(list[Statement])
 GROUNDING = TypeAdapter(list[dict[str, JsonValue]])
+# Why a picked answer waits for the merchant, and what follows once it went, by the answer.
+PROPOSED: dict[str, str] = {
+    "message": "Claude picked a message to the buyer. Sending it posts it in PayPal's thread"
+    + " on this dispute.",
+    "offer": "Claude picked a partial refund offer. An offer moves money once the buyer"
+    + " accepts it, so it waits for the merchant.",
+    "accept": "Claude picked a full refund. A refund moves money and cannot be undone, so it"
+    + " waits for the merchant.",
+}
+SENT: dict[str, str] = {
+    "message": f"Palisade wrote to the buyer (at most {MAX_MESSAGES} messages on one"
+    + " dispute). When the buyer writes back, Claude reads the dispute again.",
+    "offer": "Palisade offered the buyer a partial refund. PayPal refunds that amount and"
+    + " closes the dispute if the buyer accepts.",
+    "accept": "Palisade accepted the claim. PayPal refunds the buyer in full and closes the"
+    + " dispute.",
+}
 
 logger = structlog.stdlib.get_logger(__name__)
 
@@ -109,6 +149,8 @@ class DisputeResponse(BaseModel):
     filing_mode: FilingMode
     action: FilingAction
     why: str
+    # The inquiry's rounds of triage, oldest first.
+    triage: list[TriageDecision]
     evidence: list[Evidence]
 
 
@@ -140,6 +182,7 @@ class Loaded:
     record: DisputeRecord
     order: OrderRecord
     evidence: list[EvidenceRecord]
+    triage: list[TriageRecord]
     mode: FilingMode
     # Whether Palisade already escalated the inquiry: PayPal's object lags the call by minutes.
     escalated: bool
@@ -157,10 +200,14 @@ class NothingToFile(Exception):
 
 
 class NotYetOffered(Exception):
-    """PayPal takes no evidence yet; a claim opens minutes after an escalation."""
+    """PayPal has not taken the answer yet, so the job tries again later.
+
+    A claim opens minutes after an escalation, and an answer PayPal did not acknowledge goes
+    out again under the same request id.
+    """
 
     def __init__(self, dispute_id: str, why: str) -> None:
-        super().__init__(f"PayPal takes no evidence on {dispute_id} yet: {why}")
+        super().__init__(f"PayPal has not taken the answer on {dispute_id} yet: {why}")
 
 
 def plan(order: OrderRecord, reason: str) -> Route:
@@ -216,6 +263,53 @@ def seller_asked(live: PayPalDispute, filing: Filing) -> bool:
     )
 
 
+def triage_options(live: PayPalDispute, loaded: Loaded) -> list[TriageAction]:
+    return options(
+        live,
+        fightable=isinstance(plan(loaded.order, live.reason), Filing),
+        messages_sent=messages_sent(loaded.triage),
+    )
+
+
+def triage_step(live: PayPalDispute, loaded: Loaded) -> tuple[FilingAction, str] | None:
+    """What the inquiry's triage asks for now; None when the evidence path decides.
+
+    An inquiry with evidence already prepared is being fought, whether Claude picked the fight
+    or the answer was prepared before the triage existed.
+    """
+    if (
+        live.dispute_life_cycle_stage != "INQUIRY"
+        or live.dispute_channel == "ALERT"
+        or loaded.evidence
+    ):
+        return None
+    last = loaded.triage[-1] if loaded.triage else None
+    if last is not None and last.status == "proposed":
+        return "confirm", PROPOSED[last.action]
+    if last is not None and last.status == "approved":
+        return (
+            "confirm",
+            "Approved, and PayPal has not taken it yet. Sending it again repeats the same"
+            + " request.",
+        )
+    if due(live, loaded.triage, triage_options(live, loaded)):
+        return (
+            "triage",
+            "PayPal waits for the seller's answer. Claude reads the buyer's complaint and"
+            + " the record and picks one: fight with the record, write to the buyer, offer"
+            + " a partial refund, or refund in full.",
+        )
+    if last is None or last.action == "fight":
+        return None
+    if last.status == "refused":
+        return (
+            "merchant",
+            "PayPal refused this answer. The merchant answers in PayPal's Resolution"
+            + " Center.",
+        )
+    return "wait", SENT[last.action]
+
+
 def decide(live: PayPalDispute, loaded: Loaded) -> tuple[FilingAction, str]:
     """What the console can do now, and why, from PayPal's state and the stored answers."""
     route = plan(loaded.order, live.reason)
@@ -229,6 +323,9 @@ def decide(live: PayPalDispute, loaded: Loaded) -> tuple[FilingAction, str]:
             + " refunds in full before PayPal's 20-hour window closes, which avoids the"
             + " chargeback, and files no evidence.",
         )
+    triaged = triage_step(live, loaded)
+    if triaged is not None:
+        return triaged
     if isinstance(route, MerchantOnly):
         return "merchant", route.why
     stage = live.dispute_life_cycle_stage
@@ -322,6 +419,7 @@ class Responses:
         policies: Policies,
         activities: Activities,
         narrator: Narrator,
+        triage: Triage,
         enqueue: Enqueue,
     ) -> None:
         self._sessions = sessions
@@ -330,6 +428,7 @@ class Responses:
         self._policies = policies
         self._activities = activities
         self._narrator = narrator
+        self._triage = triage
         self._enqueue = enqueue
 
     async def schedule(self, session: AsyncSession, change: Change) -> None:
@@ -371,20 +470,40 @@ class Responses:
         return Document(row.document_name, row.document)
 
     async def prepare(self, dispute_id: str) -> DisputeResponse:
-        """Write the notes and the record for a dispute PayPal asks the seller about.
+        """Take the dispute one step on: triage an inquiry, then write the notes and the record.
+
+        An inquiry that waits for the seller is triaged first. A picked message goes to PayPal
+        at once in automatic mode; any other pick but the fight waits for the merchant. The
+        notes and the record follow a picked fight, and every dispute past its inquiry.
 
         Nothing happens when an answer is already open or filed in this stage, when PayPal
         asks nothing of the seller, or when the merchant alone can answer, which is flagged
-        once. In automatic mode the answer is approved as it is prepared.
+        once. In automatic mode the evidence is approved as it is prepared.
 
         Raises:
             UnknownDispute: no stored dispute has the id.
+            TriageUnavailable: Claude did not deliver a pick the rules allow.
             NarrativeUnavailable, NarrativeTooLong: Claude did not deliver the notes.
+            PayPalError: PayPal refused the picked answer or did not answer.
         """
         loaded = await self._load(dispute_id)
         live = PayPalDispute.model_validate(loaded.record.detail)
-        filing = plan(loaded.order, live.reason)
         action, why = decide(live, loaded)
+        if action == "triage":
+            await self._triage.decide(
+                loaded.record,
+                with_complaint(
+                    await self._facts(loaded, live), loaded.record.sandbox_complaint
+                ),
+                triage_options(live, loaded),
+                loaded.mode,
+                len(loaded.triage),
+            )
+            loaded = await self._load(dispute_id)
+            action, why = decide(live, loaded)
+        if action == "confirm" and loaded.triage[-1].status == "approved":
+            return await self._send(dispute_id)
+        filing = plan(loaded.order, live.reason)
         if action == "merchant":
             await self._flag(loaded.record, live, why)
         if action != "prepare" or isinstance(filing, MerchantOnly):
@@ -432,6 +551,17 @@ class Responses:
             )
         return await self.view(dispute_id)
 
+    async def confirm(self, dispute_id: str, triage_id: UUID) -> DisputeResponse:
+        """The merchant's go on the answer Claude picked: PayPal carries it out now.
+
+        Raises:
+            UnknownTriage: no answer on the dispute has the id.
+            NothingToConfirm: the answer went to PayPal already, or PayPal refused it.
+            PayPalError: PayPal refused the call or did not answer.
+        """
+        await self._triage.confirm(dispute_id, triage_id)
+        return await self._send(dispute_id)
+
     async def file(self, dispute_id: str, evidence_id: UUID) -> DisputeResponse:
         """The merchant's go: approve the prepared answer and send what PayPal takes now.
 
@@ -469,7 +599,7 @@ class Responses:
             UnknownDispute: no stored dispute has the id.
             PayPalError: PayPal refused a call or did not answer.
         """
-        live = await self._refresh(dispute_id)
+        live = await self._refresh(dispute_id, "filing")
         loaded = await self._load(dispute_id)
         filing = plan(loaded.order, live.reason)
         current = open_evidence(loaded.evidence)
@@ -486,19 +616,28 @@ class Responses:
         action, _ = decide(live, loaded)
         if action == "escalate":
             await self._escalate(loaded.record, live)
-            live = await self._refresh(dispute_id)
+            live = await self._refresh(dispute_id, "filing")
         elif action == "file" and current is not None and isinstance(filing, Filing):
             await self._file(loaded, current, filing, live)
-            live = await self._refresh(dispute_id)
+            live = await self._refresh(dispute_id, "filing")
         return self._response(await self._load(dispute_id), live)
 
     async def respond(self, dispute_id: str) -> DisputeResponse:
-        """What the job does on every cue: prepare, then file whatever is approved.
+        """What the job does on every cue: triage, prepare, then file whatever is approved.
+
+        PayPal's refusal of a picked answer is on the timeline already and ends the run.
 
         Raises:
-            NotYetOffered: an approved answer waits for PayPal to take evidence; retried later.
+            NotYetOffered: PayPal did not answer, or an approved answer waits for PayPal to
+                take evidence; retried later.
+            TriageUnavailable, NarrativeUnavailable: Claude did not deliver; retried later.
         """
-        response = await self.prepare(dispute_id)
+        try:
+            response = await self.prepare(dispute_id)
+        except PayPalError as error:
+            if error.outcome_unknown:
+                raise NotYetOffered(dispute_id, str(error)) from error
+            return await self.view(dispute_id)
         if open_evidence_status(response) == "approved":
             response = await self.submit(dispute_id)
         if response.action in ("wait", "escalate") and (
@@ -521,6 +660,7 @@ class Responses:
                     .order_by(EvidenceRecord.id)
                 )
             ).all()
+            triage = await rounds(session, dispute_id)
             policy = await self._policies.current(session)
             escalated = await session.scalar(
                 select(PayPalCallRecord.id).where(
@@ -530,16 +670,27 @@ class Responses:
                 )
             )
         return Loaded(
-            record, order, list(rows), policy.dispute_filing, escalated is not None
+            record,
+            order,
+            list(rows),
+            triage,
+            policy.dispute_filing,
+            escalated is not None,
         )
 
-    async def _refresh(self, dispute_id: str) -> PayPalDispute:
+    async def _refresh(self, dispute_id: str, source: SyncSource) -> PayPalDispute:
         """PayPal's dispute now, stored like any other read."""
         live, raw = await self._disputes.fetch(dispute_id)
         async with self._sessions.begin() as session:
             change = await self._disputes.upsert(session, live, raw)
-            await self._disputes.record(session, change, "filing")
+            await self._disputes.record(session, change, source)
         return live
+
+    async def _send(self, dispute_id: str) -> DisputeResponse:
+        """Carry out the approved triage answer, then store the dispute as PayPal holds it after."""
+        await self._triage.carry_out(dispute_id)
+        live = await self._refresh(dispute_id, "triage")
+        return self._response(await self._load(dispute_id), live)
 
     def _response(self, loaded: Loaded, live: PayPalDispute) -> DisputeResponse:
         action, why = decide(live, loaded)
@@ -547,6 +698,7 @@ class Responses:
             filing_mode=loaded.mode,
             action=action,
             why=why,
+            triage=[decision(row) for row in loaded.triage],
             evidence=[evidence(row) for row in loaded.evidence],
         )
 

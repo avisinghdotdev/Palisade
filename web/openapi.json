@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Palisade API",
-    "version": "0.22.0"
+    "version": "0.23.0"
   },
   "paths": {
     "/api/paypal/health": {
@@ -734,6 +734,28 @@
         }
       }
     },
+    "/api/ledger": {
+      "get": {
+        "tags": [
+          "orders"
+        ],
+        "summary": "Check Ledger",
+        "description": "Every paid order beside PayPal's own transaction ledger, read from PayPal now.\n\nA 502 means PayPal refused the read or did not answer.",
+        "operationId": "ledger",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LedgerCheck"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/disputes": {
       "get": {
         "tags": [
@@ -923,9 +945,63 @@
           "disputes"
         ],
         "summary": "Prepare Response",
-        "description": "Write the notes and the record now, as the job would on PayPal's cue.\n\nA 502 means Claude did not deliver the notes.",
+        "description": "Take the dispute one step on now, as the job would on PayPal's cue.\n\nAn inquiry that waits for the seller is triaged: Claude picks the answer. A picked fight,\nand every dispute past its inquiry, gets the notes and the record. A 502 means Claude\ndid not deliver; a 422 names what PayPal refused of a picked answer.",
         "operationId": "prepare_response",
         "parameters": [
+          {
+            "name": "dispute_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^PP-[A-Z0-9-]{4,40}$",
+              "title": "Dispute Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisputeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/disputes/{dispute_id}/triage/{triage_id}/confirm": {
+      "post": {
+        "tags": [
+          "disputes"
+        ],
+        "summary": "Confirm Triage",
+        "description": "The merchant's go on the answer Claude picked for an inquiry: PayPal carries it out.\n\nA message is posted in PayPal's thread, an offer is made, or the claim is accepted with a\nfull refund. A 409 means the answer went to PayPal already; a 422 names what PayPal\nrefused.",
+        "operationId": "confirm_triage",
+        "parameters": [
+          {
+            "name": "triage_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Triage Id"
+            }
+          },
           {
             "name": "dispute_id",
             "in": "path",
@@ -1253,7 +1329,7 @@
           "sandbox"
         ],
         "summary": "Simulate Dispute",
-        "description": "Sandbox simulator: file a dispute on a paid demo-buyer order as the demo buyer.\n\nA 409 means the order cannot be disputed this way, or PayPal's search does not list the\npayment yet; a 422 means PayPal refused the dispute.",
+        "description": "Sandbox simulator: file a dispute on a paid demo-buyer order as the demo buyer.\n\nPayPal's sandbox takes no buyer text by API, so Palisade keeps the complaint itself and\nmarks it as the simulator's wherever it shows. A 409 means the order cannot be disputed\nthis way, or PayPal's search does not list the payment yet; a 422 means PayPal refused\nthe dispute.",
         "operationId": "simulate_dispute",
         "parameters": [
           {
@@ -1809,6 +1885,9 @@
                     "evidence_filed",
                     "evidence_refused",
                     "dispute_flagged",
+                    "triage_decided",
+                    "triage_sent",
+                    "triage_refused",
                     "alert_refund_scheduled",
                     "alert_refund_cancelled",
                     "alert_refund_skipped",
@@ -2301,6 +2380,9 @@
               "evidence_filed",
               "evidence_refused",
               "dispute_flagged",
+              "triage_decided",
+              "triage_sent",
+              "triage_refused",
               "alert_refund_scheduled",
               "alert_refund_cancelled",
               "alert_refund_skipped",
@@ -3234,6 +3316,17 @@
             "type": "array",
             "title": "Messages"
           },
+          "sandbox_complaint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sandbox Complaint"
+          },
           "evidences": {
             "items": {
               "$ref": "#/components/schemas/DisputeEvidence"
@@ -3268,6 +3361,7 @@
           "seller_protection_eligible",
           "actions",
           "messages",
+          "sandbox_complaint",
           "evidences",
           "synced_at"
         ],
@@ -3371,6 +3465,19 @@
               "OTHER"
             ],
             "title": "Reason"
+          },
+          "complaint": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Complaint"
           }
         },
         "type": "object",
@@ -3392,6 +3499,8 @@
           "action": {
             "type": "string",
             "enum": [
+              "triage",
+              "confirm",
               "prepare",
               "review",
               "escalate",
@@ -3406,6 +3515,13 @@
             "type": "string",
             "title": "Why"
           },
+          "triage": {
+            "items": {
+              "$ref": "#/components/schemas/TriageDecision"
+            },
+            "type": "array",
+            "title": "Triage"
+          },
           "evidence": {
             "items": {
               "$ref": "#/components/schemas/Evidence"
@@ -3419,6 +3535,7 @@
           "filing_mode",
           "action",
           "why",
+          "triage",
           "evidence"
         ],
         "title": "DisputeResponse"
@@ -4100,6 +4217,253 @@
         "title": "JsonFormat"
       },
       "JsonValue": {},
+      "LedgerAmount": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "currency_code": {
+            "type": "string",
+            "title": "Currency Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "currency_code"
+        ],
+        "title": "LedgerAmount",
+        "description": "An amount as PayPal's ledger states it, whatever its currency."
+      },
+      "LedgerCheck": {
+        "properties": {
+          "checked_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Checked At"
+          },
+          "ledger_as_of": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ledger As Of"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/VerdictCounts"
+          },
+          "orders": {
+            "items": {
+              "$ref": "#/components/schemas/LedgerEntry"
+            },
+            "type": "array",
+            "title": "Orders"
+          },
+          "unclaimed": {
+            "items": {
+              "$ref": "#/components/schemas/UnclaimedPayment"
+            },
+            "type": "array",
+            "title": "Unclaimed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "checked_at",
+          "ledger_as_of",
+          "counts",
+          "orders",
+          "unclaimed"
+        ],
+        "title": "LedgerCheck"
+      },
+      "LedgerEntry": {
+        "properties": {
+          "number": {
+            "type": "string",
+            "title": "Number"
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "human",
+              "agent"
+            ],
+            "title": "Channel"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "creating",
+              "declined",
+              "failed",
+              "authorized",
+              "capture_pending",
+              "captured",
+              "voided",
+              "refunded",
+              "reversed"
+            ],
+            "title": "Status"
+          },
+          "total": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "capture_id": {
+            "type": "string",
+            "title": "Capture Id"
+          },
+          "custom_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Id"
+          },
+          "placed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Placed At"
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "matched",
+              "mismatch",
+              "pending",
+              "missing"
+            ],
+            "title": "Verdict"
+          },
+          "differences": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "amount",
+                "currency",
+                "custom_id",
+                "status",
+                "refund"
+              ]
+            },
+            "type": "array",
+            "title": "Differences"
+          },
+          "payment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LedgerPayment"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "refunds": {
+            "items": {
+              "$ref": "#/components/schemas/LedgerRefund"
+            },
+            "type": "array",
+            "title": "Refunds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "number",
+          "channel",
+          "status",
+          "total",
+          "capture_id",
+          "custom_id",
+          "placed_at",
+          "verdict",
+          "differences",
+          "payment",
+          "refunds"
+        ],
+        "title": "LedgerEntry",
+        "description": "One paid order beside PayPal's ledger."
+      },
+      "LedgerPayment": {
+        "properties": {
+          "event_code": {
+            "type": "string",
+            "title": "Event Code"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "amount": {
+            "$ref": "#/components/schemas/LedgerAmount"
+          },
+          "custom_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Id"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "event_code",
+          "status",
+          "amount",
+          "custom_id",
+          "at"
+        ],
+        "title": "LedgerPayment",
+        "description": "PayPal's row for an order's capture."
+      },
+      "LedgerRefund": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "amount": {
+            "$ref": "#/components/schemas/LedgerAmount"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "amount",
+          "at"
+        ],
+        "title": "LedgerRefund",
+        "description": "A refund PayPal lists against a capture; its amount is negative, as the ledger has it."
+      },
       "LineChange": {
         "properties": {
           "product_id": {
@@ -5262,7 +5626,10 @@
               "track",
               "escalate",
               "provide_evidence",
-              "refund"
+              "refund",
+              "send_message",
+              "make_offer",
+              "accept_claim"
             ],
             "title": "Action"
           },
@@ -6227,6 +6594,148 @@
         ],
         "title": "ToolSchema"
       },
+      "TriageDecision": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "fight",
+              "message",
+              "offer",
+              "accept"
+            ],
+            "title": "Action"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "proposed",
+              "approved",
+              "done",
+              "refused"
+            ],
+            "title": "Status"
+          },
+          "complaint": {
+            "type": "string",
+            "title": "Complaint"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reasons"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "offer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "options": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "fight",
+                "message",
+                "offer",
+                "accept"
+              ]
+            },
+            "type": "array",
+            "title": "Options"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          },
+          "status_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Code"
+          },
+          "debug_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Debug Id"
+          },
+          "decided_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Decided At"
+          },
+          "done_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Done At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "action",
+          "status",
+          "complaint",
+          "reasons",
+          "message",
+          "offer",
+          "options",
+          "request_id",
+          "status_code",
+          "debug_id",
+          "decided_at",
+          "done_at"
+        ],
+        "title": "TriageDecision",
+        "description": "One round of the triage as the console shows it."
+      },
       "Turn": {
         "properties": {
           "position": {
@@ -6318,6 +6827,59 @@
         ],
         "title": "TurnRequest"
       },
+      "UnclaimedPayment": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "amount": {
+            "$ref": "#/components/schemas/LedgerAmount"
+          },
+          "invoice_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invoice Id"
+          },
+          "custom_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Id"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "amount",
+          "invoice_id",
+          "custom_id",
+          "at"
+        ],
+        "title": "UnclaimedPayment",
+        "description": "A payment PayPal took for the merchant that no paid order names as its capture."
+      },
       "UserTurn": {
         "properties": {
           "type": {
@@ -6376,6 +6938,34 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "VerdictCounts": {
+        "properties": {
+          "matched": {
+            "type": "integer",
+            "title": "Matched"
+          },
+          "mismatch": {
+            "type": "integer",
+            "title": "Mismatch"
+          },
+          "pending": {
+            "type": "integer",
+            "title": "Pending"
+          },
+          "missing": {
+            "type": "integer",
+            "title": "Missing"
+          }
+        },
+        "type": "object",
+        "required": [
+          "matched",
+          "mismatch",
+          "pending",
+          "missing"
+        ],
+        "title": "VerdictCounts"
       },
       "Wallet": {
         "properties": {

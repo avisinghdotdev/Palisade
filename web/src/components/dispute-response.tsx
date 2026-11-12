@@ -10,15 +10,18 @@ import type {
 } from "@/api/client";
 
 import {
+  confirmTriageMutation,
   disputeActivityQueryKey,
   disputeQueryKey,
   disputeResponseOptions,
   disputeResponseQueryKey,
   disputesQueryKey,
   fileEvidenceMutation,
+  orderQueryKey,
   prepareResponseMutation,
 } from "@/api/client/@tanstack/react-query.gen";
 import { client } from "@/api/client/client.gen";
+import { TriageCard } from "@/components/dispute-triage";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EVIDENCE_TYPE_LABELS } from "@/dispute-labels";
@@ -180,7 +183,7 @@ function EvidenceCard({
   );
 }
 
-/** What Palisade does about the dispute: the evidence it prepared, and the merchant's say. */
+/** What Palisade does about the dispute: the answer Claude picked, the evidence, and the merchant's say. */
 export function DisputeResponsePanel({ dispute }: { dispute: Dispute }) {
   const path = { dispute_id: dispute.id };
   const queryClient = useQueryClient();
@@ -201,7 +204,20 @@ export function DisputeResponsePanel({ dispute }: { dispute: Dispute }) {
     onSuccess: store,
   });
   const file = useMutation({ ...fileEvidenceMutation(), onSuccess: store });
-  const busy = prepare.isPending || file.isPending;
+  const confirm = useMutation({
+    ...confirmTriageMutation(),
+    onSuccess: (changed) => {
+      store(changed);
+      // An accepted claim refunds the order.
+      void queryClient.invalidateQueries({
+        queryKey: orderQueryKey({ path: { number: dispute.order_number } }),
+      });
+    },
+    onError: () => {
+      void response.refetch();
+    },
+  });
+  const busy = prepare.isPending || file.isPending || confirm.isPending;
   const data = response.data;
   const open = data === undefined ? undefined : openEvidence(data);
 
@@ -241,7 +257,8 @@ export function DisputeResponsePanel({ dispute }: { dispute: Dispute }) {
             )}
             <div className="min-w-0 flex-1">
               <p className="text-sm">{data.why}</p>
-              {(data.action === "prepare" ||
+              {(data.action === "triage" ||
+                data.action === "prepare" ||
                 data.action === "review" ||
                 data.action === "escalate" ||
                 data.action === "file") && (
@@ -249,7 +266,7 @@ export function DisputeResponsePanel({ dispute }: { dispute: Dispute }) {
                   className="mt-3"
                   disabled={busy}
                   onClick={() => {
-                    if (data.action === "prepare") {
+                    if (data.action === "triage" || data.action === "prepare") {
                       prepare.mutate({ path });
                     } else if (open !== undefined) {
                       file.mutate({
@@ -259,14 +276,16 @@ export function DisputeResponsePanel({ dispute }: { dispute: Dispute }) {
                   }}
                   size="sm"
                 >
-                  {data.action === "prepare"
-                    ? "Prepare the Response"
-                    : data.action === "review"
-                      ? "File with PayPal"
-                      : "File Now"}
+                  {data.action === "triage"
+                    ? "Have Claude Pick the Answer"
+                    : data.action === "prepare"
+                      ? "Prepare the Response"
+                      : data.action === "review"
+                        ? "File with PayPal"
+                        : "File Now"}
                 </Button>
               )}
-              {busy && (
+              {(prepare.isPending || file.isPending) && (
                 <p
                   className="mt-2 flex items-center gap-2 text-sm text-muted-foreground"
                   role="status"
@@ -275,9 +294,11 @@ export function DisputeResponsePanel({ dispute }: { dispute: Dispute }) {
                     aria-hidden
                     className="size-4 motion-safe:animate-spin"
                   />
-                  {prepare.isPending
-                    ? "Claude is writing the notes and Palisade the record…"
-                    : "Sending to PayPal…"}
+                  {file.isPending
+                    ? "Sending to PayPal…"
+                    : data.action === "triage"
+                      ? "Claude is reading the complaint and the record…"
+                      : "Claude is writing the notes and Palisade the record…"}
                 </p>
               )}
               {prepare.isError && (
@@ -290,8 +311,29 @@ export function DisputeResponsePanel({ dispute }: { dispute: Dispute }) {
                   {errorDetail(file.error)}
                 </p>
               )}
+              {confirm.isError && (
+                <p className="mt-2 text-sm text-destructive" role="alert">
+                  {errorDetail(confirm.error)}
+                </p>
+              )}
             </div>
           </div>
+          {data.triage.length > 0 && (
+            <ul className="mt-3 grid gap-3">
+              {data.triage.map((decision) => (
+                <TriageCard
+                  busy={busy}
+                  decision={decision}
+                  key={decision.id}
+                  onConfirm={() => {
+                    confirm.mutate({
+                      path: { ...path, triage_id: decision.id },
+                    });
+                  }}
+                />
+              ))}
+            </ul>
+          )}
           {data.evidence.length > 0 && (
             <ul className="mt-3 grid gap-3">
               {data.evidence.map((evidence) => (

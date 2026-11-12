@@ -247,8 +247,10 @@ export const ANALYTICS_REPORT: AgReportState = {
             value: [{ id: "disputes.hours_to_evidence", aggregation: "avg" }],
           },
         },
+        // Each buyer is a series of its own, so its bar takes its palette colour; stacked, the
+        // one bar a buyer has sits in the middle of its category.
         "dispute-rate-by-buyer": {
-          type: "column-chart-grouped",
+          type: "column-chart-stacked",
           format: {
             title: title("Dispute Rate by Buyer"),
             style: LABELLED_BARS,
@@ -256,6 +258,7 @@ export const ANALYTICS_REPORT: AgReportState = {
           dataMapping: {
             categoryKey: [{ id: "orders.channel" }],
             valueKey: [{ id: "orders.dispute_rate", aggregation: "avg" }],
+            legendKey: [{ id: "orders.channel" }],
           },
           sort: AGENT_FIRST("orders"),
         },

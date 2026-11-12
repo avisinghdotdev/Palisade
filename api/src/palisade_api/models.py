@@ -4,7 +4,7 @@ from palisade_api.activity.models import ActivityRecord
 from palisade_api.agents.models import AgentNonceRecord, AgentRecord
 from palisade_api.assistant.models import ConversationRecord, TurnRecord
 from palisade_api.database import Base
-from palisade_api.disputes.models import DisputeRecord, EvidenceRecord
+from palisade_api.disputes.models import DisputeRecord, EvidenceRecord, TriageRecord
 from palisade_api.mandates.models import (
     MandateRecord,
     PasskeyChallengeRecord,
@@ -42,6 +42,7 @@ __all__ = [
     "PolicyRecord",
     "ProductRecord",
     "ShipmentRecord",
+    "TriageRecord",
     "TurnRecord",
     "WalletRecord",
     "WebhookEventRecord",

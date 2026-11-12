@@ -67,7 +67,11 @@ function columns(wide: boolean): ColDef<Activity>[] {
     {
       headerName: "Detail",
       valueGetter: ({ data }) => (data ? activityDetail(data) : ""),
-      tooltip: true,
+      // The detail is what the row is about, so it wraps and the row grows; the grid's own
+      // line height is a whole row's.
+      wrapText: true,
+      autoHeight: true,
+      cellClass: "py-3.5 leading-5!",
       minWidth: 260,
       flex: 1,
     },
@@ -82,7 +86,8 @@ function columns(wide: boolean): ColDef<Activity>[] {
       field: "mandate_id",
       cellRenderer: MandateCell,
       hide: !wide,
-      width: 330,
+      // The id is cut short and copied whole by its button, so the detail gets the room.
+      width: 220,
     },
   ];
 }

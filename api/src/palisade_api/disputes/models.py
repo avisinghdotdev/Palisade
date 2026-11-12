@@ -57,6 +57,9 @@ class DisputeRecord(Base):
     # the job queue prunes its finished jobs.
     refund_job_id: Mapped[int | None] = mapped_column(BigInteger)
     refund_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # What the demo buyer typed when filing through the sandbox simulator. PayPal's sandbox
+    # takes no buyer text by API, so the simulator keeps it; None on every other dispute.
+    sandbox_complaint: Mapped[str | None] = mapped_column(Text)
 
     order: Mapped[OrderRecord] = relationship()
 
@@ -93,5 +96,39 @@ class EvidenceRecord(Base):
         DateTime(timezone=True), server_default=func.now()
     )
     filed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    call: Mapped[PayPalCallRecord | None] = relationship()
+
+
+class TriageRecord(Base):
+    """One answer Claude picked for a dispute still in its inquiry, and what became of it.
+
+    A row per round: the first when PayPal asks the seller, another each time the buyer writes
+    back.
+    """
+
+    __tablename__: str = "triage"
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    dispute_id: Mapped[str] = mapped_column(ForeignKey("disputes.id"), index=True)
+    # "fight", "message", "offer", or "accept".
+    action: Mapped[str] = mapped_column(Text)
+    # "proposed" awaits the merchant; "approved" goes to PayPal; then "done" or "refused".
+    status: Mapped[str] = mapped_column(Text)
+    # The buyer's complaint in one sentence, as Claude read it.
+    complaint: Mapped[str] = mapped_column(Text)
+    reasons: Mapped[list[str]] = mapped_column(JSONB)
+    # What the buyer reads: the message, or the note beside an offer or a refund.
+    message: Mapped[str | None] = mapped_column(Text)
+    offer_cents: Mapped[int | None] = mapped_column(Integer)
+    # The answers PayPal and the merchant's rules allowed when Claude picked.
+    options: Mapped[list[str]] = mapped_column(JSONB)
+    # What Claude was given, kept for audit.
+    prompt: Mapped[str] = mapped_column(Text)
+    call_id: Mapped[UUID | None] = mapped_column(ForeignKey("paypal_calls.id"))
+    decided_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     call: Mapped[PayPalCallRecord | None] = relationship()

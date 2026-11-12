@@ -1,13 +1,17 @@
-"""Paid orders and PayPal dispute objects the dispute, evidence, and sandbox tests share."""
+"""Paid orders, PayPal dispute objects, and the scripted triage the dispute tests share."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import final
 from uuid import UUID, uuid4, uuid7
 
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from palisade_api.agents.models import AgentRecord
+from palisade_api.disputes.facts import Facts
+from palisade_api.disputes.triage import Pick, TriageAction
 from palisade_api.mandates.models import MandateRecord
 from palisade_api.orders.models import OrderRecord, ShipmentRecord
 from palisade_api.shop.models import CartRecord
@@ -15,6 +19,26 @@ from palisade_api.shop.models import CartRecord
 DISPUTES_PATH = "/v1/customer/disputes"
 OPENED = "2026-11-01T07:59:39.261Z"
 TRACKING = "9400100000000000000001"
+FIGHT = Pick(
+    complaint="The buyer says the shoes are not the model they asked for.",
+    action="fight",
+    reasons=["The record holds the mandate the buyer signed for these items."],
+    message=None,
+    offer_amount=None,
+)
+
+
+@final
+class ScriptedReader:
+    """Answers every triage with its `pick` and keeps the facts and the answers it was given."""
+
+    def __init__(self) -> None:
+        self.pick: Pick = FIGHT
+        self.asked: list[tuple[Facts, list[TriageAction]]] = []
+
+    async def read(self, facts: Facts, allowed: Sequence[TriageAction]) -> Pick:
+        self.asked.append((facts, list(allowed)))
+        return self.pick
 
 
 @dataclass(frozen=True)
@@ -132,12 +156,15 @@ def paypal_dispute(
     seller_filed: str | None = None,
     escalated: bool = False,
     channel: str = "INTERNAL",
+    reply: tuple[str, str] | None = None,
 ) -> dict[str, JsonValue]:
     """PayPal's dispute object in the shape the sandbox returns it, trimmed to what Palisade reads.
 
     `seller_filed` adds the seller's own evidence of that type to the list, in the given stage,
     with the record attached; `escalated` adds the escalation note the way PayPal lists it, as
-    the seller's OTHER evidence in the inquiry with nothing attached.
+    the seller's OTHER evidence in the inquiry with nothing attached. `reply` adds a second
+    message from the buyer, as its time and its text. An offered `make_offer` or
+    `accept_claim` comes with the plain refund among the kinds PayPal takes.
     """
     href = f"https://api-m.sandbox.paypal.com{DISPUTES_PATH}/{dispute_id}"
     evidences: list[JsonValue] = [
@@ -197,8 +224,23 @@ def paypal_dispute(
                 "posted_by": "BUYER",
                 "time_posted": OPENED,
                 "content": "The shoes are not the model I asked for.",
-            }
+            },
+            *(
+                []
+                if reply is None
+                else [
+                    {"posted_by": "BUYER", "time_posted": reply[0], "content": reply[1]}
+                ]
+            ),
         ],
+        "allowed_response_options": {
+            "make_offer": {
+                "offer_types": ["REFUND"] if "make_offer" in actions else []
+            },
+            "accept_claim": {
+                "accept_claim_types": ["REFUND"] if "accept_claim" in actions else []
+            },
+        },
         "evidences": evidences,
         "links": [
             {"rel": "self", "href": href, "method": "GET"},

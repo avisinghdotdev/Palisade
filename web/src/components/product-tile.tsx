@@ -50,6 +50,7 @@ export function ProductTile({
     )?.quantity ?? 0;
 
   const add = () => {
+    if (setLine.isPending) return;
     // Without a size there is nothing to add yet, so the sizes open for a choice.
     if (size === null) {
       setSizesOpen(true);
@@ -108,8 +109,11 @@ export function ProductTile({
               ))}
             </SelectContent>
           </Select>
+          {/* Marked busy, not disabled, while the cart saves: a disabled button drops the keyboard's focus. */}
           <Button
-            disabled={walletId === undefined || setLine.isPending}
+            aria-disabled={setLine.isPending}
+            className="aria-disabled:opacity-50"
+            disabled={walletId === undefined}
             onClick={add}
             size="sm"
           >

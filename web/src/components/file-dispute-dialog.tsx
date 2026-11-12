@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Gavel, LoaderCircle } from "lucide-react";
+import { useState } from "react";
 import { useNavigate } from "react-router";
 
 import type { SimulateDisputeData } from "@/api/client";
@@ -21,6 +22,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { REASON_LABELS } from "@/dispute-labels";
 import { errorDetail } from "@/shopper";
 
@@ -45,6 +47,7 @@ const REASONS: { reason: Reason; note: string }[] = [
 export function FileDisputeDialog({ number }: { number: string }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [complaint, setComplaint] = useState("");
   const file = useMutation({
     ...simulateDisputeMutation(),
     onSuccess: (dispute) => {
@@ -83,6 +86,25 @@ export function FileDisputeDialog({ number }: { number: string }) {
             after the payment.
           </DialogDescription>
         </DialogHeader>
+        <div className="grid gap-1.5">
+          <label className="text-sm font-medium" htmlFor="dispute-complaint">
+            What the Buyer Says (Optional)
+          </label>
+          <Textarea
+            id="dispute-complaint"
+            maxLength={1000}
+            onChange={(event) => {
+              setComplaint(event.target.value);
+            }}
+            placeholder="The left shoe has a torn seam. I would keep the pair for a partial refund."
+            value={complaint}
+          />
+          <p className="text-xs text-muted-foreground">
+            Claude reads this when it picks the answer. PayPal&apos;s sandbox
+            takes no buyer text by API, so Palisade keeps it and marks it as the
+            simulator&apos;s.
+          </p>
+        </div>
         <ul className="grid gap-2">
           {REASONS.map(({ reason, note }) => (
             <li key={reason}>
@@ -90,7 +112,11 @@ export function FileDisputeDialog({ number }: { number: string }) {
                 className="h-auto w-full flex-col items-start gap-0.5 py-2.5 text-left whitespace-normal"
                 disabled={file.isPending}
                 onClick={() => {
-                  file.mutate({ path: { number }, body: { reason } });
+                  const typed = complaint.trim();
+                  file.mutate({
+                    path: { number },
+                    body: { reason, complaint: typed === "" ? null : typed },
+                  });
                 }}
                 variant="outline"
               >

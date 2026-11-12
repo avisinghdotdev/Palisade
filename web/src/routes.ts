@@ -18,6 +18,7 @@ export default [
     route("console/orders/:number", "routes/console-order.tsx"),
     route("console/disputes", "routes/console-disputes.tsx"),
     route("console/disputes/:disputeId", "routes/console-dispute.tsx"),
+    route("console/ledger", "routes/console-ledger.tsx"),
     route("console/agents", "routes/console-agents.tsx"),
     route("console/analytics", "routes/console-analytics.tsx"),
   ]),

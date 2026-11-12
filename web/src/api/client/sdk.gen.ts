@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { ActivityData, ActivityErrors, ActivityResponses, AgentsData, AgentsResponses, AnalyticsAgentTurnData, AnalyticsAgentTurnErrors, AnalyticsAgentTurnResponses, AnalyticsData, AnalyticsResponses, ApproveMandateData, ApproveMandateErrors, ApproveMandateResponses, AssistantAccessData, AssistantAccessResponses, CartData, CartErrors, CartResponses, CheckoutData, CheckoutErrors, CheckoutResponses, ConfirmWalletLinkData, ConfirmWalletLinkErrors, ConfirmWalletLinkResponses, ConversationData, ConversationErrors, ConversationResponses, CreateCartData, CreateCartErrors, CreateCartResponses, CreateConversationData, CreateConversationErrors, CreateConversationResponses, CreateMandateData, CreateMandateErrors, CreateMandateResponses, DeclineMandateData, DeclineMandateErrors, DeclineMandateResponses, DemoWalletData, DemoWalletResponses, DisputeActivityData, DisputeActivityErrors, DisputeActivityResponses, DisputeAlertData, DisputeAlertErrors, DisputeAlertResponses, DisputeData, DisputeErrors, DisputeResponseData, DisputeResponseErrors, DisputeResponseResponses, DisputeResponses, DisputesData, DisputesErrors, DisputesResponses, EvidenceDocumentData, EvidenceDocumentErrors, EvidenceDocumentResponses, FileEvidenceData, FileEvidenceErrors, FileEvidenceResponses, HealthData, HealthResponses, JwksData, JwksResponses, MandateData, MandateErrors, MandatePasskeyOptionsData, MandatePasskeyOptionsErrors, MandatePasskeyOptionsResponses, MandateResponses, OrderActivityData, OrderActivityErrors, OrderActivityResponses, OrderData, OrderErrors, OrderResponses, OrdersData, OrdersResponses, PaypalHealthData, PaypalHealthResponses, PaypalWebhookData, PaypalWebhookErrors, PaypalWebhookResponses, PolicyData, PolicyResponses, PrepareResponseData, PrepareResponseErrors, PrepareResponseResponses, ProductData, ProductErrors, ProductResponses, ProductsData, ProductsResponses, ReadyData, ReadyErrors, ReadyResponses, RefundAlertData, RefundAlertErrors, RefundAlertResponses, RegisterPasskeyData, RegisterPasskeyErrors, RegisterPasskeyResponses, ReplayWebhookEventData, ReplayWebhookEventErrors, ReplayWebhookEventResponses, SendMessageData, SendMessageErrors, SendMessageResponse, SendMessageResponses, SetCartLineData, SetCartLineErrors, SetCartLineResponses, SetCartWalletData, SetCartWalletErrors, SetCartWalletResponses, SetDisputeFilingData, SetDisputeFilingErrors, SetDisputeFilingResponses, ShipOrderData, ShipOrderErrors, ShipOrderResponses, SimulateAdjudicationData, SimulateAdjudicationErrors, SimulateAdjudicationResponses, SimulateDisputeData, SimulateDisputeErrors, SimulateDisputeResponses, StartPasskeyRegistrationData, StartPasskeyRegistrationErrors, StartPasskeyRegistrationResponses, StartWalletLinkData, StartWalletLinkResponses, SyncDisputeData, SyncDisputeErrors, SyncDisputeResponses, VerifyMandateData, VerifyMandateErrors, VerifyMandateResponses, WalletData, WalletErrors, WalletResponses, WebhookEventsData, WebhookEventsResponses } from './types.gen';
+import type { ActivityData, ActivityErrors, ActivityResponses, AgentsData, AgentsResponses, AnalyticsAgentTurnData, AnalyticsAgentTurnErrors, AnalyticsAgentTurnResponses, AnalyticsData, AnalyticsResponses, ApproveMandateData, ApproveMandateErrors, ApproveMandateResponses, AssistantAccessData, AssistantAccessResponses, CartData, CartErrors, CartResponses, CheckoutData, CheckoutErrors, CheckoutResponses, ConfirmTriageData, ConfirmTriageErrors, ConfirmTriageResponses, ConfirmWalletLinkData, ConfirmWalletLinkErrors, ConfirmWalletLinkResponses, ConversationData, ConversationErrors, ConversationResponses, CreateCartData, CreateCartErrors, CreateCartResponses, CreateConversationData, CreateConversationErrors, CreateConversationResponses, CreateMandateData, CreateMandateErrors, CreateMandateResponses, DeclineMandateData, DeclineMandateErrors, DeclineMandateResponses, DemoWalletData, DemoWalletResponses, DisputeActivityData, DisputeActivityErrors, DisputeActivityResponses, DisputeAlertData, DisputeAlertErrors, DisputeAlertResponses, DisputeData, DisputeErrors, DisputeResponseData, DisputeResponseErrors, DisputeResponseResponses, DisputeResponses, DisputesData, DisputesErrors, DisputesResponses, EvidenceDocumentData, EvidenceDocumentErrors, EvidenceDocumentResponses, FileEvidenceData, FileEvidenceErrors, FileEvidenceResponses, HealthData, HealthResponses, JwksData, JwksResponses, LedgerData, LedgerResponses, MandateData, MandateErrors, MandatePasskeyOptionsData, MandatePasskeyOptionsErrors, MandatePasskeyOptionsResponses, MandateResponses, OrderActivityData, OrderActivityErrors, OrderActivityResponses, OrderData, OrderErrors, OrderResponses, OrdersData, OrdersResponses, PaypalHealthData, PaypalHealthResponses, PaypalWebhookData, PaypalWebhookErrors, PaypalWebhookResponses, PolicyData, PolicyResponses, PrepareResponseData, PrepareResponseErrors, PrepareResponseResponses, ProductData, ProductErrors, ProductResponses, ProductsData, ProductsResponses, ReadyData, ReadyErrors, ReadyResponses, RefundAlertData, RefundAlertErrors, RefundAlertResponses, RegisterPasskeyData, RegisterPasskeyErrors, RegisterPasskeyResponses, ReplayWebhookEventData, ReplayWebhookEventErrors, ReplayWebhookEventResponses, SendMessageData, SendMessageErrors, SendMessageResponse, SendMessageResponses, SetCartLineData, SetCartLineErrors, SetCartLineResponses, SetCartWalletData, SetCartWalletErrors, SetCartWalletResponses, SetDisputeFilingData, SetDisputeFilingErrors, SetDisputeFilingResponses, ShipOrderData, ShipOrderErrors, ShipOrderResponses, SimulateAdjudicationData, SimulateAdjudicationErrors, SimulateAdjudicationResponses, SimulateDisputeData, SimulateDisputeErrors, SimulateDisputeResponses, StartPasskeyRegistrationData, StartPasskeyRegistrationErrors, StartPasskeyRegistrationResponses, StartWalletLinkData, StartWalletLinkResponses, SyncDisputeData, SyncDisputeErrors, SyncDisputeResponses, VerifyMandateData, VerifyMandateErrors, VerifyMandateResponses, WalletData, WalletErrors, WalletResponses, WebhookEventsData, WebhookEventsResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -181,6 +181,15 @@ export const shipOrder = <ThrowOnError extends boolean = false>(options: Options
 });
 
 /**
+ * Check Ledger
+ *
+ * Every paid order beside PayPal's own transaction ledger, read from PayPal now.
+ *
+ * A 502 means PayPal refused the read or did not answer.
+ */
+export const ledger = <ThrowOnError extends boolean = false>(options?: Options<LedgerData, ThrowOnError>): RequestResult<LedgerResponses, unknown, ThrowOnError> => (options?.client ?? client).get<LedgerResponses, unknown, ThrowOnError>({ url: '/api/ledger', ...options });
+
+/**
  * List Disputes
  *
  * The disputes PayPal opened on the store's payments, newest first.
@@ -212,11 +221,24 @@ export const disputeResponse = <ThrowOnError extends boolean = false>(options: O
 /**
  * Prepare Response
  *
- * Write the notes and the record now, as the job would on PayPal's cue.
+ * Take the dispute one step on now, as the job would on PayPal's cue.
  *
- * A 502 means Claude did not deliver the notes.
+ * An inquiry that waits for the seller is triaged: Claude picks the answer. A picked fight,
+ * and every dispute past its inquiry, gets the notes and the record. A 502 means Claude
+ * did not deliver; a 422 names what PayPal refused of a picked answer.
  */
 export const prepareResponse = <ThrowOnError extends boolean = false>(options: Options<PrepareResponseData, ThrowOnError>): RequestResult<PrepareResponseResponses, PrepareResponseErrors, ThrowOnError> => (options.client ?? client).post<PrepareResponseResponses, PrepareResponseErrors, ThrowOnError>({ url: '/api/disputes/{dispute_id}/response', ...options });
+
+/**
+ * Confirm Triage
+ *
+ * The merchant's go on the answer Claude picked for an inquiry: PayPal carries it out.
+ *
+ * A message is posted in PayPal's thread, an offer is made, or the claim is accepted with a
+ * full refund. A 409 means the answer went to PayPal already; a 422 names what PayPal
+ * refused.
+ */
+export const confirmTriage = <ThrowOnError extends boolean = false>(options: Options<ConfirmTriageData, ThrowOnError>): RequestResult<ConfirmTriageResponses, ConfirmTriageErrors, ThrowOnError> => (options.client ?? client).post<ConfirmTriageResponses, ConfirmTriageErrors, ThrowOnError>({ url: '/api/disputes/{dispute_id}/triage/{triage_id}/confirm', ...options });
 
 /**
  * File Evidence
@@ -286,8 +308,10 @@ export const agents = <ThrowOnError extends boolean = false>(options?: Options<A
  *
  * Sandbox simulator: file a dispute on a paid demo-buyer order as the demo buyer.
  *
- * A 409 means the order cannot be disputed this way, or PayPal's search does not list the
- * payment yet; a 422 means PayPal refused the dispute.
+ * PayPal's sandbox takes no buyer text by API, so Palisade keeps the complaint itself and
+ * marks it as the simulator's wherever it shows. A 409 means the order cannot be disputed
+ * this way, or PayPal's search does not list the payment yet; a 422 means PayPal refused
+ * the dispute.
  */
 export const simulateDispute = <ThrowOnError extends boolean = false>(options: Options<SimulateDisputeData, ThrowOnError>): RequestResult<SimulateDisputeResponses, SimulateDisputeErrors, ThrowOnError> => (options.client ?? client).post<SimulateDisputeResponses, SimulateDisputeErrors, ThrowOnError>({
     url: '/api/sandbox/orders/{number}/disputes',
