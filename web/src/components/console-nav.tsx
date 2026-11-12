@@ -16,6 +16,11 @@ const PAGES = [
     owns: (path: string) => path.startsWith("/console/disputes"),
   },
   {
+    to: "/console/ledger",
+    label: "PayPal Ledger",
+    owns: (path: string) => path.startsWith("/console/ledger"),
+  },
+  {
     to: "/console/agents",
     label: "Agents and Policy",
     owns: (path: string) => path.startsWith("/console/agents"),

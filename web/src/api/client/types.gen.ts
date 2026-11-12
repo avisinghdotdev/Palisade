@@ -21,7 +21,7 @@ export type Activity = {
     /**
      * Kind
      */
-    kind: 'conversation_started' | 'shopper_message' | 'assistant_tool_call' | 'signature_accepted' | 'signature_refused' | 'mandate_requested' | 'mandate_signed' | 'mandate_declined' | 'mandate_expired' | 'policy_refused' | 'mandate_refused' | 'checkout_accepted' | 'dispute_opened' | 'dispute_updated' | 'dispute_resolved' | 'sandbox_dispute_filed' | 'sandbox_dispute_adjudicated' | 'evidence_prepared' | 'dispute_escalated' | 'evidence_filed' | 'evidence_refused' | 'dispute_flagged' | 'alert_refund_scheduled' | 'alert_refund_cancelled' | 'alert_refund_skipped' | 'alert_refunded' | 'alert_refund_refused';
+    kind: 'conversation_started' | 'shopper_message' | 'assistant_tool_call' | 'signature_accepted' | 'signature_refused' | 'mandate_requested' | 'mandate_signed' | 'mandate_declined' | 'mandate_expired' | 'policy_refused' | 'mandate_refused' | 'checkout_accepted' | 'dispute_opened' | 'dispute_updated' | 'dispute_resolved' | 'sandbox_dispute_filed' | 'sandbox_dispute_adjudicated' | 'evidence_prepared' | 'dispute_escalated' | 'evidence_filed' | 'evidence_refused' | 'dispute_flagged' | 'triage_decided' | 'triage_sent' | 'triage_refused' | 'alert_refund_scheduled' | 'alert_refund_cancelled' | 'alert_refund_skipped' | 'alert_refunded' | 'alert_refund_refused';
     agent: Agent | null;
     /**
      * Mandate Id
@@ -507,6 +507,10 @@ export type Dispute = {
      */
     messages: Array<DisputeMessage>;
     /**
+     * Sandbox Complaint
+     */
+    sandbox_complaint: string | null;
+    /**
      * Evidences
      */
     evidences: Array<DisputeEvidence>;
@@ -574,6 +578,10 @@ export type DisputeRequest = {
      * Reason
      */
     reason: 'MERCHANDISE_OR_SERVICE_NOT_RECEIVED' | 'MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED' | 'OTHER';
+    /**
+     * Complaint
+     */
+    complaint?: string | null;
 };
 
 /**
@@ -587,11 +595,15 @@ export type DisputeResponse = {
     /**
      * Action
      */
-    action: 'prepare' | 'review' | 'escalate' | 'file' | 'wait' | 'merchant' | 'done';
+    action: 'triage' | 'confirm' | 'prepare' | 'review' | 'escalate' | 'file' | 'wait' | 'merchant' | 'done';
     /**
      * Why
      */
     why: string;
+    /**
+     * Triage
+     */
+    triage: Array<TriageDecision>;
     /**
      * Evidence
      */
@@ -940,6 +952,137 @@ export type JsonFormat = {
 };
 
 export type JsonValue = unknown;
+
+/**
+ * LedgerAmount
+ *
+ * An amount as PayPal's ledger states it, whatever its currency.
+ */
+export type LedgerAmount = {
+    /**
+     * Value
+     */
+    value: string;
+    /**
+     * Currency Code
+     */
+    currency_code: string;
+};
+
+/**
+ * LedgerCheck
+ */
+export type LedgerCheck = {
+    /**
+     * Checked At
+     */
+    checked_at: string;
+    /**
+     * Ledger As Of
+     */
+    ledger_as_of: string | null;
+    counts: VerdictCounts;
+    /**
+     * Orders
+     */
+    orders: Array<LedgerEntry>;
+    /**
+     * Unclaimed
+     */
+    unclaimed: Array<UnclaimedPayment>;
+};
+
+/**
+ * LedgerEntry
+ *
+ * One paid order beside PayPal's ledger.
+ */
+export type LedgerEntry = {
+    /**
+     * Number
+     */
+    number: string;
+    /**
+     * Channel
+     */
+    channel: 'human' | 'agent';
+    /**
+     * Status
+     */
+    status: 'creating' | 'declined' | 'failed' | 'authorized' | 'capture_pending' | 'captured' | 'voided' | 'refunded' | 'reversed';
+    total: Money;
+    /**
+     * Capture Id
+     */
+    capture_id: string;
+    /**
+     * Custom Id
+     */
+    custom_id: string | null;
+    /**
+     * Placed At
+     */
+    placed_at: string;
+    /**
+     * Verdict
+     */
+    verdict: 'matched' | 'mismatch' | 'pending' | 'missing';
+    /**
+     * Differences
+     */
+    differences: Array<'amount' | 'currency' | 'custom_id' | 'status' | 'refund'>;
+    payment: LedgerPayment | null;
+    /**
+     * Refunds
+     */
+    refunds: Array<LedgerRefund>;
+};
+
+/**
+ * LedgerPayment
+ *
+ * PayPal's row for an order's capture.
+ */
+export type LedgerPayment = {
+    /**
+     * Event Code
+     */
+    event_code: string;
+    /**
+     * Status
+     */
+    status: string;
+    amount: LedgerAmount;
+    /**
+     * Custom Id
+     */
+    custom_id: string | null;
+    /**
+     * At
+     */
+    at: string;
+};
+
+/**
+ * LedgerRefund
+ *
+ * A refund PayPal lists against a capture; its amount is negative, as the ledger has it.
+ */
+export type LedgerRefund = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Status
+     */
+    status: string;
+    amount: LedgerAmount;
+    /**
+     * At
+     */
+    at: string;
+};
 
 /**
  * LineChange
@@ -1527,7 +1670,7 @@ export type PayPalCall = {
     /**
      * Action
      */
-    action: 'create' | 'capture' | 'void' | 'track' | 'escalate' | 'provide_evidence' | 'refund';
+    action: 'create' | 'capture' | 'void' | 'track' | 'escalate' | 'provide_evidence' | 'refund' | 'send_message' | 'make_offer' | 'accept_claim';
     /**
      * Dispute Id
      */
@@ -2117,6 +2260,63 @@ export type ToolSchema = {
 };
 
 /**
+ * TriageDecision
+ *
+ * One round of the triage as the console shows it.
+ */
+export type TriageDecision = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Action
+     */
+    action: 'fight' | 'message' | 'offer' | 'accept';
+    /**
+     * Status
+     */
+    status: 'proposed' | 'approved' | 'done' | 'refused';
+    /**
+     * Complaint
+     */
+    complaint: string;
+    /**
+     * Reasons
+     */
+    reasons: Array<string>;
+    /**
+     * Message
+     */
+    message: string | null;
+    offer: Money | null;
+    /**
+     * Options
+     */
+    options: Array<'fight' | 'message' | 'offer' | 'accept'>;
+    /**
+     * Request Id
+     */
+    request_id: string | null;
+    /**
+     * Status Code
+     */
+    status_code: number | null;
+    /**
+     * Debug Id
+     */
+    debug_id: string | null;
+    /**
+     * Decided At
+     */
+    decided_at: string;
+    /**
+     * Done At
+     */
+    done_at: string | null;
+};
+
+/**
  * Turn
  */
 export type Turn = {
@@ -2155,6 +2355,35 @@ export type TurnRequest = {
      * Mandate Id
      */
     mandate_id?: string | null;
+};
+
+/**
+ * UnclaimedPayment
+ *
+ * A payment PayPal took for the merchant that no paid order names as its capture.
+ */
+export type UnclaimedPayment = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Status
+     */
+    status: string;
+    amount: LedgerAmount;
+    /**
+     * Invoice Id
+     */
+    invoice_id: string | null;
+    /**
+     * Custom Id
+     */
+    custom_id: string | null;
+    /**
+     * At
+     */
+    at: string;
 };
 
 /**
@@ -2197,6 +2426,28 @@ export type ValidationError = {
     ctx?: {
         [key: string]: unknown;
     };
+};
+
+/**
+ * VerdictCounts
+ */
+export type VerdictCounts = {
+    /**
+     * Matched
+     */
+    matched: number;
+    /**
+     * Mismatch
+     */
+    mismatch: number;
+    /**
+     * Pending
+     */
+    pending: number;
+    /**
+     * Missing
+     */
+    missing: number;
 };
 
 /**
@@ -2850,6 +3101,22 @@ export type ShipOrderResponses = {
 
 export type ShipOrderResponse = ShipOrderResponses[keyof ShipOrderResponses];
 
+export type LedgerData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/ledger';
+};
+
+export type LedgerResponses = {
+    /**
+     * Successful Response
+     */
+    200: LedgerCheck;
+};
+
+export type LedgerResponse = LedgerResponses[keyof LedgerResponses];
+
 export type DisputesData = {
     body?: never;
     path?: never;
@@ -3001,6 +3268,40 @@ export type PrepareResponseResponses = {
 };
 
 export type PrepareResponseResponse = PrepareResponseResponses[keyof PrepareResponseResponses];
+
+export type ConfirmTriageData = {
+    body?: never;
+    path: {
+        /**
+         * Triage Id
+         */
+        triage_id: string;
+        /**
+         * Dispute Id
+         */
+        dispute_id: string;
+    };
+    query?: never;
+    url: '/api/disputes/{dispute_id}/triage/{triage_id}/confirm';
+};
+
+export type ConfirmTriageErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ConfirmTriageError = ConfirmTriageErrors[keyof ConfirmTriageErrors];
+
+export type ConfirmTriageResponses = {
+    /**
+     * Successful Response
+     */
+    200: DisputeResponse;
+};
+
+export type ConfirmTriageResponse = ConfirmTriageResponses[keyof ConfirmTriageResponses];
 
 export type FileEvidenceData = {
     body?: never;
@@ -3515,7 +3816,7 @@ export type ActivityData = {
         /**
          * Kind
          */
-        kind?: 'conversation_started' | 'shopper_message' | 'assistant_tool_call' | 'signature_accepted' | 'signature_refused' | 'mandate_requested' | 'mandate_signed' | 'mandate_declined' | 'mandate_expired' | 'policy_refused' | 'mandate_refused' | 'checkout_accepted' | 'dispute_opened' | 'dispute_updated' | 'dispute_resolved' | 'sandbox_dispute_filed' | 'sandbox_dispute_adjudicated' | 'evidence_prepared' | 'dispute_escalated' | 'evidence_filed' | 'evidence_refused' | 'dispute_flagged' | 'alert_refund_scheduled' | 'alert_refund_cancelled' | 'alert_refund_skipped' | 'alert_refunded' | 'alert_refund_refused' | null;
+        kind?: 'conversation_started' | 'shopper_message' | 'assistant_tool_call' | 'signature_accepted' | 'signature_refused' | 'mandate_requested' | 'mandate_signed' | 'mandate_declined' | 'mandate_expired' | 'policy_refused' | 'mandate_refused' | 'checkout_accepted' | 'dispute_opened' | 'dispute_updated' | 'dispute_resolved' | 'sandbox_dispute_filed' | 'sandbox_dispute_adjudicated' | 'evidence_prepared' | 'dispute_escalated' | 'evidence_filed' | 'evidence_refused' | 'dispute_flagged' | 'triage_decided' | 'triage_sent' | 'triage_refused' | 'alert_refund_scheduled' | 'alert_refund_cancelled' | 'alert_refund_skipped' | 'alert_refunded' | 'alert_refund_refused' | null;
     };
     url: '/api/activity';
 };

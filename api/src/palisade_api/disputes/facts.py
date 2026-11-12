@@ -17,6 +17,8 @@ from palisade_api.shop.catalog import Money
 MERCHANT_NAME = "Ridgeline Running"
 # What the record says where the store holds nothing.
 NOT_SPECIFIED = "Not specified"
+# Marks the complaint the demo buyer typed in the sandbox simulator, which PayPal does not hold.
+SIMULATED = "[Sandbox simulator]"
 # How the agent and the mandate are checked, as facts the narrative can cite by name.
 SIGNATURE_SCHEME = (
     "RFC 9421 HTTP message signatures with an Ed25519 key in the store's registry"
@@ -127,6 +129,25 @@ class Leaf:
 
     def line(self) -> str:
         return f"{self.path}: {self.text}"
+
+
+def with_complaint(facts: Facts, complaint: str | None) -> Facts:
+    """The record with the simulator's complaint as the buyer's first message, marked as such.
+
+    Only the triage reads it. PayPal does not hold the text, so the notes and the PDF filed
+    with PayPal are written from the record without it.
+    """
+    if complaint is None:
+        return facts
+    dispute = facts.dispute.model_copy(
+        update={
+            "buyer_messages": [
+                f"{SIMULATED} {complaint}",
+                *facts.dispute.buyer_messages,
+            ]
+        }
+    )
+    return facts.model_copy(update={"dispute": dispute})
 
 
 def leaves(facts: Facts) -> list[Leaf]:

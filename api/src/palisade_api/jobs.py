@@ -12,6 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 # Jobs still running when the API stops get this long to finish before they are aborted for a retry.
 SHUTDOWN_GRACE_SECONDS = 20.0
+# How long a worker that died waits before it starts again: long enough not to hammer a database
+# that is down, short enough that a webhook waits seconds, not hours.
+RESTART_PAUSE_SECONDS = 15.0
 
 logger = structlog.stdlib.get_logger(__name__)
 
@@ -75,34 +78,45 @@ async def driver_connection(session: AsyncSession) -> psycopg.AsyncConnection[ob
 async def run_worker(
     database_url: str, context: dict[str, object]
 ) -> AsyncGenerator[None]:
-    """Run the worker on its own small pool while the block is open.
+    """Run the worker while the block is open, starting it again whenever it dies.
 
     `context` reaches every task as `JobContext.additional_context`.
     """
-    connector = PsycopgConnector(conninfo=database_url, min_size=1, max_size=2)
-    with jobs.replace_connector(connector):
-        async with jobs.open_async():
-            worker = asyncio.create_task(
-                jobs.run_worker_async(
-                    # A list: psycopg sends a tuple as a row, not the array the fetch query takes.
-                    queues=list(WORKER_QUEUES),
-                    install_signal_handlers=False,
-                    additional_context=context,
-                    shutdown_graceful_timeout=SHUTDOWN_GRACE_SECONDS,
-                ),
-                name="job worker",
+    worker = asyncio.create_task(
+        _keep_working(database_url, context), name="job worker"
+    )
+    try:
+        yield
+    finally:
+        worker.cancel()
+        with suppress(asyncio.CancelledError):
+            await worker
+
+
+async def _keep_working(database_url: str, context: dict[str, object]) -> None:
+    """Run the worker on its own small pool until cancelled, on a fresh pool after each death.
+
+    The worker ends for good when its pool cannot reach the database, and a dead worker leaves
+    every queued job waiting: on 2026-11-09 a 30-second pool timeout stopped it, and the API
+    ran two days without one because nothing started it again.
+    """
+    while True:
+        connector = PsycopgConnector(conninfo=database_url, min_size=1, max_size=2)
+        try:
+            with jobs.replace_connector(connector):
+                async with jobs.open_async():
+                    await jobs.run_worker_async(
+                        # A list: psycopg sends a tuple as a row, not the array the fetch query takes.
+                        queues=list(WORKER_QUEUES),
+                        install_signal_handlers=False,
+                        additional_context=context,
+                        shutdown_graceful_timeout=SHUTDOWN_GRACE_SECONDS,
+                    )
+        # Whatever ended the worker, the queue needs one again.
+        except Exception:
+            logger.exception(
+                "job_worker_died", restart_in_seconds=RESTART_PAUSE_SECONDS
             )
-            worker.add_done_callback(_report_death)
-            try:
-                yield
-            finally:
-                if not worker.done():
-                    worker.cancel()
-                    with suppress(asyncio.CancelledError):
-                        await worker
-
-
-def _report_death(worker: asyncio.Task[None]) -> None:
-    # A worker that dies leaves every queued job waiting, so its death goes to the API's logs.
-    if not worker.cancelled() and worker.exception() is not None:
-        logger.error("job_worker_died", exc_info=worker.exception())
+        else:
+            logger.error("job_worker_stopped", restart_in_seconds=RESTART_PAUSE_SECONDS)
+        await asyncio.sleep(RESTART_PAUSE_SECONDS)

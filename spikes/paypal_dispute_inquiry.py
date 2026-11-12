@@ -9,8 +9,13 @@ Run from the repo root as `uv run --frozen --env-file .env python spikes/paypal_
         part (the provide-evidence shape), then as a plain JSON body when PayPal refuses the
         first; prints which shape PayPal took. Proven 2026-11-08 on `PP-R-ZCC-10196688`: the
         multipart shape answered 200 and the message appeared in the thread as SELLER
-
-Nothing here accepts a claim or makes an offer: both move sandbox money or pause the dispute.
+    --app buyer message DISPUTE_ID TEXT   the same call with the demo buyer's app: the buyer's
+        reply in the thread
+    offer DISPUTE_ID VALUE NOTE   seller app: make-offer, a partial refund of VALUE in the
+        dispute's currency, as a plain JSON body
+    accept DISPUTE_ID NOTE        seller app: accept-claim with a full refund, first as a plain
+        JSON body, then as multipart with an `input` part when PayPal refuses the first. It
+        refunds the buyer in sandbox money and closes the dispute
 """
 
 import argparse
@@ -80,18 +85,78 @@ async def message(paypal: PayPal, dispute_id: str, text: str) -> None:
     await messages(paypal, dispute_id)
 
 
+async def shaped(paypal: PayPal, path: str, body: dict[str, Any]) -> None:
+    """POST `body` as plain JSON, then as multipart with an `input` part when PayPal refuses it."""
+    status, payload, debug_id = await paypal.probe("POST", path, body)
+    print(f"  plain JSON body -> {status}  debug id {debug_id}")
+    if status != 200:
+        print(json.dumps(payload, indent=2))
+        status, payload, debug_id = await paypal.probe(
+            "POST",
+            path,
+            files={"input": (None, json.dumps(body), "application/json")},
+        )
+        print(f"  multipart with an `input` part -> {status}  debug id {debug_id}")
+    print(f"  answer: {json.dumps(payload)}")
+
+
+async def offer(paypal: PayPal, dispute_id: str, value: str, note: str) -> None:
+    detail = await paypal.call("GET", f"/v1/customer/disputes/{dispute_id}", expect=200)
+    await shaped(
+        paypal,
+        f"/v1/customer/disputes/{dispute_id}/make-offer",
+        {
+            "note": note,
+            "offer_type": "REFUND",
+            "offer_amount": {
+                "currency_code": detail["dispute_amount"]["currency_code"],
+                "value": value,
+            },
+        },
+    )
+    await state(paypal, dispute_id)
+
+
+async def accept(paypal: PayPal, dispute_id: str, note: str) -> None:
+    await shaped(
+        paypal,
+        f"/v1/customer/disputes/{dispute_id}/accept-claim",
+        {"note": note, "accept_claim_type": "REFUND"},
+    )
+    await state(paypal, dispute_id)
+
+
+async def state(paypal: PayPal, dispute_id: str) -> None:
+    detail = await paypal.call("GET", f"/v1/customer/disputes/{dispute_id}", expect=200)
+    print(
+        f"  {detail.get('dispute_life_cycle_stage')}  {detail['status']}  "
+        f"outcome {json.dumps(detail.get('dispute_outcome'))}"
+    )
+    print(f"  links: {', '.join(rels(detail)) or 'none'}")
+    print(f"  offer: {json.dumps(detail.get('offer'))}")
+    print(f"  refund_details: {json.dumps(detail.get('refund_details'))}")
+
+
 async def main() -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--app", choices=("seller", "buyer"), default="seller")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("options")
     commands.add_parser("messages").add_argument("dispute_id")
     sending = commands.add_parser("message")
     sending.add_argument("dispute_id")
     sending.add_argument("text")
+    offering = commands.add_parser("offer")
+    offering.add_argument("dispute_id")
+    offering.add_argument("value")
+    offering.add_argument("note")
+    accepting = commands.add_parser("accept")
+    accepting.add_argument("dispute_id")
+    accepting.add_argument("note")
     args = parser.parse_args()
 
     async with http_client() as http:
-        paypal = await connect(http)
+        paypal = await connect(http, args.app)
         match args.command:
             case "options":
                 await options(paypal)
@@ -99,6 +164,10 @@ async def main() -> None:
                 await messages(paypal, args.dispute_id)
             case "message":
                 await message(paypal, args.dispute_id, args.text)
+            case "offer":
+                await offer(paypal, args.dispute_id, args.value, args.note)
+            case "accept":
+                await accept(paypal, args.dispute_id, args.note)
 
 
 if __name__ == "__main__":

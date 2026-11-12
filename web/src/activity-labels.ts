@@ -6,6 +6,7 @@ import {
   outcomeLabel,
   reasonLabel,
   statusLabel,
+  triageActionLabel,
 } from "@/dispute-labels";
 import { formatAmount, formatUtc } from "@/money";
 import { TOOL_LABELS } from "@/tool-labels";
@@ -34,6 +35,9 @@ export const ACTIVITY_LABELS: Record<Activity["kind"], string> = {
   evidence_filed: "Evidence Filed with PayPal",
   evidence_refused: "PayPal Refused the Evidence",
   dispute_flagged: "Needs the Merchant",
+  triage_decided: "Claude Picked the Answer",
+  triage_sent: "Answer Sent to PayPal",
+  triage_refused: "PayPal Refused the Answer",
   alert_refund_scheduled: "Alert Refund Scheduled",
   alert_refund_cancelled: "Alert Refund Cancelled",
   alert_refund_skipped: "Alert Refund Left to the Merchant",
@@ -49,6 +53,7 @@ const DISPUTE_READS: Record<string, string> = {
   simulator: "Sandbox Simulator",
   filing: "Evidence Filing",
   alert: "Alert Refund Timer",
+  triage: "Inquiry Answer",
 };
 
 /** Who refunded a pre-chargeback alert: the merchant, or Palisade when the time came. */
@@ -90,10 +95,14 @@ export function activitySource(row: Activity): string {
     case "evidence_filed":
     case "evidence_refused":
     case "dispute_flagged":
+    case "triage_sent":
+    case "triage_refused":
     case "alert_refund_scheduled":
     case "alert_refund_cancelled":
     case "alert_refund_skipped":
       return "Palisade";
+    case "triage_decided":
+      return "Claude";
     case "assistant_tool_call":
     case "signature_accepted":
     case "mandate_requested":
@@ -141,6 +150,12 @@ function disputeUpdate(details: Activity["details"]): string {
     : `now ${status}, as ${STAGES[stage] ?? stage}`;
 }
 
+/** The answer Claude picked for an inquiry, with the amount when it is an offer. */
+function triageAnswer(details: Activity["details"]): string {
+  const offer = text(details, "offer");
+  return `${triageActionLabel(text(details, "action"))}${offer === "" ? "" : ` of ${formatAmount(offer)}`}`;
+}
+
 /** One line on what the event was about, from the details the API stored with it. */
 export function activityDetail(row: Activity): string {
   const { details } = row;
@@ -183,8 +198,10 @@ export function activityDetail(row: Activity): string {
       const outcome = text(details, "outcome");
       return `${row.dispute_id ?? ""}: ${outcome === "" ? "closed with no outcome given" : outcomeLabel(outcome)}`;
     }
-    case "sandbox_dispute_filed":
-      return `${reasonLabel(text(details, "reason"))}, through the demo buyer's own PayPal app`;
+    case "sandbox_dispute_filed": {
+      const complaint = text(details, "complaint");
+      return `${reasonLabel(text(details, "reason"))}, through the demo buyer's own PayPal app${complaint === "" ? "" : `; the buyer typed: ${complaint}`}`;
+    }
     case "sandbox_dispute_adjudicated":
       return text(details, "outcome") === "SELLER_FAVOR"
         ? "Asked PayPal's sandbox to decide for the seller"
@@ -205,6 +222,12 @@ export function activityDetail(row: Activity): string {
       return text(details, "issues");
     case "dispute_flagged":
       return text(details, "why");
+    case "triage_decided":
+      return `${triageAnswer(details)}: ${text(details, "complaint")}`;
+    case "triage_sent":
+      return `${triageAnswer(details)}, carried out by PayPal`;
+    case "triage_refused":
+      return `${triageAnswer(details)}: ${text(details, "issues")}`;
     case "alert_refund_scheduled":
       return `A full refund at ${formatUtc(text(details, "due"))}, an hour before PayPal's window closes`;
     case "alert_refund_cancelled": {

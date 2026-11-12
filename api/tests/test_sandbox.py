@@ -130,12 +130,19 @@ async def test_the_simulator_files_as_the_demo_buyer_and_stores_the_dispute(
     )
 
     response = await client.post(
-        f"/api/sandbox/orders/{order.number}/disputes", json={"reason": "OTHER"}
+        f"/api/sandbox/orders/{order.number}/disputes",
+        json={"reason": "OTHER", "complaint": "  The sole came off.  "},
     )
 
     assert response.status_code == 201
-    assert Dispute.model_validate_json(response.content).order_number == order.number
+    stored = Dispute.model_validate_json(response.content)
+    # PayPal's sandbox keeps no buyer text, so the complaint stays with the stored dispute.
+    assert (stored.order_number, stored.sandbox_complaint) == (
+        order.number,
+        "The sole came off.",
+    )
     [sent] = buyer.sent("POST", DISPUTES_PATH)
+    assert b"sole" not in sent.content
     filed = Filed.model_validate_json(sent.content)
     assert (filed.disputed_transactions, filed.reason, filed.dispute_amount) == (
         [{"buyer_transaction_id": "BUYER-TXN-1"}],

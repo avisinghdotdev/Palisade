@@ -1,11 +1,11 @@
 """Filing and settling disputes as PayPal's sandbox lets a test buyer and a test reviewer do."""
 
 from datetime import UTC, datetime, timedelta
-from typing import Literal, final
+from typing import Annotated, Literal, final
 from urllib.parse import urlencode
 from uuid import uuid4
 
-from pydantic import BaseModel
+from pydantic import BaseModel, StringConstraints
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import joinedload
@@ -30,10 +30,15 @@ SEARCH_PATH = "/v1/reporting/transactions"
 SEARCH_TIME = "%Y-%m-%dT%H:%M:%S-0000"
 # PayPal's payment rows; holds (T15) and their releases (T11) sit beside them for one payment.
 PAYMENT_EVENT_CODES = "T00"
+# What the buyer says is wrong, as they would type it in PayPal's form.
+Complaint = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)
+]
 
 
 class DisputeRequest(BaseModel):
     reason: SimulatedReason
+    complaint: Complaint | None = None
 
 
 class AdjudicationRequest(BaseModel):
@@ -115,8 +120,14 @@ class Simulator:
         self._disputes = disputes
         self._activities = activities
 
-    async def file_dispute(self, number: str, reason: SimulatedReason) -> Dispute:
+    async def file_dispute(
+        self, number: str, reason: SimulatedReason, complaint: str | None
+    ) -> Dispute:
         """File a dispute on the order as the demo buyer, then store it as PayPal opened it.
+
+        PayPal's sandbox accepts a buyer's text on this call and drops it, and refuses the
+        buyer's app a message afterwards (both seen 2026-11-11), so the `complaint` stays
+        with the stored dispute instead.
 
         Raises:
             UnknownOrder: no order has this number.
@@ -158,12 +169,14 @@ class Simulator:
         live, raw = await self._disputes.fetch(dispute_id)
         async with self._sessions.begin() as session:
             change = await self._disputes.upsert(session, live, raw)
+            change.record.sandbox_complaint = complaint
             self._activities.add(
                 session,
                 "sandbox_dispute_filed",
                 order_id=order.id,
                 dispute_id=dispute_id,
                 reason=reason,
+                complaint=complaint,
             )
             await self._disputes.record(session, change, "simulator")
         return await self._disputes.get(dispute_id)

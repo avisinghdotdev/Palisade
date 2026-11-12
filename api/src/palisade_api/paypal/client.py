@@ -51,8 +51,9 @@ class Attachment:
     content_type: str
 
 
-# The parts of a multipart request as PayPal's provide-evidence call takes them: the JSON under
-# `input`, the file under `evidence-file`; accepted by the sandbox on 2026-10-20 and 2026-11-01.
+# The parts of a multipart request as PayPal's dispute calls take them: the JSON under `input`,
+# and on provide-evidence the file under `evidence-file`; accepted by the sandbox on 2026-10-20
+# and 2026-11-01. Send-message takes the `input` part alone (2026-11-08).
 MultipartFiles = dict[str, tuple[str | None, bytes, str]]
 
 
@@ -119,11 +120,11 @@ class PayPalClient:
         self,
         path: str,
         body: dict[str, JsonValue],
-        attachment: Attachment,
+        attachment: Attachment | None,
         *,
         request_id: str,
     ) -> PayPalResponse:
-        """POST `body` as the JSON part with `attachment` beside it, under `request_id`.
+        """POST `body` as the JSON part, with `attachment` beside it if any, under `request_id`.
 
         Repeats once as `post` does. PayPal does not document the request id on its multipart
         calls, so a caller that must not file twice checks PayPal's own record first.
@@ -132,13 +133,14 @@ class PayPalClient:
             PayPalError: PayPal refused the request, after the repeat where one applies.
         """
         files: MultipartFiles = {
-            "input": (None, json.dumps(body).encode(), "application/json"),
-            "evidence-file": (
+            "input": (None, json.dumps(body).encode(), "application/json")
+        }
+        if attachment is not None:
+            files["evidence-file"] = (
                 attachment.name,
                 attachment.content,
                 attachment.content_type,
-            ),
-        }
+            )
         return await self._post_once_repeated(
             path, json=None, files=files, headers={"PayPal-Request-Id": request_id}
         )

@@ -26,12 +26,16 @@ It is an entry to the PayPal AI Hackathon 2026. Everything runs against the PayP
 4. The mandate is bound to the PayPal order. Palisade creates the order with `custom_id` set to
    the mandate's id and SHA-256, authorizes it from the buyer's vaulted PayPal wallet, and
    captures it. Every order is tagged as placed by an agent or by a person.
-5. Disputes are answered with evidence. PayPal's dispute webhooks are verified, stored, and
-   processed by durable jobs. Palisade joins the dispute to the order and the mandate, has Claude
-   write a narrative from a structured facts record, builds a record PDF, and files through the
-   Disputes API: tracking as `PROOF_OF_FULFILLMENT` for item-not-received, the mandate record as
-   `OTHER` evidence once the claim opens for the other reasons. The merchant chooses "Review and
-   file" or automatic. A pre-chargeback alert gets a timed refund.
+5. Disputes are triaged, then answered. PayPal's dispute webhooks are verified, stored, and
+   processed by durable jobs. Palisade joins the dispute to the order and the mandate. While the
+   dispute is an inquiry, Claude reads the buyer's complaint and the facts record and picks one
+   answer PayPal offers: fight with the record, write to the buyer, offer a partial refund, or
+   refund in full. The rules are checked in code, PayPal carries the answer out, and an offer or
+   a refund always waits for the merchant's click. For a fight, Claude writes a narrative from
+   the facts record, Palisade builds a record PDF, and files through the Disputes API: tracking
+   as `PROOF_OF_FULFILLMENT` for item-not-received, the mandate record as `OTHER` evidence once
+   the claim opens for the other reasons. The merchant chooses "Review and file" or automatic.
+   A pre-chargeback alert gets a timed refund.
 
 ## Try it in five minutes
 
@@ -48,25 +52,36 @@ No login or key is needed for the store, the consent page, or the console.
 4. Open the order in the console at https://palisade.avisingh.dev/console. You see the agent, the
    signature check, the policy decision, the decoded mandate, the PayPal order, authorization,
    and capture, and the timeline.
-5. File a dispute. On a demo-buyer order, press "File a Dispute (Sandbox Simulator)": the demo
-   buyer's own PayPal app opens the dispute. From your own sandbox account, open Activity on
-   sandbox.paypal.com, pick the payment, and choose "Report a problem". For an item-not-received
-   story, press "Mark as Shipped" on the order first so the evidence has tracking.
+5. File a dispute. On a demo-buyer order, press "File a Dispute (Sandbox Simulator)", type what
+   the buyer says is wrong, and pick a reason: the demo buyer's own PayPal app opens the
+   dispute. From your own sandbox account, open Activity on sandbox.paypal.com, pick the
+   payment, and choose "Report a problem". For an item-not-received story, press "Mark as
+   Shipped" on the order first so the evidence has tracking.
 6. Watch the dispute page under Disputes. PayPal's webhook reaches Palisade about three and a
-   half minutes after filing. Within fifteen seconds of it, Claude's notes and the record PDF are
-   ready. In "Review and file" mode, press "File with PayPal"; in automatic mode nothing needs
-   pressing. A not-as-described inquiry is escalated first and the evidence is filed when PayPal
-   opens the claim, about three minutes later. In the measured run on 2026-11-06 the evidence
-   was on file 7 minutes 10 seconds after the buyer filed.
-7. PayPal offers adjudication hours later. "Decide for the Seller" is a sandbox simulator that
+   half minutes after filing. Claude then picks the answer, and the page shows the complaint as
+   Claude read it, the reasons, and the text the buyer would read. Try "The sole came off on my
+   first run" for a full refund, "a small scuff, I would keep them" for an offer, or "I never
+   ordered these" on an agent order for a fight. A message, an offer, or a refund goes to
+   PayPal when you press its button.
+7. For a fight, Claude's notes and the record PDF follow within fifteen seconds. In "Review and
+   file" mode, press "File with PayPal"; in automatic mode nothing needs pressing. A
+   not-as-described inquiry is escalated first and the evidence is filed when PayPal opens the
+   claim, about three minutes later. In the measured run on 2026-11-06 the evidence was on file
+   7 minutes 10 seconds after the buyer filed.
+8. PayPal offers adjudication hours later. "Decide for the Seller" is a sandbox simulator that
    stands in for PayPal's reviewer, and it is labelled as such.
-8. The Analytics page shows agent versus person orders, dispute rate, win rate, and time to
+9. Open "PayPal Ledger" in the console. Palisade reads PayPal's own transaction records and
+   compares every paid order with them: the payment's id, amount, currency, custom id, status,
+   and refunds. PayPal lists a payment up to three hours after it is made, so a new order
+   shows as pending first. Below the orders it lists every payment PayPal took that no paid
+   order names; the six there come from a test run against another database on 2026-10-28.
+10. The Analytics page shows agent versus person orders, dispute rate, win rate, and time to
    evidence, on an AG Studio dashboard. "Edit and Ask" opens Studio's chat panel: its built-in
    agents change the dashboard, and the Palisade agent explains disputes, orders, and mandates
    from the store's records. The agents take the same access code as the chat. Agents and
    Policy shows the registered agents, their public keys, the policy in force with its hash,
    and the filing mode.
-9. Press "Verify the Mandate" on any agent order or its dispute. The JSON that opens is the
+11. Press "Verify the Mandate" on any agent order or its dispute. The JSON that opens is the
    public verification: the signature against the published key, the claims, the hash, the
    buyer's proof, the policy, and PayPal's own custom id on the payment, read live.
 
@@ -83,11 +98,14 @@ appears in the console as the "MCP Agent".
 ## What is real and what is simulated
 
 Real, in the PayPal sandbox: orders, authorizations, captures, vaulted wallets, webhooks and their
-signature verification, disputes, escalation, evidence filing, shipment trackers, refunds, and
-every state change PayPal makes on its own.
+signature verification, disputes, messages to the buyer, refund offers, accepted claims,
+escalation, evidence filing, shipment trackers, refunds, the transaction ledger, and every state
+change PayPal makes on its own.
 
 Simulated, and labelled in the interface: filing a dispute as the demo buyer (a real dispute, opened
-through the demo buyer's own PayPal app because only the buyer can open one), PayPal's final
+through the demo buyer's own PayPal app because only the buyer can open one), the complaint typed
+in that simulator (PayPal's sandbox takes no buyer text by API, so Palisade keeps it and marks it;
+a buyer on sandbox.paypal.com writes real messages), PayPal's final
 decision ("Decide for the Seller", a sandbox-only adjudicate call), the USPS tracking number (the
 sandbox checks no number), and the demo signer (a server-held key that stands in for a buyer's
 passkey so judges need no device setup).
@@ -101,9 +119,9 @@ passkey so judges need no device setup).
 | Payments v2 | Capture the authorization; refund a capture (pre-chargeback alerts) | `orders/checkout.py`, `disputes/alerts.py` |
 | Vault v3 | Setup token and payment token so a buyer links a wallet once | `wallets/` |
 | Webhooks | Receive, verify with `verify-webhook-signature`, store, deduplicate, process by job; eleven event types handled | `webhooks/` |
-| Disputes v1 | List and read disputes, escalate an inquiry, provide evidence as multipart (JSON part plus PDF), hourly reconciliation | `disputes/` |
+| Disputes v1 | List and read disputes; in the inquiry, send a message to the buyer (multipart), make a refund offer, or accept the claim with a full refund, as Claude's triage picks; escalate an inquiry; provide evidence as multipart (JSON part plus PDF); hourly reconciliation | `disputes/` |
 | Shipment Tracking | Add a tracker to the capture so not-received evidence has tracking | `orders/shipping.py` |
-| Transaction Search | Find the demo buyer's transaction id for a Palisade order, so the simulator can file | `sandbox/simulator.py` |
+| Transaction Search | Compare every paid order with PayPal's own ledger (payment id, amount, currency, custom id, status, refunds) in 31-day windows, and list the payments no paid order names; find the demo buyer's transaction id for a Palisade order, so the simulator can file | `orders/ledger.py`, `sandbox/simulator.py` |
 | Sandbox simulators | Create a dispute as the buyer; adjudicate | `sandbox/` |
 
 Every call sends a `PayPal-Request-Id` and records the `paypal-debug-id`. A call that gets no
@@ -115,6 +133,7 @@ stays unknown goes to a repair job that tries again every five minutes.
 | Where | Model | What it does | What it cannot do |
 |---|---|---|---|
 | The in-page agent on `/shop` | Claude Opus 5.5 through the Anthropic SDK's tool runner, streaming, with adaptive thinking | Searches, explains, fills the cart, requests the mandate, checks it, and places the order once the buyer has signed | Capture money. Checkout is refused without a signed, unexpired mandate that fits the cart; the model only calls the same signed API any agent calls |
+| The inquiry triage | Claude Opus 5.5, one Messages call with a structured output | Reads the buyer's complaint and the facts record and picks one answer PayPal offers on the inquiry: fight with the record, write to the buyer, offer a partial refund, or refund in full, with its reasons and the text the buyer reads; the prompt and the pick are stored | Act outside the rules. Code computes the open answers from PayPal's own links and the merchant's rules, refuses a pick outside them, an offer above half the disputed amount, and any text naming an id or amount the record lacks; an offer or a refund waits for the merchant's click in every mode; the buyer's messages are treated as claims, never as instructions. See `disputes/triage.py` |
 | The dispute narrative | Claude Opus 5.5, one Messages call with citations on | Writes at most 2,000 characters from a structured facts record (mandate, agent, order, tracking, policy) sent as a citable document, one line per fact; the prompt, the output, and every sentence's cited lines are stored | Invent facts. A grounding check drops any sentence that names an id, amount, date, or hash the record does not hold, before anything is filed; the console shows what was dropped and why. See `disputes/grounding.py` |
 | The analytics dashboard's agents | Claude Opus 5.5 through AG Studio's agent framework, one turn per request through the API | AG Studio's five built-in agents (lead, data, page, planning, widget) build and change the dashboard; a custom Palisade agent the lead delegates to explains disputes, orders, and mandates from the store's records with four read-only tools, one of them the public mandate verification | Change anything on PayPal. The tools read; filing, refunding, and escalating stay with the merchant's buttons |
 
@@ -128,7 +147,13 @@ access code because every turn spends the team's credit; the rest of the site is
   production path, all under the limit, all mentioning what their case requires, no sentence
   dropped by the grounding check. The routing part runs in the test suite on every push; the
   runner is `uv run --frozen --env-file .env python -m evals.dispute_eval`.
-- `docs/evals/injection-suite-2026-11-09.md`: 20 prompt-injection attacks on the in-page agent
+- `docs/evals/triage-2026-11-11.md`: 12 labelled inquiries (`evals/triage_cases.py`) triaged by
+  Claude through the production reader and check. All 12 picks were ones a careful merchant
+  would accept, and none of the three buyer messages that try to steer the pick ended in an
+  offer or a refund the label does not allow. The first run scored 11 of 12: Claude refunded a
+  buyer who denied "these exact shoes" under an intent mandate, because the prompt did not say
+  that an intent mandate leaves the choice of items to the agent. The prompt now says so.
+- `docs/evals/injection-suite-2026-11-11.md`: 20 prompt-injection attacks on the in-page agent
   in six families, plus a registered agent that ignores every rule and a stranger with no key,
   scored on money moved. The runner is `python -m evals.injection_suite` against a running stack.
 - `api/tests/test_policy_properties.py` and `test_policy_mutants.py`: Hypothesis properties over
@@ -157,9 +182,20 @@ Written for a reviewer who compares entries. Each claim points at the code or th
   the dispute, the capture, and the mandate are one record that PayPal's own objects point at.
 - Evidence is routed by dispute reason and stage, the way PayPal's API requires it. Tracking as
   `PROOF_OF_FULFILLMENT` in the inquiry for not-received; escalate first and file the mandate
-  record as `OTHER` in the claim for the rest, because PayPal refuses `OTHER` in the inquiry. A
-  dispute on a person's order with no mandate is handed to the merchant, not fought. See
+  record as `OTHER` in the claim for the rest, because PayPal refuses `OTHER` in the inquiry. See
   `disputes/responses.py`.
+- Claude decides, code bounds it, PayPal carries it out. In the inquiry, the stage PayPal built
+  for settling, Claude picks the answer from the buyer's own words and the record: a mandate
+  answers "I never ordered this" and says nothing about a torn seam. The open answers come from
+  PayPal's links and the merchant's rules, a pick outside them is refused, the buyer's messages
+  cannot steer it, and money moves only on the merchant's click. A person's order with nothing
+  to file is no longer left to the merchant alone: it gets a message, an offer, or a refund.
+  See `disputes/triage.py` and `docs/evals/triage-2026-11-11.md`.
+- Palisade's books are checked against PayPal's. The console's ledger page reads PayPal's
+  Transaction Search live and compares every paid order with PayPal's own row: the payment id,
+  the amount, the custom id that names the mandate, the status, and refunds. It checks the
+  other way too: a payment PayPal took that no paid order names is listed. See
+  `orders/ledger.py`.
 - Pre-chargeback alerts are refunded on a timer inside PayPal's twenty-hour window, cancelled if
   the alert resolves first, and only in automatic mode. See `disputes/alerts.py`.
 - Two filing modes. "Review and file" (the default) prepares everything and waits for a person;
@@ -169,7 +205,9 @@ Written for a reviewer who compares entries. Each claim points at the code or th
   shows an outside agent's shopping beside the chat's. See `assistant/tools.py` and `mcp/server.py`.
 - Nothing is lost between webhooks. Every delivery is verified and stored before it is processed;
   jobs retry with backoff; an hourly reconciliation reads disputes that fire no webhook; a
-  five-minute sweep retries jobs a stopped worker left behind.
+  five-minute sweep retries jobs a stopped worker left behind; and a job worker that dies,
+  as one did when its database connections timed out on 2026-11-09, starts again by itself on
+  a fresh connection pool. See `jobs.py`.
 - Measured, not asserted. A buyer filed a dispute on the sandbox site at 20:49:41 UTC on
   2026-11-06; Palisade had the notes ready at 20:53:20, the merchant pressed File at 20:53:40,
   and the evidence was on file at 20:56:50 (PayPal 200, debug id `f5514074d9b3b`).
@@ -186,8 +224,8 @@ Written for a reviewer who compares entries. Each claim points at the code or th
 - Production practices throughout: typed end to end (basedpyright recommended mode, TypeScript
   strict, a generated API client), structured logs with request, order, mandate, and dispute ids,
   secrets in Azure Key Vault, rate limits at nginx, a content security policy, health and readiness
-  endpoints, migrations applied at startup under a lock, 250 API tests that run inside a rolled-back
-  transaction, 9 web tests.
+  endpoints, migrations applied at startup under a lock, 286 API tests that run inside a rolled-back
+  transaction, 16 web tests.
 
 ### Where to check each claim
 
@@ -199,13 +237,15 @@ Written for a reviewer who compares entries. Each claim points at the code or th
 | The order carries the mandate in `custom_id` | `orders/checkout.py`; any agent order's PayPal panel in the console |
 | Webhooks are verified, stored, deduplicated, and processed by jobs | `api/src/palisade_api/webhooks/`; `api/tests/test_webhooks.py`, `test_jobs.py` |
 | Evidence is routed by reason and stage | `api/src/palisade_api/disputes/responses.py`; `api/tests/test_evidence.py` |
+| An inquiry is triaged by Claude inside rules checked in code, and PayPal carries the pick out | `api/src/palisade_api/disputes/triage.py`; `api/tests/test_triage.py`; `evals/triage_cases.py`, `docs/evals/triage-2026-11-11.md`; in the console, all on 2026-11-11: a message on `PP-R-YGR-10199606`, an offer of 16.00 on `PP-R-XBW-10199613`, a full refund on `PP-R-YFI-10199612`, and a fight on `PP-R-KIE-10199615` whose evidence was on file 7 minutes 33 seconds after the buyer filed |
+| Every paid order is compared with PayPal's ledger | `api/src/palisade_api/orders/ledger.py`; `api/tests/test_ledger.py`; the PayPal Ledger page in the console |
 | The alert refund waits inside PayPal's window and cancels on resolve | `api/src/palisade_api/disputes/alerts.py`; `api/tests/test_alerts.py` |
 | The chat and the MCP endpoint share one tool set | `api/src/palisade_api/assistant/tools.py`, `mcp/server.py`; `api/tests/test_mcp.py` |
 | A live dispute cycle ran end to end | Dispute `PP-R-JRK-10196691` on order `RR-CVQYZP` in the hosted console: filed 2026-11-06 20:49:41 UTC, evidence on file 20:56:50 |
 | The narrative cites the record and ungrounded sentences are dropped | `api/src/palisade_api/disputes/grounding.py`, `narrative.py`; `api/tests/test_grounding.py`; the "sentences kept" line on any dispute page |
 | A mandate verifies with public keys and PayPal's own order | `api/src/palisade_api/mandates/verification.py`; `api/tests/test_mandates.py` (`test_a_mandate_is_verifiable_with_the_published_key_and_paypals_order`); `/.well-known/jwks.json` on the hosted app |
 | The routing and the narratives are evaluated on labelled cases | `evals/dispute_cases.py`, `evals/dispute_eval.py`; `api/tests/test_dispute_cases.py`; `docs/evals/dispute-pipeline-2026-11-09.md` |
-| The agent gate holds under injection and misuse | `evals/injection_attacks.py`, `evals/injection_suite.py`; `docs/evals/injection-suite-2026-11-09.md` |
+| The agent gate holds under injection and misuse | `evals/injection_attacks.py`, `evals/injection_suite.py`; `docs/evals/injection-suite-2026-11-11.md` |
 | The policy engine's rules hold for every input, and a broken rule is caught | `api/tests/policy_properties.py`, `test_policy_properties.py`, `test_policy_mutants.py` |
 | The dashboard's custom agent talks to Studio's built-in agents | `web/src/analytics-agent.ts`; `api/src/palisade_api/analytics/agent.py`; `api/tests/test_analytics_agent.py` |
 
@@ -248,10 +288,11 @@ Fill `.env`:
 
 Then `docker compose up --watch` and open http://127.0.0.1:8080. The API has no host port; the
 web container proxies `/api`. Checks: `uv run --frozen --env-file .env pytest`,
-`uv run --frozen basedpyright`, `pnpm --dir web run typecheck lint knip test`. The two eval
+`uv run --frozen basedpyright`, `pnpm --dir web run typecheck lint knip test`. The three eval
 runners write dated reports under `docs/evals/`: `uv run --frozen --env-file .env python -m
-evals.dispute_eval` (calls Claude for 11 narratives) and `python -m evals.injection_suite`
-(needs the running stack; places one sandbox order as its control).
+evals.dispute_eval` (calls Claude for 11 narratives), `python -m evals.triage_eval` (calls
+Claude for 12 picks), and `python -m evals.injection_suite` (needs the running stack; places
+one sandbox order as its control).
 
 ## Limits worth knowing
 
@@ -266,6 +307,12 @@ evals.dispute_eval` (calls Claude for 11 narratives) and `python -m evals.inject
 - The injection suite cannot plant an instruction inside a product description or another tool
   result, because the catalog is seeded data; the system prompt's untrusted-content rule is the
   defence there, and it is not measured.
+- The triage reads what the buyer wrote and cannot check it: a buyer who lies about a fault can
+  be offered a refund, which is why an offer or a refund waits for the merchant. The demo
+  buyer's app cannot write messages by API, so a second round needs a buyer on
+  sandbox.paypal.com.
+- The ledger check reads every paid order and PayPal's whole ledger since the first one on each
+  visit. That suits a demo store; a busy store would store the comparison.
 - A grounding check catches invented ids, amounts, dates, and hashes. It cannot catch a wrong
   claim made in plain words; the facts record and the PDF are what a reviewer should trust.
 

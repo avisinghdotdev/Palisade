@@ -19,6 +19,11 @@ from palisade_api.disputes.service import (
     NotTheShops,
     UnknownDispute,
 )
+from palisade_api.disputes.triage import (
+    NothingToConfirm,
+    TriageUnavailable,
+    UnknownTriage,
+)
 from palisade_api.paypal.client import PayPalError
 
 router = APIRouter(prefix="/api/disputes", tags=["disputes"])
@@ -116,16 +121,42 @@ async def get_response(
 async def prepare_response(
     dispute_id: DisputeId, service: Annotated[Responses, Depends(responses)]
 ) -> DisputeResponse:
-    """Write the notes and the record now, as the job would on PayPal's cue.
+    """Take the dispute one step on now, as the job would on PayPal's cue.
 
-    A 502 means Claude did not deliver the notes.
+    An inquiry that waits for the seller is triaged: Claude picks the answer. A picked fight,
+    and every dispute past its inquiry, gets the notes and the record. A 502 means Claude
+    did not deliver; a 422 names what PayPal refused of a picked answer.
     """
     try:
         return await service.prepare(dispute_id)
     except UnknownDispute as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
-    except (NarrativeUnavailable, NarrativeTooLong) as error:
+    except (TriageUnavailable, NarrativeUnavailable, NarrativeTooLong) as error:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(error)) from error
+    except PayPalError as error:
+        raise paypal_refused(error, "did not take the answer") from error
+
+
+@router.post("/{dispute_id}/triage/{triage_id}/confirm", operation_id="confirm_triage")
+async def confirm_triage(
+    dispute_id: DisputeId,
+    triage_id: UUID,
+    service: Annotated[Responses, Depends(responses)],
+) -> DisputeResponse:
+    """The merchant's go on the answer Claude picked for an inquiry: PayPal carries it out.
+
+    A message is posted in PayPal's thread, an offer is made, or the claim is accepted with a
+    full refund. A 409 means the answer went to PayPal already; a 422 names what PayPal
+    refused.
+    """
+    try:
+        return await service.confirm(dispute_id, triage_id)
+    except UnknownTriage as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
+    except NothingToConfirm as error:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
+    except PayPalError as error:
+        raise paypal_refused(error, "did not take the answer") from error
 
 
 @router.post("/{dispute_id}/evidence/{evidence_id}/file", operation_id="file_evidence")
