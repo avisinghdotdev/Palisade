@@ -25,7 +25,7 @@ from palisade_api.disputes.facts import (
     PolicyFacts,
     ShipmentFacts,
 )
-from palisade_api.disputes.models import DisputeRecord, EvidenceRecord
+from palisade_api.disputes.models import DisputeRecord, EvidenceRecord, TriageRecord
 from palisade_api.disputes.responses import (
     EvidenceStatus,
     EvidenceType,
@@ -512,6 +512,16 @@ def live_for(case: Case) -> PayPalDispute:
                     "content": case.buyer_message,
                 }
             ],
+            "allowed_response_options": {
+                "make_offer": {
+                    "offer_types": ["REFUND"] if "make_offer" in case.actions else []
+                },
+                "accept_claim": {
+                    "accept_claim_types": ["REFUND"]
+                    if "accept_claim" in case.actions
+                    else []
+                },
+            },
             "links": [
                 {"rel": "self", "href": href, "method": "GET"},
                 *(
@@ -524,7 +534,11 @@ def live_for(case: Case) -> PayPalDispute:
 
 
 def loaded_for(case: Case) -> Loaded:
-    """What the response job has in hand for the case, with any answer already on it."""
+    """What the response job has in hand for the case, with any answer already on it.
+
+    These cases label the evidence path, so an inquiry comes with the fight already picked;
+    the pick itself is `evals.triage_cases`' subject.
+    """
     ids = case.ids()
     order = order_for(case)
     record = DisputeRecord(id=ids["dispute"], order_id=order.id, status=case.status)
@@ -542,7 +556,19 @@ def loaded_for(case: Case) -> Loaded:
                 status=case.existing,
             )
         )
-    return Loaded(record, order, rows, case.mode, case.escalated)
+    fought = (
+        [
+            TriageRecord(
+                dispute_id=ids["dispute"],
+                action="fight",
+                status="done",
+                decided_at=OPENED + timedelta(minutes=1),
+            )
+        ]
+        if case.stage == "INQUIRY"
+        else []
+    )
+    return Loaded(record, order, rows, fought, case.mode, case.escalated)
 
 
 def route(case: Case) -> tuple[FilingAction, EvidenceType | None]:

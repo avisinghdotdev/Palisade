@@ -85,12 +85,23 @@ function Messages({ dispute }: { dispute: Dispute }) {
         <MessageSquare aria-hidden className="size-4 text-muted-foreground" />
         Messages
       </h2>
-      {dispute.messages.length === 0 ? (
+      {dispute.messages.length === 0 && dispute.sandbox_complaint === null ? (
         <p className="mt-3 text-sm text-muted-foreground">
           Nobody has written on this dispute.
         </p>
       ) : (
         <ul className="mt-3 grid gap-3">
+          {dispute.sandbox_complaint !== null && (
+            <li className="rounded-xl border border-dashed bg-card px-4 py-3">
+              <p className="text-xs text-muted-foreground">
+                The demo buyer, typed in the sandbox simulator. PayPal&apos;s
+                sandbox takes no buyer text by API, so only Palisade holds it.
+              </p>
+              <p className="mt-1 text-sm whitespace-pre-line">
+                {dispute.sandbox_complaint}
+              </p>
+            </li>
+          )}
           {dispute.messages.map((message) => (
             <li
               className="rounded-xl border bg-card px-4 py-3"

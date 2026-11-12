@@ -15,9 +15,18 @@ from palisade_api.paypal.client import (
     PayPalResponse,
 )
 
-# The order's own calls, then the three that answer a dispute on it.
+# The order's own calls, then the ones that answer a dispute on it.
 CallAction = Literal[
-    "create", "capture", "void", "track", "escalate", "provide_evidence", "refund"
+    "create",
+    "capture",
+    "void",
+    "track",
+    "escalate",
+    "provide_evidence",
+    "refund",
+    "send_message",
+    "make_offer",
+    "accept_claim",
 ]
 
 
@@ -106,14 +115,19 @@ class PayPalCalls:
         body: dict[str, JsonValue],
         request_id: str,
         attachment: Attachment | None = None,
+        *,
+        multipart: bool = False,
     ) -> PayPalResponse:
         """Send a recorded call and keep PayPal's answer on its row, a refusal included.
+
+        The body goes as JSON, or as the JSON part of a multipart request when there is an
+        `attachment` or the call takes no other form (`multipart`).
 
         Raises:
             PayPalError: PayPal refused the request or did not answer.
         """
         try:
-            if attachment is None:
+            if attachment is None and not multipart:
                 response = await self._paypal.post(path, body, request_id=request_id)
             else:
                 response = await self._paypal.post_multipart(

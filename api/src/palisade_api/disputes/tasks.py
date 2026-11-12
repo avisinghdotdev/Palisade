@@ -7,8 +7,10 @@ import structlog
 from procrastinate import JobContext, RetryStrategy
 
 from palisade_api.disputes.alerts import Alerts
+from palisade_api.disputes.narrative import NarrativeUnavailable
 from palisade_api.disputes.responses import NotYetOffered, Responses
 from palisade_api.disputes.service import Disputes
+from palisade_api.disputes.triage import TriageUnavailable
 from palisade_api.jobs import (
     ALERTS_QUEUE,
     DISPUTES_QUEUE,
@@ -21,9 +23,13 @@ from palisade_api.paypal.client import PayPalError
 logger = structlog.stdlib.get_logger(__name__)
 
 # A claim opens a few minutes after an escalation; PayPal's own webhook usually cues the filing
-# first, and this covers a dispute it stays quiet about. Twelve tries three minutes apart.
+# first, and this covers a dispute it stays quiet about. It also covers a call PayPal did not
+# answer and a pick or notes Claude did not deliver, which no later event would cue again.
+# Twelve tries three minutes apart.
 WAIT_FOR_PAYPAL = RetryStrategy(
-    max_attempts=12, wait=180, retry_exceptions=[NotYetOffered]
+    max_attempts=12,
+    wait=180,
+    retry_exceptions=[NotYetOffered, TriageUnavailable, NarrativeUnavailable],
 )
 # A refund PayPal did not answer is tried again under the same request id, within the hour
 # PayPal's window still leaves: four tries two minutes apart. A refusal is not raised.

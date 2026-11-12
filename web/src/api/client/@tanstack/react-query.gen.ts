@@ -3,8 +3,8 @@
 import { type DefaultError, queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 
 import { client } from '../client.gen';
-import { activity, agents, analytics, analyticsAgentTurn, approveMandate, assistantAccess, cart, checkout, confirmWalletLink, conversation, createCart, createConversation, createMandate, declineMandate, demoWallet, dispute, disputeActivity, disputeAlert, disputeResponse, disputes, evidenceDocument, fileEvidence, health, jwks, mandate, mandatePasskeyOptions, type Options, order, orderActivity, orders, paypalHealth, paypalWebhook, policy, prepareResponse, product, products, ready, refundAlert, registerPasskey, replayWebhookEvent, setCartLine, setCartWallet, setDisputeFiling, shipOrder, simulateAdjudication, simulateDispute, startPasskeyRegistration, startWalletLink, syncDispute, verifyMandate, wallet, webhookEvents } from '../sdk.gen';
-import type { ActivityData, ActivityError, ActivityResponse, AgentsData, AgentsResponse, AnalyticsAgentTurnData, AnalyticsAgentTurnError, AnalyticsAgentTurnResponse, AnalyticsData, AnalyticsResponse, ApproveMandateData, ApproveMandateError, ApproveMandateResponse, AssistantAccessData, AssistantAccessResponse, CartData, CartError, CartResponse, CheckoutData, CheckoutError, CheckoutResponse, ConfirmWalletLinkData, ConfirmWalletLinkError, ConfirmWalletLinkResponse, ConversationData, ConversationError, ConversationResponse, CreateCartData, CreateCartError, CreateCartResponse, CreateConversationData, CreateConversationError, CreateConversationResponse, CreateMandateData, CreateMandateError, CreateMandateResponse, DeclineMandateData, DeclineMandateError, DeclineMandateResponse, DemoWalletData, DemoWalletResponse, DisputeActivityData, DisputeActivityError, DisputeActivityResponse, DisputeAlertData, DisputeAlertError, DisputeAlertResponse, DisputeData, DisputeError, DisputeResponse2, DisputeResponseData, DisputeResponseError, DisputeResponseResponse, DisputesData, DisputesError, DisputesResponse, EvidenceDocumentData, EvidenceDocumentError, EvidenceDocumentResponse, FileEvidenceData, FileEvidenceError, FileEvidenceResponse, HealthData, HealthResponse, JwksData, JwksResponse, MandateData, MandateError, MandatePasskeyOptionsData, MandatePasskeyOptionsError, MandatePasskeyOptionsResponse, MandateResponse, OrderActivityData, OrderActivityError, OrderActivityResponse, OrderData, OrderError, OrderResponse, OrdersData, OrdersResponse, PaypalHealthData, PaypalHealthResponse, PaypalWebhookData, PaypalWebhookError, PaypalWebhookResponse, PolicyData, PolicyResponse, PrepareResponseData, PrepareResponseError, PrepareResponseResponse, ProductData, ProductError, ProductResponse, ProductsData, ProductsResponse, ReadyData, ReadyResponse, RefundAlertData, RefundAlertError, RefundAlertResponse, RegisterPasskeyData, RegisterPasskeyError, RegisterPasskeyResponse, ReplayWebhookEventData, ReplayWebhookEventError, ReplayWebhookEventResponse, SetCartLineData, SetCartLineError, SetCartLineResponse, SetCartWalletData, SetCartWalletError, SetCartWalletResponse, SetDisputeFilingData, SetDisputeFilingError, SetDisputeFilingResponse, ShipOrderData, ShipOrderError, ShipOrderResponse, SimulateAdjudicationData, SimulateAdjudicationError, SimulateAdjudicationResponse, SimulateDisputeData, SimulateDisputeError, SimulateDisputeResponse, StartPasskeyRegistrationData, StartPasskeyRegistrationError, StartPasskeyRegistrationResponse, StartWalletLinkData, StartWalletLinkResponse, SyncDisputeData, SyncDisputeError, SyncDisputeResponse, VerifyMandateData, VerifyMandateError, VerifyMandateResponse, WalletData, WalletError, WalletResponse, WebhookEventsData, WebhookEventsResponse } from '../types.gen';
+import { activity, agents, analytics, analyticsAgentTurn, approveMandate, assistantAccess, cart, checkout, confirmTriage, confirmWalletLink, conversation, createCart, createConversation, createMandate, declineMandate, demoWallet, dispute, disputeActivity, disputeAlert, disputeResponse, disputes, evidenceDocument, fileEvidence, health, jwks, ledger, mandate, mandatePasskeyOptions, type Options, order, orderActivity, orders, paypalHealth, paypalWebhook, policy, prepareResponse, product, products, ready, refundAlert, registerPasskey, replayWebhookEvent, setCartLine, setCartWallet, setDisputeFiling, shipOrder, simulateAdjudication, simulateDispute, startPasskeyRegistration, startWalletLink, syncDispute, verifyMandate, wallet, webhookEvents } from '../sdk.gen';
+import type { ActivityData, ActivityError, ActivityResponse, AgentsData, AgentsResponse, AnalyticsAgentTurnData, AnalyticsAgentTurnError, AnalyticsAgentTurnResponse, AnalyticsData, AnalyticsResponse, ApproveMandateData, ApproveMandateError, ApproveMandateResponse, AssistantAccessData, AssistantAccessResponse, CartData, CartError, CartResponse, CheckoutData, CheckoutError, CheckoutResponse, ConfirmTriageData, ConfirmTriageError, ConfirmTriageResponse, ConfirmWalletLinkData, ConfirmWalletLinkError, ConfirmWalletLinkResponse, ConversationData, ConversationError, ConversationResponse, CreateCartData, CreateCartError, CreateCartResponse, CreateConversationData, CreateConversationError, CreateConversationResponse, CreateMandateData, CreateMandateError, CreateMandateResponse, DeclineMandateData, DeclineMandateError, DeclineMandateResponse, DemoWalletData, DemoWalletResponse, DisputeActivityData, DisputeActivityError, DisputeActivityResponse, DisputeAlertData, DisputeAlertError, DisputeAlertResponse, DisputeData, DisputeError, DisputeResponse2, DisputeResponseData, DisputeResponseError, DisputeResponseResponse, DisputesData, DisputesError, DisputesResponse, EvidenceDocumentData, EvidenceDocumentError, EvidenceDocumentResponse, FileEvidenceData, FileEvidenceError, FileEvidenceResponse, HealthData, HealthResponse, JwksData, JwksResponse, LedgerData, LedgerResponse, MandateData, MandateError, MandatePasskeyOptionsData, MandatePasskeyOptionsError, MandatePasskeyOptionsResponse, MandateResponse, OrderActivityData, OrderActivityError, OrderActivityResponse, OrderData, OrderError, OrderResponse, OrdersData, OrdersResponse, PaypalHealthData, PaypalHealthResponse, PaypalWebhookData, PaypalWebhookError, PaypalWebhookResponse, PolicyData, PolicyResponse, PrepareResponseData, PrepareResponseError, PrepareResponseResponse, ProductData, ProductError, ProductResponse, ProductsData, ProductsResponse, ReadyData, ReadyResponse, RefundAlertData, RefundAlertError, RefundAlertResponse, RegisterPasskeyData, RegisterPasskeyError, RegisterPasskeyResponse, ReplayWebhookEventData, ReplayWebhookEventError, ReplayWebhookEventResponse, SetCartLineData, SetCartLineError, SetCartLineResponse, SetCartWalletData, SetCartWalletError, SetCartWalletResponse, SetDisputeFilingData, SetDisputeFilingError, SetDisputeFilingResponse, ShipOrderData, ShipOrderError, ShipOrderResponse, SimulateAdjudicationData, SimulateAdjudicationError, SimulateAdjudicationResponse, SimulateDisputeData, SimulateDisputeError, SimulateDisputeResponse, StartPasskeyRegistrationData, StartPasskeyRegistrationError, StartPasskeyRegistrationResponse, StartWalletLinkData, StartWalletLinkResponse, SyncDisputeData, SyncDisputeError, SyncDisputeResponse, VerifyMandateData, VerifyMandateError, VerifyMandateResponse, WalletData, WalletError, WalletResponse, WebhookEventsData, WebhookEventsResponse } from '../types.gen';
 
 export type QueryKey<TOptions extends Options> = [
     Pick<TOptions, 'baseUrl' | 'body' | 'headers' | 'path' | 'query'> & {
@@ -384,6 +384,28 @@ export const shipOrderMutation = (options?: Partial<Options<ShipOrderData>>): Us
     return mutationOptions;
 };
 
+export const ledgerQueryKey = (options?: Options<LedgerData>) => createQueryKey('ledger', options);
+
+/**
+ * Check Ledger
+ *
+ * Every paid order beside PayPal's own transaction ledger, read from PayPal now.
+ *
+ * A 502 means PayPal refused the read or did not answer.
+ */
+export const ledgerOptions = (options?: Options<LedgerData>) => queryOptions<LedgerResponse, DefaultError, LedgerResponse, ReturnType<typeof ledgerQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await ledger({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: ledgerQueryKey(options)
+});
+
 export const disputesQueryKey = (options?: Options<DisputesData>) => createQueryKey('disputes', options);
 
 /**
@@ -467,14 +489,39 @@ export const disputeResponseOptions = (options: Options<DisputeResponseData>) =>
 /**
  * Prepare Response
  *
- * Write the notes and the record now, as the job would on PayPal's cue.
+ * Take the dispute one step on now, as the job would on PayPal's cue.
  *
- * A 502 means Claude did not deliver the notes.
+ * An inquiry that waits for the seller is triaged: Claude picks the answer. A picked fight,
+ * and every dispute past its inquiry, gets the notes and the record. A 502 means Claude
+ * did not deliver; a 422 names what PayPal refused of a picked answer.
  */
 export const prepareResponseMutation = (options?: Partial<Options<PrepareResponseData>>): UseMutationOptions<PrepareResponseResponse, PrepareResponseError, Options<PrepareResponseData>> => {
     const mutationOptions: UseMutationOptions<PrepareResponseResponse, PrepareResponseError, Options<PrepareResponseData>> = {
         mutationFn: async (fnOptions) => {
             const { data } = await prepareResponse({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Confirm Triage
+ *
+ * The merchant's go on the answer Claude picked for an inquiry: PayPal carries it out.
+ *
+ * A message is posted in PayPal's thread, an offer is made, or the claim is accepted with a
+ * full refund. A 409 means the answer went to PayPal already; a 422 names what PayPal
+ * refused.
+ */
+export const confirmTriageMutation = (options?: Partial<Options<ConfirmTriageData>>): UseMutationOptions<ConfirmTriageResponse, ConfirmTriageError, Options<ConfirmTriageData>> => {
+    const mutationOptions: UseMutationOptions<ConfirmTriageResponse, ConfirmTriageError, Options<ConfirmTriageData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await confirmTriage({
                 ...options,
                 ...fnOptions,
                 throwOnError: true
@@ -634,8 +681,10 @@ export const agentsOptions = (options?: Options<AgentsData>) => queryOptions<Age
  *
  * Sandbox simulator: file a dispute on a paid demo-buyer order as the demo buyer.
  *
- * A 409 means the order cannot be disputed this way, or PayPal's search does not list the
- * payment yet; a 422 means PayPal refused the dispute.
+ * PayPal's sandbox takes no buyer text by API, so Palisade keeps the complaint itself and
+ * marks it as the simulator's wherever it shows. A 409 means the order cannot be disputed
+ * this way, or PayPal's search does not list the payment yet; a 422 means PayPal refused
+ * the dispute.
  */
 export const simulateDisputeMutation = (options?: Partial<Options<SimulateDisputeData>>): UseMutationOptions<SimulateDisputeResponse, SimulateDisputeError, Options<SimulateDisputeData>> => {
     const mutationOptions: UseMutationOptions<SimulateDisputeResponse, SimulateDisputeError, Options<SimulateDisputeData>> = {

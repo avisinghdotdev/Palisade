@@ -3,6 +3,7 @@ from typing import Annotated
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
+from palisade_api.orders.ledger import Ledger, LedgerCheck
 from palisade_api.orders.shipping import (
     AlreadyShipped,
     NotShippable,
@@ -13,11 +14,19 @@ from palisade_api.orders.store import Order, Orders, OrderSummary, UnknownOrder
 from palisade_api.paypal.client import PayPalError
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
+# Beside the orders, not under them, so no order number can be mistaken for it.
+ledger_router = APIRouter(prefix="/api/ledger", tags=["orders"])
 
 
 def orders(request: Request) -> Orders:
     # Starlette types lifespan state as Any; the lifespan in main.py puts an Orders here.
     service: Orders = request.state.orders  # pyright: ignore[reportAny]
+    return service
+
+
+def ledger(request: Request) -> Ledger:
+    # Starlette types lifespan state as Any; the lifespan in main.py puts a Ledger here.
+    service: Ledger = request.state.ledger  # pyright: ignore[reportAny]
     return service
 
 
@@ -81,4 +90,19 @@ async def ship_order(
         )
         raise HTTPException(
             code, f"PayPal could not add the tracking: {', '.join(error.issues)}"
+        ) from error
+
+
+@ledger_router.get("", operation_id="ledger")
+async def check_ledger(service: Annotated[Ledger, Depends(ledger)]) -> LedgerCheck:
+    """Every paid order beside PayPal's own transaction ledger, read from PayPal now.
+
+    A 502 means PayPal refused the read or did not answer.
+    """
+    try:
+        return await service.check()
+    except PayPalError as error:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            f"PayPal did not return its ledger: {', '.join(error.issues)}",
         ) from error

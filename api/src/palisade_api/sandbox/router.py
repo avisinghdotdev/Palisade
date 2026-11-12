@@ -37,11 +37,13 @@ async def simulate_dispute(
 ) -> Dispute:
     """Sandbox simulator: file a dispute on a paid demo-buyer order as the demo buyer.
 
-    A 409 means the order cannot be disputed this way, or PayPal's search does not list the
-    payment yet; a 422 means PayPal refused the dispute.
+    PayPal's sandbox takes no buyer text by API, so Palisade keeps the complaint itself and
+    marks it as the simulator's wherever it shows. A 409 means the order cannot be disputed
+    this way, or PayPal's search does not list the payment yet; a 422 means PayPal refused
+    the dispute.
     """
     try:
-        return await service.file_dispute(number, request.reason)
+        return await service.file_dispute(number, request.reason, request.complaint)
     except UnknownOrder as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
     except (NotDisputable, NotSearchableYet) as error:

@@ -1,4 +1,12 @@
-import type { Dispute, Evidence } from "@/api/client";
+import type { Dispute, Evidence, TriageDecision } from "@/api/client";
+
+/** The answers Claude picks from while a dispute is an inquiry. */
+export const TRIAGE_ACTION_LABELS: Record<TriageDecision["action"], string> = {
+  fight: "Fight with the Record",
+  message: "Message to the Buyer",
+  offer: "Partial Refund Offer",
+  accept: "Full Refund",
+};
 
 /** Whether `value` names one of `labels`' keys, for codes the API stores as plain text. */
 function isKey<K extends string>(
@@ -113,4 +121,8 @@ export function outcomeLabel(value: string): string {
 
 export function evidenceTypeLabel(value: string): string {
   return labelOf(EVIDENCE_TYPE_LABELS, value);
+}
+
+export function triageActionLabel(value: string): string {
+  return labelOf(TRIAGE_ACTION_LABELS, value);
 }

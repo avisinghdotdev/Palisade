@@ -55,7 +55,7 @@ OutcomeCode = Literal[
 ]
 # What made Palisade read the dispute from PayPal.
 SyncSource = Literal[
-    "webhook", "reconciliation", "console", "simulator", "filing", "alert"
+    "webhook", "reconciliation", "console", "simulator", "filing", "alert", "triage"
 ]
 
 REASON = TypeAdapter(DisputeReason)
@@ -113,6 +113,21 @@ class PayPalOutcome(BaseModel):
     outcome_code: OutcomeCode
 
 
+class PayPalOfferOptions(BaseModel):
+    offer_types: list[str] = []
+
+
+class PayPalAcceptOptions(BaseModel):
+    accept_claim_types: list[str] = []
+
+
+class PayPalResponseOptions(BaseModel):
+    """The kinds of offer and of accepted claim PayPal takes on the dispute now."""
+
+    make_offer: PayPalOfferOptions = PayPalOfferOptions()
+    accept_claim: PayPalAcceptOptions = PayPalAcceptOptions()
+
+
 class PayPalDispute(BaseModel):
     """The parts of PayPal's dispute object Palisade stores and shows."""
 
@@ -129,6 +144,7 @@ class PayPalDispute(BaseModel):
     seller_response_due_date: datetime | None = None
     messages: list[PayPalMessage] = []
     evidences: list[PayPalEvidence] = []
+    allowed_response_options: PayPalResponseOptions = PayPalResponseOptions()
     links: list[PayPalLink] = []
 
     @property
@@ -199,6 +215,9 @@ class Dispute(DisputeSummary):
     seller_protection_eligible: bool | None
     actions: list[str]
     messages: list[DisputeMessage]
+    # What the demo buyer typed when filing through the sandbox simulator; PayPal does not
+    # hold it.
+    sandbox_complaint: str | None
     evidences: list[DisputeEvidence]
     synced_at: datetime
 
@@ -298,6 +317,7 @@ def dispute(record: DisputeRecord) -> Dispute:
                 )
                 for message in live.messages
             ],
+            "sandbox_complaint": record.sandbox_complaint,
             "evidences": [
                 DisputeEvidence(
                     evidence_type=evidence.evidence_type,

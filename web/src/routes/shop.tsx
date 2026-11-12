@@ -230,7 +230,8 @@ export default function Shop() {
           </p>
         </AboutDialog>
       </ShopHeader>
-      <main className="flex-1 px-4 py-8 sm:px-6 lg:px-8">
+      {/* The foot is taller than the chat launcher, so the last row of shoes scrolls clear of it. */}
+      <main className="flex-1 px-4 pt-8 pb-24 sm:px-6 lg:px-8">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <h1 className="text-2xl font-semibold tracking-tight">
             Running Shoes
